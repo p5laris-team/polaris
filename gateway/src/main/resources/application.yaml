@@ -1,0 +1,24 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: gateway
+
+grpc:
+  client:
+    user:
+      address: static://localhost:9091
+      negotiationType: plaintext
+    character:
+      address: static://localhost:9092
+      negotiationType: plaintext
+    item:
+      address: static://localhost:9093
+      negotiationType: plaintext
+    mission:
+      address: static://localhost:9094
+      negotiationType: plaintext
+    ai:
+      address: static://localhost:9095
+      negotiationType: plaintext

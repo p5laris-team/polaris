@@ -1,0 +1,34 @@
+spring:
+  application:
+    name: user
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/users}
+    driver-class-name: org.postgresql.Driver
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:12345678}
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        format_sql: true
+
+grpc:
+  server:
+    port: 9091
+
+  client:
+    character:
+      address: static://localhost:9092
+      negotiationType: plaintext
+    item:
+      address: static://localhost:9093
+      negotiationType: plaintext
+    mission:
+      address: static://localhost:9094
+      negotiationType: plaintext
+    ai:
+      address: static://localhost:9095
+      negotiationType: plaintext
