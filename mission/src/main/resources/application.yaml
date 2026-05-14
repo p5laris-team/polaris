@@ -18,6 +18,7 @@ spring:
 grpc:
   server:
     port: 9094
+    reflection-service-enabled: true
 
   client:
     user:
