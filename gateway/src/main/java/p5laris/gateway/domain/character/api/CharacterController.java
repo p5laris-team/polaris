@@ -1,6 +1,7 @@
 package p5laris.gateway.domain.character.api;
 
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import p5laris.gateway.domain.character.api.dto.CharacterDto;
 import p5laris.gateway.domain.character.infrastructure.grpc.CharacterGatewayService;
@@ -15,7 +16,7 @@ public class CharacterController {
     }
 
     @GetMapping("/api/character")
-    public CharacterDto getCharacter(CharacterDto characterDto) {
-        return new CharacterDto(characterGatewayService.getCharacter(characterDto.msg()));
+    public CharacterDto getCharacter(@RequestParam String msg) {
+        return new CharacterDto(characterGatewayService.getCharacter(msg));
     }
 }
