@@ -111,46 +111,43 @@ Base Pattern: /api/{domain}/v1/{resource}
 
 ## 1. API 전체 요약
 
-| Method | Endpoint | 설명 | Request | Response | 인증 |
-|---|---|---|---|---|---|
-| GET | `/api/auth/v1/google/authorization-url` | Google OAuth2 시작 URL 조회 | query | OAuth URL | Public |
-| POST | `/api/auth/v1/google/sessions` | Google OAuth2 로그인 세션 생성 | body | token + user | Public |
-| POST | `⚠️ /api/auth/v1/token-refreshes` | 토큰 재발급 | body | token | Public |
-| DELETE | `/api/auth/v1/sessions/current` | 로그아웃 | none | logout result | 🔐 |
-| GET | `/api/user/v1/users/me` | 내 정보 조회 | none | user | 🔐 |
-| PATCH | `/api/user/v1/users/me/notification-settings` | 내 알림 설정 수정 | body | settings | 🔐 |
-| GET | `/api/home/v1/home` | 홈 화면 통합 조회 | none | home data | 🔐 |
-| GET | `💾 /api/character/v1/character-types` | 캐릭터 종류 조회 | query | character types | 🔐 |
-| GET | `💾 /api/character/v1/character-types/{characterTypeId}/assets` | 캐릭터 에셋 조회 | path | assets | 🔐 |
-| POST | `/api/character/v1/characters` | 내 캐릭터 생성 | body | character | 🔐 |
-| GET | `/api/character/v1/characters/me` | 내 활성 캐릭터 조회 | none | character | 🔐 |
-| PATCH | `/api/character/v1/characters/{characterId}` | 캐릭터 이름 수정 | path + body | character | 🔐 |
-| GET | `/api/character/v1/characters/{characterId}/status` | 캐릭터 상태 조회 | path | status | 🔐 |
-| POST | `⚠️ /api/character/v1/characters/{characterId}/care-logs` | 돌봄 액션 수행 | path + body | care result | 🔐 |
-| PUT | `⚠️ /api/character/v1/characters/{characterId}/equipped-skin` | 캐릭터 스킨 장착 | path + body | equipped skin | 🔐 |
-| GET | `💾 /api/onboarding/v1/questions` | 온보딩 질문 목록 조회 | none | questions | 🔐 |
-| GET | `/api/onboarding/v1/profiles/me` | 내 온보딩 프로필 조회 | none | profile | 🔐 |
-| PUT | `/api/onboarding/v1/profiles/me` | 내 온보딩 프로필 저장/완료 | body | profile | 🔐 |
-| GET | `/api/mission/v1/missions/current` | 현재 제안 미션 조회 | query | mission | 🔐 |
-| GET | `/api/mission/v1/missions` | 미션 스택/히스토리 조회 | query cursor | missions | 🔐 |
-| POST | `⚠️ /api/mission/v1/missions` | 다음 미션 생성/제안 | body | mission | 🔐 |
-| POST | `/api/mission/v1/missions/{missionId}/rejections` | 미션 거절 기록 생성 | path + body | rejection | 🔐 |
-| POST | `/api/mission/v1/missions/{missionId}/completion-sessions` | 완료 질문 세션 시작 | path + body | question | 🔐 |
-| POST | `⚠️ /api/mission/v1/missions/{missionId}/completion-answers` | 완료 답변 제출 및 보상 지급 | path + body | completion result | 🔐 |
-| GET | `/api/wallet/v1/wallets/me` | 별조각 잔액 조회 | none | wallet | 🔐 |
-| GET | `/api/wallet/v1/wallets/me/transactions` | 별조각 거래 내역 조회 | query cursor | transactions | 🔐 |
-| GET | `💾 /api/item/v1/items` | 상점 아이템 목록 조회 | query cursor | items | 🔐 |
-| GET | `/api/item/v1/user-items` | 내 보유 아이템 조회 | query cursor | user items | 🔐 |
-| POST | `⚠️ /api/item/v1/item-purchases` | 아이템 구매 | body | purchase result | 🔐 |
-| POST | `/api/share/v1/share-cards` | 공유 카드 생성 | body | share card | 🔐 |
-| GET | `/api/share/v1/share-cards/{shareCardId}` | 공유 카드 상세 조회 | path | share card | 🔐 |
-| POST | `⚠️ /api/share/v1/share-events` | 공유 시도 이벤트 생성 및 보상 처리 | body | share event | 🔐 |
-| GET | `💾 /api/share/v1/share-links/{shareId}` | 공개 공유 링크 정보 조회 | path | shared card | Public |
-| POST | `/api/share/v1/share-clicks` | 공유 링크 클릭 로그 생성 | body | click log | Public |
-| POST | `⚠️ /api/attendance/v1/attendance-records` | 오늘 출석 기록 생성 및 보상 지급 | body | attendance | 🔐 |
-| GET | `/api/attendance/v1/attendance-records` | 출석 기록 조회 | query cursor | attendance list | 🔐 |
-| GET | `/api/notification/v1/notifications` | 알림 목록 조회 | query cursor | notifications | 🔐 |
-| PATCH | `/api/notification/v1/notifications/{notificationId}` | 알림 읽음 처리 | path + body | notification | 🔐 |
+| Method | Endpoint                                                        | 설명            | Request | Response | 인증 |
+|--------|-----------------------------------------------------------------|---------------|---|---|---|
+| GET    | `/api/auth/v1/google/authorization-url`                         | Google OAuth2 시작 URL 조회 | query | OAuth URL | Public |
+| POST   | `/api/auth/v1/google/sessions`                                  | Google OAuth2 로그인 세션 생성 | body | token + user | Public |
+| POST   | `⚠️ /api/auth/v1/token-refreshes`                               | 토큰 재발급        | body | token | Public |
+| DELETE | `/api/auth/v1/sessions/current`                                 | 로그아웃          | none | logout result | 🔐 |
+| GET    | `/api/user/v1/users/me`                                         | 내 정보 조회       | none | user | 🔐 |
+| GET    | `/api/home/v1/home`                                             | 홈 화면 통합 조회    | none | home data | 🔐 |
+| GET    | `💾 /api/character/v1/character-types`                          | 캐릭터 종류 조회     | query | character types | 🔐 |
+| GET    | `💾 /api/character/v1/character-types/{characterTypeId}/assets` | 캐릭터 에셋 조회     | path | assets | 🔐 |
+| POST   | `/api/character/v1/characters`                                  | 내 캐릭터 생성      | body | character | 🔐 |
+| GET    | `/api/character/v1/characters/me`                               | 내 활성 캐릭터 조회   | none | character | 🔐 |
+| PATCH  | `/api/character/v1/characters/{characterId}`                    | 캐릭터 이름 수정     | path + body | character | 🔐 |
+| GET    | `/api/character/v1/characters/{characterId}/status`             | 캐릭터 상태 조회     | path | status | 🔐 |
+| POST   | `⚠️ /api/character/v1/characters/{characterId}/care-logs`       | 돌봄 액션 수행      | path + body | care result | 🔐 |
+| PUT    | `⚠️ /api/character/v1/characters/{characterId}/equipped-skin`   | 캐릭터 스킨 장착     | path + body | equipped skin | 🔐 |
+| GET    | `💾 /api/onboarding/v1/questions`                               | 온보딩 질문 목록 조회  | none | questions | 🔐 |
+| GET    | `/api/onboarding/v1/profiles/me`                                | 내 온보딩 프로필 조회  | none | profile | 🔐 |
+| PUT    | `/api/onboarding/v1/profiles/me`                                | 내 온보딩 프로필 저장/완료 | body | profile | 🔐 |
+| GET    | `/api/mission/v1/missions/current`                              | 현재 제안 미션 조회   | query | mission | 🔐 |
+| POST   | `/api/mission/v1/missions/today-focus/next`                     | 다음 미션 요청      | body | mission | 🔐 |
+| POST   | `/api/mission/v1/missions/{missionId}/rejections`               | 미션 거절 기록 생성   | path + body | rejection | 🔐 |
+| POST   | `/api/mission/v1/missions/{missionId}/completion-sessions`      | 완료 질문 세션 시작   | path + body | question | 🔐 |
+| POST   | `⚠️ /api/mission/v1/missions/{missionId}/completion-answers`    | 완료 답변 제출 및 보상 지급 | path + body | completion result | 🔐 |
+| GET    | `/api/wallet/v1/wallets/me`                                     | 별조각 잔액 조회     | none | wallet | 🔐 |
+| GET    | `💾 /api/item/v1/items`                                         | 상점 아이템 목록 조회  | query cursor | items | 🔐 |
+| GET    | `/api/item/v1/user-items`                                       | 내 보유 아이템 조회   | query cursor | user items | 🔐 |
+| POST   | `⚠️ /api/item/v1/item-purchases`                                | 아이템 구매        | body | purchase result | 🔐 |
+| POST   | `/api/share/v1/share-cards`                                     | 공유 카드 생성      | body | share card | 🔐 |
+| GET    | `/api/share/v1/share-cards/{shareCardId}`                       | 공유 카드 상세 조회   | path | share card | 🔐 |
+| POST   | `⚠️ /api/share/v1/share-events`                                 | 공유 시도 이벤트 생성 및 보상 처리 | body | share event | 🔐 |
+| GET    | `💾 /api/share/v1/share-links/{shareId}`                        | 공개 공유 링크 정보 조회 | path | shared card | Public |
+| POST   | `/api/share/v1/share-clicks`                                    | 공유 링크 클릭 로그 생성 | body | click log | Public |
+| POST   | `⚠️ /api/attendance/v1/attendance-records`                      | 오늘 출석 기록 생성 및 보상 지급 | body | attendance | 🔐 |
+| GET    | `/api/attendance/v1/attendance-records`                         | 출석 기록 조회      | query cursor | attendance list | 🔐 |
+| GET    | `/api/notification/v1/notifications`                            | 알림 목록 조회      | query cursor | notifications | 🔐 |
+| PATCH  | `/api/notification/v1/notifications/{notificationId}`           | 알림 읽음 처리      | path + body | notification | 🔐 |
 
 ---
 
@@ -286,32 +283,6 @@ Refresh Token으로 Access Token을 재발급한다.
 
 ---
 
-### 2.6 PATCH `/api/user/v1/users/me/notification-settings` 🔐
-
-**설명**  
-알림 수신 여부와 선호 시간대를 수정한다.
-
-**Request**
-
-```json
-{
-  "enabled": true,
-  "preferredTime": "EVENING"
-}
-```
-
-**Response**
-
-```json
-{
-  "enabled": true,
-  "preferredTime": "EVENING",
-  "updatedAt": "2026-05-15T18:20:00+09:00"
-}
-```
-
----
-
 ## 3. 홈
 
 ### 3.1 GET `/api/home/v1/home` 🔐
@@ -339,10 +310,10 @@ Refresh Token으로 Access Token을 재발급한다.
   "character": {
     "id": 10,
     "name": "작은노바",
-    "typeCode": "NOVA",
+    "characterTypeCode": "NOVA",
     "currentAssetUrl": "https://cdn.polaris.app/nova/idle.png",
     "states": {
-      "fullness": { "value": 80, "label": "든든함", "grade": "GOOD" },
+      "hunger": { "value": 80, "label": "든든함", "grade": "GOOD" },
       "energy": { "value": 55, "label": "졸림", "grade": "NORMAL" },
       "affection": { "value": 35, "label": "쓸쓸함", "grade": "BAD" }
     }
@@ -417,13 +388,11 @@ Refresh Token으로 Access Token을 재발급한다.
   "items": [
     {
       "assetType": "IDLE",
-      "assetKey": "IDLE",
-      "imageUrl": "https://cdn.polaris.app/nova/idle.png"
+      "assetUrl": "https://cdn.polaris.app/nova/idle.png"
     },
     {
       "assetType": "STATE",
-      "assetKey": "AFFECTION_BAD",
-      "imageUrl": "https://cdn.polaris.app/nova/lonely.png"
+      "assetUrl": "https://cdn.polaris.app/nova/lonely.png"
     }
   ]
 }
@@ -451,10 +420,10 @@ Refresh Token으로 Access Token을 재발급한다.
 {
   "id": 10,
   "name": "작은노바",
-  "typeCode": "NOVA",
+  "characterTypeCode": "NOVA",
   "active": true,
   "states": {
-    "fullness": 70,
+    "hunger": 70,
     "energy": 70,
     "affection": 50
   },
@@ -481,7 +450,7 @@ Refresh Token으로 Access Token을 재발급한다.
 {
   "id": 10,
   "name": "작은노바",
-  "typeCode": "NOVA",
+  "characterTypeCode": "NOVA",
   "active": true,
   "equippedSkin": {
     "itemId": 3,
@@ -536,11 +505,10 @@ Refresh Token으로 Access Token을 재발급한다.
 {
   "characterId": 10,
   "states": {
-    "fullness": { "value": 80, "label": "든든함", "grade": "GOOD" },
+    "hunger": { "value": 80, "label": "든든함", "grade": "GOOD" },
     "energy": { "value": 55, "label": "졸림", "grade": "NORMAL" },
     "affection": { "value": 35, "label": "쓸쓸함", "grade": "BAD" }
-  },
-  "currentAssetKey": "AFFECTION_BAD"
+  }
 }
 ```
 
@@ -556,9 +524,7 @@ Refresh Token으로 Access Token을 재발급한다.
 ```json
 {
   "actionType": "FEED",
-  "paymentType": "ITEM",
-  "itemId": 21,
-  "idempotencyKey": "care-20260515-uuid"
+  "itemId": 21
 }
 ```
 
@@ -570,17 +536,16 @@ Refresh Token으로 Access Token을 재발급한다.
   "characterId": 10,
   "actionType": "FEED",
   "consumed": {
-    "starPiece": 0,
     "itemId": 21,
     "quantity": 1
   },
   "beforeStates": {
-    "fullness": 50,
+    "hunger": 50,
     "energy": 55,
     "affection": 35
   },
   "afterStates": {
-    "fullness": 80,
+    "hunger": 80,
     "energy": 55,
     "affection": 35
   },
@@ -726,9 +691,7 @@ Refresh Token으로 Access Token을 재발급한다.
 **Request**
 
 ```json
-{
-  "date": "2026-05-15"
-}
+{}
 ```
 
 **Response**
@@ -750,56 +713,16 @@ Refresh Token으로 Access Token을 재발급한다.
 
 ---
 
-### 6.2 GET `/api/mission/v1/missions` 🔐
+### 6.3 POST `⚠️ /api/mission/v1/missions/today-focus/next` 🔐
 
 **설명**  
-오늘 미션 stack 또는 완료/거절 히스토리를 cursor 기반으로 조회한다.
+현재 미션을 처리(완료/거절)한 후, 다음 미션을 활성화해달라고 요청한다.
 
 **Request**
 
 ```json
 {
-  "date": "2026-05-15",
-  "status": "COMPLETED",
-  "cursor": null,
-  "size": 20
-}
-```
-
-**Response**
-
-```json
-{
-  "items": [
-    {
-      "id": 99,
-      "title": "창문 3분 열기",
-      "status": "COMPLETED",
-      "rewardStarPiece": 7,
-      "completedAt": "2026-05-15T09:30:00+09:00"
-    }
-  ],
-  "pageInfo": {
-    "nextCursor": null,
-    "hasNext": false,
-    "size": 20
-  }
-}
-```
-
----
-
-### 6.3 POST `⚠️ /api/mission/v1/missions` 🔐
-
-**설명**  
-다음 미션을 생성하고 사용자에게 제안한다. 내부적으로 seed 미션 후보 선정, 점수 계산, 캐릭터 말투 변환, fallback 처리가 일어날 수 있다.
-
-**Request**
-
-```json
-{
-  "requestType": "NEXT",
-  "idempotencyKey": "mission-offer-20260515-uuid"
+  "lastMissionId": 101
 }
 ```
 
@@ -816,10 +739,7 @@ Refresh Token으로 Access Token을 재발급한다.
   "category": "SPACE_RESET",
   "difficulty": "EASY",
   "rewardStarPiece": 7,
-  "status": "OFFERED",
-  "fallbackUsed": false,
-  "dailyOfferCount": 3,
-  "dailyOfferLimit": 15
+  "status": "OFFERED"
 }
 ```
 
@@ -833,10 +753,7 @@ Refresh Token으로 Access Token을 재발급한다.
 **Request**
 
 ```json
-{
-  "reason": "NO_TIME",
-  "comment": "지금은 시간이 없어요."
-}
+{}
 ```
 
 **Response**
@@ -847,8 +764,11 @@ Refresh Token으로 Access Token을 재발급한다.
   "status": "REJECTED",
   "rejectedAt": "2026-05-15T18:30:00+09:00",
   "characterMessage": "괜찮아. 그럼 다른 별 찾아볼게.",
-  "dailyOfferCount": 3,
-  "dailyOfferLimit": 15
+  "nextMission": {
+    "id": 102,
+    "title": "책상 위 물건 치우기",
+    "stackOrder": 2
+  }
 }
 ```
 
@@ -862,9 +782,7 @@ Refresh Token으로 Access Token을 재발급한다.
 **Request**
 
 ```json
-{
-  "idempotencyKey": "completion-session-101-uuid"
-}
+{}
 ```
 
 **Response**
@@ -894,8 +812,7 @@ Refresh Token으로 Access Token을 재발급한다.
 
 ```json
 {
-  "answer": "책상 위에 있던 컵을 싱크대에 가져다 놨어.",
-  "idempotencyKey": "mission-complete-101-uuid"
+  "answer": "책상 위에 있던 컵을 싱크대에 가져다 놨어."
 }
 ```
 
@@ -941,48 +858,6 @@ Refresh Token으로 Access Token을 재발급한다.
 {
   "starPiece": 127,
   "updatedAt": "2026-05-15T18:35:00+09:00"
-}
-```
-
----
-
-### 7.2 GET `/api/wallet/v1/wallets/me/transactions` 🔐
-
-**설명**  
-별조각 획득/사용 내역을 cursor 기반으로 조회한다.
-
-**Request**
-
-```json
-{
-  "transactionType": "EARN",
-  "reason": "MISSION_REWARD",
-  "cursor": null,
-  "size": 20
-}
-```
-
-**Response**
-
-```json
-{
-  "items": [
-    {
-      "id": 900,
-      "transactionType": "EARN",
-      "amount": 7,
-      "balanceAfter": 127,
-      "reason": "MISSION_REWARD",
-      "refType": "MISSION",
-      "refId": 101,
-      "createdAt": "2026-05-15T18:35:00+09:00"
-    }
-  ],
-  "pageInfo": {
-    "nextCursor": null,
-    "hasNext": false,
-    "size": 20
-  }
 }
 ```
 
@@ -1080,8 +955,7 @@ Refresh Token으로 Access Token을 재발급한다.
 ```json
 {
   "itemId": 3,
-  "quantity": 1,
-  "idempotencyKey": "item-purchase-uuid"
+  "quantity": 1
 }
 ```
 
@@ -1114,8 +988,7 @@ Refresh Token으로 Access Token을 재발급한다.
 
 ```json
 {
-  "characterId": 10,
-  "template": "DEFAULT"
+  "characterId": 10
 }
 ```
 
@@ -1151,8 +1024,6 @@ Refresh Token으로 Access Token을 재발급한다.
 {
   "shareCardId": 800,
   "characterName": "노바별",
-  "todayCompletedMissionCount": 3,
-  "todayStarPiece": 25,
   "imageUrl": "https://cdn.polaris.app/share-cards/800.png",
   "shareUrl": "https://polaris.app/share/sh_abc123"
 }
@@ -1257,8 +1128,7 @@ Refresh Token으로 Access Token을 재발급한다.
 
 ```json
 {
-  "attendanceDate": "2026-05-15",
-  "idempotencyKey": "attendance-1-20260515"
+  "attendanceDate": "2026-05-15"
 }
 ```
 
@@ -1400,7 +1270,7 @@ Refresh Token으로 Access Token을 재발급한다.
 
 | 필드 | 의미 | 화면 라벨 예시 |
 |---|---|---|
-| `fullness` | 높을수록 든든함 | 든든함 / 출출함 / 배고픔 |
+| `hunger` | 높을수록 든든함 | 든든함 / 출출함 / 배고픔 |
 | `energy` | 높을수록 기운 있음 | 말짱함 / 졸림 / 피곤함 |
 | `affection` | 높을수록 가까움 | 가까움 / 조용함 / 쓸쓸함 |
 
@@ -1452,25 +1322,5 @@ Refresh Token으로 Access Token을 재발급한다.
 
 ---
 
-## 14. 검토 필요
 
-### 14.1 미션 완료 답변 저장 위치
-
-API는 `/completion-answers`로 둔다. DB는 `user_missions` 컬럼 저장 또는 `mission_completion_answers` 테이블 분리 중 하나로 확정해야 한다.
-
-### 14.2 미션 상태명 통일
-
-API는 `ANSWERING`을 사용한다. DB에 `COMPLETION_QA`가 남아 있다면 매핑 정책을 정해야 한다.
-
-### 14.3 캐릭터 상태 필드명 통일
-
-API는 `fullness`, `energy`, `affection`을 사용한다. DB 컬럼명이 `hunger_status` 계열이면 응답 변환 규칙을 둔다.
-
-### 14.4 아이템 타입 구조
-
-API는 `itemType = SKIN | CONSUMABLE`, `effectType = FOOD | REST | PLAY` 구조를 사용한다. DB enum도 이 구조로 맞추는 것이 단순하다.
-
-### 14.5 공유 클릭 기록 방식
-
-공유 링크 조회 `GET`은 카드 정보만 반환한다. 클릭 기록은 `POST /api/share/v1/share-clicks`로 분리한다.
 

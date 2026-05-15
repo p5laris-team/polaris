@@ -139,14 +139,14 @@ MVP에서 제공하는 캐릭터 3종의 기본 정보를 저장한다.
 | created_at | timestamp | 생성일 |
 | updated_at | timestamp | 수정일 |
 
-## `character_images`
+## `character_assets`
 
-| 컬럼 | 타입 | 설명 |
-| --- | --- | --- |
-| id | bigint PK | 캐릭터 타입 ID |
+| 컬럼                | 타입 | 설명 |
+|-------------------| --- | --- |
+| id                | bigint PK | 캐릭터 타입 ID |
 | character_type_id | varchar unique | NOVA / MUMU / JJORY |
-| image_type | varchar | 이미지 타입 (기본, 기쁨, 슬픔..) |
-| image_url | text | 캐릭터 이미지 URL |
+| asset_type        | varchar | 이미지 타입 (기본, 기쁨, 슬픔..) |
+| asset_url         | text | 캐릭터 이미지 URL |
 
 ### MVP seed
 
