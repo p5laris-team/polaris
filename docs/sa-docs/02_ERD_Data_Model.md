@@ -1,10 +1,10 @@
-# 07_ERD_Data_Model_Polaris_MVP_v0_5_NoPayment
+# 07_ERD_Data_Model
 
 ---
 
-# 5. 테이블 상세
+# 1. 테이블 상세
 
-## 5.1 `users`
+## 1.1 `users`
 
 사용자 계정 정보를 저장한다.
 
@@ -22,7 +22,7 @@
 <aside>
 
 password_hash → 없앨까?
-status → 지금을 필요없는데…우선 둘까?
+status → 지금을 필요 없는데… 우선 둘까?
 `star_pieces`  보유 별조각 → Wallet 테이블로 분리? 혹은 User 테이블에 추가?
 
 </aside>
@@ -44,7 +44,7 @@ MVP에서는 사용자 프로필 상세값을 users에 모두 넣지 않는다.
 
 ---
 
-## 5.2 `user_onboarding_profiles`
+## 1.2 `user_onboarding_profiles`
 
 캐릭터가 선택지형 설문으로 수집한 초기 개인화 데이터를 저장한다.
 
@@ -118,7 +118,7 @@ index(completed)
 
 ---
 
-## 5.3 `character_types`
+## 1.3 `character_types`
 
 MVP에서 제공하는 캐릭터 3종의 기본 정보를 저장한다.
 
@@ -165,7 +165,7 @@ index(active, sort_order)
 
 ---
 
-## 5.4 `user_characters`
+## 1.4 `user_characters`
 
 사용자가 생성한 캐릭터를 저장한다.
 
@@ -214,7 +214,7 @@ boredom, affection 등 추가 상태는 MVP에서 제외한다.
 
 ---
 
-## 5.5 `character_care_logs`
+## 1.5 `character_care_logs`
 
 밥 주기, 재우기, 씻기기 등 캐릭터 상태 관리 기록을 저장한다.
 
@@ -272,7 +272,7 @@ index(character_id, created_at)
 
 ---
 
-## 5.6 `wallets`
+## 1.6 `wallets`
 
 사용자의 별조각 잔액을 저장한다.
 
@@ -302,7 +302,7 @@ Mock 구매, Mock 지급, 테스트용 결제 버튼도 만들지 않는다.
 
 ---
 
-## 5.7 `star_piece_transactions`
+## 1.7 `star_piece_transactions`
 
 별조각 지급/사용 원장을 저장한다.
 
@@ -361,7 +361,7 @@ MOCK_PURCHASE, PAYMENT_CHARGE, CASH_PURCHASE 같은 reason은 MVP enum에 넣지
 
 ---
 
-## 5.8 `mission_templates`
+## 1.8 `mission_templates`
 
 AI fallback과 미션 생성을 위한 seed 미션 템플릿을 저장한다.
 
@@ -406,7 +406,7 @@ index(active, category, difficulty)
 
 ---
 
-## 5.9 `prompt_templates`
+## 1.9 `prompt_templates`
 
 AI 미션 생성과 캐릭터 말투 변환에 사용할 프롬프트 템플릿을 저장한다.
 
@@ -433,7 +433,7 @@ index(category, active)
 
 ---
 
-## 5.10 `ai_mission_generations`
+## 1.10 `ai_mission_generations`
 
 AI가 미션을 생성/선정한 결과를 저장한다.
 
@@ -472,7 +472,7 @@ AI가 없는 미션 템플릿이나 잘못된 보상을 생성하면 fallback으
 
 ---
 
-## 5.11 `user_missions`
+## 1.11 `user_missions`
 
 사용자에게 실제 제안된 미션 인스턴스다.
 
@@ -535,7 +535,7 @@ index(ai_generation_id)
 
 ---
 
-## 5.12 `mission_completion_answers`
+## 1.12 `mission_completion_answers`
 
 미션 완료 후 캐릭터가 던지는 1문항 질의응답을 저장한다.
 
@@ -585,7 +585,7 @@ missions.status를 COMPLETED로 변경한다.
 
 ---
 
-## 5.13 `mission_interactions`
+## 1.13 `mission_interactions`
 
 미션 조회, 거절, 완료 등 사용자 반응 데이터를 저장한다.
 
@@ -625,7 +625,7 @@ index(interaction_type, created_at)
 
 ---
 
-## 5.14 `ai_usage_logs`
+## 1.14 `ai_usage_logs`
 
 AI 요청 비용, 지연, 실패율을 추적한다.
 
@@ -654,7 +654,7 @@ index(status, created_at)
 
 ---
 
-## 5.15 `items`
+## 1.15 `items`
 
 상점에서 구매 가능한 아이템 마스터다.
 
@@ -692,7 +692,7 @@ index(item_type)
 
 ---
 
-## 5.16 `user_items`
+## 1.16 `user_items`
 
 사용자가 보유한 아이템과 장착 여부를 저장한다.
 
@@ -732,7 +732,7 @@ index(equipped_character_id)
 
 ---
 
-## 5.17 `achievements`  → MVP 이후
+## 1.17 `achievements`  → MVP 이후
 
 업적 마스터를 저장한다.
 
@@ -759,7 +759,7 @@ index(active, achievement_type)
 
 ---
 
-## 5.18 `user_achievements` → MVP 이후
+## 1.18 `user_achievements` → MVP 이후
 
 사용자별 업적 진행도를 저장한다.
 
@@ -794,7 +794,7 @@ MVP에서는 'NONE' 문자열을 추천한다.
 
 ---
 
-## 5.19 `attendance_records`
+## 1.19 `attendance_records`
 
 출석 기록을 저장한다.
 
@@ -815,7 +815,7 @@ index(user_id, attendance_date)
 ```
 ---
 
-## 5.21 `notifications`
+## 1.20 `notifications`
 
 앱 내부 알림을 저장한다.
 
@@ -842,7 +842,7 @@ index(notification_type, created_at)
 
 ---
 
-## 5.22 `push_subscriptions`
+## 1.21 `push_subscriptions`
 
 Web Push 알림 구독 정보를 저장한다.
 
@@ -867,7 +867,7 @@ index(user_id, active)
 
 ---
 
-## 5.23 `event_logs`
+## 1.22 `event_logs`
 
 제품 이벤트와 운영 지표 계산용 로그를 저장한다.
 
