@@ -889,11 +889,6 @@ Character Module 책임:
 
 ## 📚 참고 문서
 
-- [05. ERD (Entity-Relationship Diagram)](./05-ERD(Entity-Relationship-Diagram).md)
-- [06. REST API 명세서](./06-API-spec.md)
-- [09. AI 미션 생성 RAG 정책](./09-AI-mission-rag.md)
-- [O1. 이벤트 기반 아키텍처 설계](./O1-event-driven-architecture.md)
-
 ---
 
 ## 📝 문서 히스토리

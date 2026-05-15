@@ -2222,8 +2222,6 @@ https://api.polaris.app/v2/users/me
 
 ## 다음 문서
 
-- **07-시퀀스 다이어그램**: [07-sequence-diagrams.md](07-Screen-Design-Specification.md)
-
 ---
 
 **문서 작성 완료일**: 2026-05-14
