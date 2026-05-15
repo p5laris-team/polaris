@@ -111,43 +111,43 @@ Base Pattern: /api/{domain}/v1/{resource}
 
 ## 1. API 전체 요약
 
-| Method | Endpoint                                                     | 설명 | Request | Response | 인증 |
-|---|--------------------------------------------------------------|---|---|---|---|
-| GET | `/api/auth/v1/google/authorization-url`                      | Google OAuth2 시작 URL 조회 | query | OAuth URL | Public |
-| POST | `/api/auth/v1/google/sessions`                               | Google OAuth2 로그인 세션 생성 | body | token + user | Public |
-| POST | `⚠️ /api/auth/v1/token-refreshes`                            | 토큰 재발급 | body | token | Public |
-| DELETE | `/api/auth/v1/sessions/current`                              | 로그아웃 | none | logout result | 🔐 |
-| GET | `/api/user/v1/users/me`                                      | 내 정보 조회 | none | user | 🔐 |
-| GET | `/api/home/v1/home`                                          | 홈 화면 통합 조회 | none | home data | 🔐 |
-| GET | `💾 /api/character/v1/character-types`                       | 캐릭터 종류 조회 | query | character types | 🔐 |
-| GET | `💾 /api/character/v1/character-types/{characterTypeId}/assets` | 캐릭터 에셋 조회 | path | assets | 🔐 |
-| POST | `/api/character/v1/characters`                               | 내 캐릭터 생성 | body | character | 🔐 |
-| GET | `/api/character/v1/characters/me`                            | 내 활성 캐릭터 조회 | none | character | 🔐 |
-| PATCH | `/api/character/v1/characters/{characterId}`                 | 캐릭터 이름 수정 | path + body | character | 🔐 |
-| GET | `/api/character/v1/characters/{characterId}/status`          | 캐릭터 상태 조회 | path | status | 🔐 |
-| POST | `⚠️ /api/character/v1/characters/{characterId}/care-logs`    | 돌봄 액션 수행 | path + body | care result | 🔐 |
-| PUT | `⚠️ /api/character/v1/characters/{characterId}/equipped-skin` | 캐릭터 스킨 장착 | path + body | equipped skin | 🔐 |
-| GET | `💾 /api/onboarding/v1/questions`                            | 온보딩 질문 목록 조회 | none | questions | 🔐 |
-| GET | `/api/onboarding/v1/profiles/me`                             | 내 온보딩 프로필 조회 | none | profile | 🔐 |
-| PUT | `/api/onboarding/v1/profiles/me`                             | 내 온보딩 프로필 저장/완료 | body | profile | 🔐 |
-| GET | `/api/mission/v1/missions/current`                           | 현재 제안 미션 조회 | query | mission | 🔐 |
-| POST | `/api/mission/v1/missions/next`                              | 다음 미션 생성/제안 | body | mission | 🔐 |
-| POST | `/api/mission/v1/missions/{missionId}/rejections`            | 미션 거절 기록 생성 | path + body | rejection | 🔐 |
-| POST | `/api/mission/v1/missions/{missionId}/completion-sessions`   | 완료 질문 세션 시작 | path + body | question | 🔐 |
-| POST | `⚠️ /api/mission/v1/missions/{missionId}/completion-answers` | 완료 답변 제출 및 보상 지급 | path + body | completion result | 🔐 |
-| GET | `/api/wallet/v1/wallets/me`                                  | 별조각 잔액 조회 | none | wallet | 🔐 |
-| GET | `💾 /api/item/v1/items`                                      | 상점 아이템 목록 조회 | query cursor | items | 🔐 |
-| GET | `/api/item/v1/user-items`                                    | 내 보유 아이템 조회 | query cursor | user items | 🔐 |
-| POST | `⚠️ /api/item/v1/item-purchases`                             | 아이템 구매 | body | purchase result | 🔐 |
-| POST | `/api/share/v1/share-cards`                                  | 공유 카드 생성 | body | share card | 🔐 |
-| GET | `/api/share/v1/share-cards/{shareCardId}`                    | 공유 카드 상세 조회 | path | share card | 🔐 |
-| POST | `⚠️ /api/share/v1/share-events`                              | 공유 시도 이벤트 생성 및 보상 처리 | body | share event | 🔐 |
-| GET | `💾 /api/share/v1/share-links/{shareId}`                     | 공개 공유 링크 정보 조회 | path | shared card | Public |
-| POST | `/api/share/v1/share-clicks`                                 | 공유 링크 클릭 로그 생성 | body | click log | Public |
-| POST | `⚠️ /api/attendance/v1/attendance-records`                   | 오늘 출석 기록 생성 및 보상 지급 | body | attendance | 🔐 |
-| GET | `/api/attendance/v1/attendance-records`                      | 출석 기록 조회 | query cursor | attendance list | 🔐 |
-| GET | `/api/notification/v1/notifications`                         | 알림 목록 조회 | query cursor | notifications | 🔐 |
-| PATCH | `/api/notification/v1/notifications/{notificationId}`        | 알림 읽음 처리 | path + body | notification | 🔐 |
+| Method | Endpoint                                                        | 설명            | Request | Response | 인증 |
+|--------|-----------------------------------------------------------------|---------------|---|---|---|
+| GET    | `/api/auth/v1/google/authorization-url`                         | Google OAuth2 시작 URL 조회 | query | OAuth URL | Public |
+| POST   | `/api/auth/v1/google/sessions`                                  | Google OAuth2 로그인 세션 생성 | body | token + user | Public |
+| POST   | `⚠️ /api/auth/v1/token-refreshes`                               | 토큰 재발급        | body | token | Public |
+| DELETE | `/api/auth/v1/sessions/current`                                 | 로그아웃          | none | logout result | 🔐 |
+| GET    | `/api/user/v1/users/me`                                         | 내 정보 조회       | none | user | 🔐 |
+| GET    | `/api/home/v1/home`                                             | 홈 화면 통합 조회    | none | home data | 🔐 |
+| GET    | `💾 /api/character/v1/character-types`                          | 캐릭터 종류 조회     | query | character types | 🔐 |
+| GET    | `💾 /api/character/v1/character-types/{characterTypeId}/assets` | 캐릭터 에셋 조회     | path | assets | 🔐 |
+| POST   | `/api/character/v1/characters`                                  | 내 캐릭터 생성      | body | character | 🔐 |
+| GET    | `/api/character/v1/characters/me`                               | 내 활성 캐릭터 조회   | none | character | 🔐 |
+| PATCH  | `/api/character/v1/characters/{characterId}`                    | 캐릭터 이름 수정     | path + body | character | 🔐 |
+| GET    | `/api/character/v1/characters/{characterId}/status`             | 캐릭터 상태 조회     | path | status | 🔐 |
+| POST   | `⚠️ /api/character/v1/characters/{characterId}/care-logs`       | 돌봄 액션 수행      | path + body | care result | 🔐 |
+| PUT    | `⚠️ /api/character/v1/characters/{characterId}/equipped-skin`   | 캐릭터 스킨 장착     | path + body | equipped skin | 🔐 |
+| GET    | `💾 /api/onboarding/v1/questions`                               | 온보딩 질문 목록 조회  | none | questions | 🔐 |
+| GET    | `/api/onboarding/v1/profiles/me`                                | 내 온보딩 프로필 조회  | none | profile | 🔐 |
+| PUT    | `/api/onboarding/v1/profiles/me`                                | 내 온보딩 프로필 저장/완료 | body | profile | 🔐 |
+| GET    | `/api/mission/v1/missions/current`                              | 현재 제안 미션 조회   | query | mission | 🔐 |
+| POST   | `/api/mission/v1/missions/today-focus/next`                     | 다음 미션 요청      | body | mission | 🔐 |
+| POST   | `/api/mission/v1/missions/{missionId}/rejections`               | 미션 거절 기록 생성   | path + body | rejection | 🔐 |
+| POST   | `/api/mission/v1/missions/{missionId}/completion-sessions`      | 완료 질문 세션 시작   | path + body | question | 🔐 |
+| POST   | `⚠️ /api/mission/v1/missions/{missionId}/completion-answers`    | 완료 답변 제출 및 보상 지급 | path + body | completion result | 🔐 |
+| GET    | `/api/wallet/v1/wallets/me`                                     | 별조각 잔액 조회     | none | wallet | 🔐 |
+| GET    | `💾 /api/item/v1/items`                                         | 상점 아이템 목록 조회  | query cursor | items | 🔐 |
+| GET    | `/api/item/v1/user-items`                                       | 내 보유 아이템 조회   | query cursor | user items | 🔐 |
+| POST   | `⚠️ /api/item/v1/item-purchases`                                | 아이템 구매        | body | purchase result | 🔐 |
+| POST   | `/api/share/v1/share-cards`                                     | 공유 카드 생성      | body | share card | 🔐 |
+| GET    | `/api/share/v1/share-cards/{shareCardId}`                       | 공유 카드 상세 조회   | path | share card | 🔐 |
+| POST   | `⚠️ /api/share/v1/share-events`                                 | 공유 시도 이벤트 생성 및 보상 처리 | body | share event | 🔐 |
+| GET    | `💾 /api/share/v1/share-links/{shareId}`                        | 공개 공유 링크 정보 조회 | path | shared card | Public |
+| POST   | `/api/share/v1/share-clicks`                                    | 공유 링크 클릭 로그 생성 | body | click log | Public |
+| POST   | `⚠️ /api/attendance/v1/attendance-records`                      | 오늘 출석 기록 생성 및 보상 지급 | body | attendance | 🔐 |
+| GET    | `/api/attendance/v1/attendance-records`                         | 출석 기록 조회      | query cursor | attendance list | 🔐 |
+| GET    | `/api/notification/v1/notifications`                            | 알림 목록 조회      | query cursor | notifications | 🔐 |
+| PATCH  | `/api/notification/v1/notifications/{notificationId}`           | 알림 읽음 처리      | path + body | notification | 🔐 |
 
 ---
 
@@ -713,7 +713,7 @@ Refresh Token으로 Access Token을 재발급한다.
 
 ---
 
-### 6.3 POST `⚠️ /api/mission/v1/missions/next` 🔐
+### 6.3 POST `⚠️ /api/mission/v1/missions/today-focus/next` 🔐
 
 **설명**  
 현재 미션을 처리(완료/거절)한 후, 다음 미션을 활성화해달라고 요청한다.
@@ -753,9 +753,7 @@ Refresh Token으로 Access Token을 재발급한다.
 **Request**
 
 ```json
-{
-  "rejectedMissionId": 101
-}
+{}
 ```
 
 **Response**
@@ -784,9 +782,7 @@ Refresh Token으로 Access Token을 재발급한다.
 **Request**
 
 ```json
-{
-  "missionId": 101
-}
+{}
 ```
 
 **Response**
@@ -816,7 +812,6 @@ Refresh Token으로 Access Token을 재발급한다.
 
 ```json
 {
-  "missionId": 101,
   "answer": "책상 위에 있던 컵을 싱크대에 가져다 놨어."
 }
 ```
