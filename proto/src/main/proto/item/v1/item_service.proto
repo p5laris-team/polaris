@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package p5laris.item.v1;
+
+option java_multiple_files = true;
+option java_package = "com.p5laris.proto.item.v1";
+option java_outer_classname = "ItemProto";
+
+service ItemService {
+  rpc PingPong(PingPongRequest) returns (PingPongResponse);
+}
+
+message PingPongRequest {
+  string message = 1;
+}
+
+message PingPongResponse {
+  HealthStatus health_status = 1;
+  string message = 2;
+}
+
+enum HealthStatus {
+  HEALTH_STATUS_UNSPECIFIED = 0;
+  HEALTHY = 1;
+  UNHEALTHY = 2;
+  DEGRADED = 3;
+}
