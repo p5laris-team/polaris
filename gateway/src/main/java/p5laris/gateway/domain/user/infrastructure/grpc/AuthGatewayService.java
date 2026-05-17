@@ -71,9 +71,10 @@ public class AuthGatewayService {
     }
 
     // 로그아웃
-    public AuthResponse.Logout logout(@LoginUserId Long userId) {
+    public AuthResponse.Logout logout(Long userId, String token) {
         LogoutRequest grpcRequest = LogoutRequest.newBuilder()
                 .setUserId(userId)
+                .setAccessToken(token)
                 .build();
 
         LogoutResponse grpcResponse = userServiceStub.logout(grpcRequest);

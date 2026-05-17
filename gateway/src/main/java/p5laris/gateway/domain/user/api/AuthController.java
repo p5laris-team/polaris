@@ -55,7 +55,10 @@ public class AuthController {
      * @return
      */
     @DeleteMapping("/sessions/current")
-    public ApiResponse<AuthResponse.Logout> logout(@LoginUserId Long userId) {
-        return ApiResponse.success(authGatewayService.logout(userId));
+    public ApiResponse<AuthResponse.Logout> logout(
+            @LoginUserId Long userId,
+            @RequestHeader("Authorization") String authorizationHeader) {
+        String token = authorizationHeader.substring(7);
+        return ApiResponse.success(authGatewayService.logout(userId, token));
     }
 }

@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 import p5laris.user.domain.domain.User;
 import p5laris.user.domain.domain.UserRepository;
 import p5laris.user.core.auth.JwtProvider;
+import p5laris.user.core.auth.TokenBlacklistService;
 
 import java.net.URI;
 import java.net.URLEncoder;
@@ -25,6 +26,7 @@ public class AuthService {
 
     private final UserRepository userRepository;
     private final JwtProvider jwtProvider;
+    private final TokenBlacklistService tokenBlacklistService;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final HttpClient httpClient = HttpClient.newHttpClient();
 
@@ -127,8 +129,17 @@ public class AuthService {
     }
 
     @Transactional
-    public void logout(Long userId) {
+    public void logout(Long userId, String accessToken) {
         userRepository.findById(userId).ifPresent(User::clearRefreshToken);
+
+        if (accessToken != null && !accessToken.isBlank()) {
+            try {
+                java.util.Date expiration = jwtProvider.getExpiration(accessToken);
+                tokenBlacklistService.blacklistToken(accessToken, expiration);
+            } catch (Exception e) {
+                log.warn("Invalid token during logout: {}", e.getMessage());
+            }
+        }
     }
 
     public record LoginResult(String accessToken, String refreshToken, User user) {}

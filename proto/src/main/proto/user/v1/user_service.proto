@@ -12,6 +12,7 @@ service UserService {
   rpc LoginGoogle(LoginGoogleRequest) returns (LoginGoogleResponse);
   rpc RefreshToken(RefreshTokenRequest) returns (RefreshTokenResponse);
   rpc Logout(LogoutRequest) returns (LogoutResponse);
+  rpc GetUser(GetUserRequest) returns (GetUserResponse);
 }
 
 message GetGoogleAuthUrlRequest {
@@ -55,10 +56,19 @@ message RefreshTokenResponse {
 
 message LogoutRequest {
   int64 user_id = 1;
+  string access_token = 2;
 }
 
 message LogoutResponse {
   bool logged_out = 1;
+}
+
+message GetUserRequest {
+  int64 user_id = 1;
+}
+
+message GetUserResponse {
+  User user = 1;
 }
 
 message PingPongRequest {

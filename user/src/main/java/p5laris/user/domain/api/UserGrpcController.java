@@ -5,12 +5,15 @@ import io.grpc.stub.StreamObserver;
 import lombok.RequiredArgsConstructor;
 import net.devh.boot.grpc.server.service.GrpcService;
 import p5laris.user.domain.application.AuthService;
+import p5laris.user.domain.application.UserService;
+import p5laris.user.domain.domain.UserRepository;
 
 @GrpcService
 @RequiredArgsConstructor
 public class UserGrpcController extends UserServiceGrpc.UserServiceImplBase {
 
     private final AuthService authService;
+    private final UserService userService;
 
     @Override
     public void pingPong(PingPongRequest request, StreamObserver<PingPongResponse> responseObserver) {
@@ -87,7 +90,7 @@ public class UserGrpcController extends UserServiceGrpc.UserServiceImplBase {
     @Override
     public void logout(LogoutRequest request, StreamObserver<LogoutResponse> responseObserver) {
         try {
-            authService.logout(request.getUserId());
+            authService.logout(request.getUserId(), request.getAccessToken());
             
             LogoutResponse response = LogoutResponse.newBuilder()
                     .setLoggedOut(true)
@@ -97,6 +100,22 @@ public class UserGrpcController extends UserServiceGrpc.UserServiceImplBase {
             responseObserver.onCompleted();
         } catch (Exception e) {
             responseObserver.onError(io.grpc.Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+        }
+    }
+
+    @Override
+    public void getUser(GetUserRequest request, StreamObserver<GetUserResponse> responseObserver) {
+        try {
+            User protoUser = userService.getUser(request.getUserId());
+
+            GetUserResponse response = GetUserResponse.newBuilder()
+                    .setUser(protoUser)
+                    .build();
+
+            responseObserver.onNext(response);
+            responseObserver.onCompleted();
+        } catch (Exception e) {
+            responseObserver.onError(io.grpc.Status.NOT_FOUND.withDescription(e.getMessage()).asRuntimeException());
         }
     }
 }

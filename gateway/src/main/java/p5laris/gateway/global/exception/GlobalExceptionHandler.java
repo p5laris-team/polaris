@@ -13,6 +13,16 @@ import java.time.LocalDateTime;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    @ExceptionHandler(BusinessException.class)
+    public ResponseEntity<ApiResponse<Void>> handleBusinessException(BusinessException e, HttpServletRequest request) {
+        log.warn("BusinessException : {}", e.getMessage());
+
+        ErrorCode errorCode = e.getErrorCode();
+        return ResponseEntity
+                .status(errorCode.getStatus())
+                .body(ApiResponse.fail(buildErrorResponse(errorCode, errorCode.getMessage(), request.getRequestURI())));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleException(Exception e, HttpServletRequest request) {
         log.error("Exception : {}", e);

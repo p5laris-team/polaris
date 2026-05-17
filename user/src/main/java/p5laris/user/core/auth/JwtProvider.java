@@ -46,4 +46,13 @@ public class JwtProvider {
                 .signWith(secretKey)
                 .compact();
     }
+
+    public Date getExpiration(String token) {
+        return Jwts.parser()
+                .verifyWith(secretKey)
+                .build()
+                .parseSignedClaims(token)
+                .getPayload()
+                .getExpiration();
+    }
 }
