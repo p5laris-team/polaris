@@ -1,4 +1,4 @@
-package p5laris.gateway.api.auth;
+package p5laris.gateway.domain.user.api.dto;
 
 import lombok.Builder;
 import lombok.Getter;

@@ -1,37 +1,37 @@
-package p5laris.gateway.api.auth;
+package p5laris.gateway.domain.user.infrastructure.grpc;
 
 import com.p5laris.proto.user.v1.*;
 import jakarta.validation.Valid;
-import lombok.RequiredArgsConstructor;
 import net.devh.boot.grpc.client.inject.GrpcClient;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.stereotype.Service;
+import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.RequestBody;
+import p5laris.gateway.domain.user.api.dto.AuthRequest;
+import p5laris.gateway.domain.user.api.dto.AuthResponse;
 import p5laris.gateway.global.auth.LoginUserId;
-import p5laris.gateway.global.common.ApiResponse;
 
-@RestController
-@RequestMapping("/api/auth/v1")
-@RequiredArgsConstructor
-public class AuthController {
+@Service
+public class AuthGatewayService {
 
     @GrpcClient("user")
     private UserServiceGrpc.UserServiceBlockingStub userServiceStub;
 
-    @GetMapping("/google/authorization-url")
-    public ApiResponse<AuthResponse.GoogleAuthUrl> getAuthorizationUrl(@Valid @ModelAttribute AuthRequest.GoogleAuthUrl request) {
+    // 구글 로그인 URL 얻기
+    public AuthResponse.GoogleAuthUrl getAuthorizationUrl(@Valid @ModelAttribute AuthRequest.GoogleAuthUrl request) {
         GetGoogleAuthUrlRequest grpcRequest = GetGoogleAuthUrlRequest.newBuilder()
                 .setRedirectUri(request.getRedirectUri())
                 .build();
 
         GetGoogleAuthUrlResponse grpcResponse = userServiceStub.getGoogleAuthUrl(grpcRequest);
 
-        return ApiResponse.success(AuthResponse.GoogleAuthUrl.builder()
+        return AuthResponse.GoogleAuthUrl.builder()
                 .authorizationUrl(grpcResponse.getAuthorizationUrl())
                 .state(grpcResponse.getState())
-                .build());
+                .build();
     }
 
-    @PostMapping("/google/sessions")
-    public ApiResponse<AuthResponse.LoginGoogle> loginGoogle(@Valid @RequestBody AuthRequest.LoginGoogle request) {
+    // 구글 세션 생성 (로그인 처리 및 JWT 발급)
+    public AuthResponse.LoginGoogle loginGoogle(@Valid @RequestBody AuthRequest.LoginGoogle request) {
         LoginGoogleRequest grpcRequest = LoginGoogleRequest.newBuilder()
                 .setCode(request.getCode())
                 .setState(request.getState())
@@ -49,37 +49,37 @@ public class AuthController {
                 .role(protoUser.getRole())
                 .build();
 
-        return ApiResponse.success(AuthResponse.LoginGoogle.builder()
+        return AuthResponse.LoginGoogle.builder()
                 .accessToken(grpcResponse.getAccessToken())
                 .refreshToken(grpcResponse.getRefreshToken())
                 .user(userDto)
-                .build());
+                .build();
     }
 
-    @PostMapping("/token-refreshes")
-    public ApiResponse<AuthResponse.RefreshToken> refreshToken(@Valid @RequestBody AuthRequest.RefreshToken request) {
+    // 토큰 재발급
+    public AuthResponse.RefreshToken refreshToken(@Valid @RequestBody AuthRequest.RefreshToken request) {
         RefreshTokenRequest grpcRequest = RefreshTokenRequest.newBuilder()
                 .setRefreshToken(request.getRefreshToken())
                 .build();
 
         RefreshTokenResponse grpcResponse = userServiceStub.refreshToken(grpcRequest);
 
-        return ApiResponse.success(AuthResponse.RefreshToken.builder()
+        return AuthResponse.RefreshToken.builder()
                 .accessToken(grpcResponse.getAccessToken())
                 .refreshToken(grpcResponse.getRefreshToken())
-                .build());
+                .build();
     }
 
-    @DeleteMapping("/sessions/current")
-    public ApiResponse<AuthResponse.Logout> logout(@LoginUserId Long userId) {
+    // 로그아웃
+    public AuthResponse.Logout logout(@LoginUserId Long userId) {
         LogoutRequest grpcRequest = LogoutRequest.newBuilder()
                 .setUserId(userId)
                 .build();
 
         LogoutResponse grpcResponse = userServiceStub.logout(grpcRequest);
 
-        return ApiResponse.success(AuthResponse.Logout.builder()
+        return AuthResponse.Logout.builder()
                 .loggedOut(grpcResponse.getLoggedOut())
-                .build());
+                .build();
     }
 }

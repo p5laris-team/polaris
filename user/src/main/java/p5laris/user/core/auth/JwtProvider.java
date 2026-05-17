@@ -1,4 +1,4 @@
-package p5laris.user.domain.infrastructure.auth;
+package p5laris.user.core.auth;
 
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;

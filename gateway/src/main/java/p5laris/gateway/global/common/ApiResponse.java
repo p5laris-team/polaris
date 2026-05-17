@@ -2,6 +2,7 @@ package p5laris.gateway.global.common;
 
 import lombok.AllArgsConstructor;
 import lombok.Getter;
+import p5laris.gateway.global.exception.ErrorResponse;
 
 @Getter
 @AllArgsConstructor
