@@ -39,3 +39,13 @@ grpc:
     ai:
       address: static://localhost:9095
       negotiationType: plaintext
+
+jwt:
+  secret: dummy_jwt_secret_key_which_is_very_long_for_hmac_sha256_algorithm_to_work_properly
+  access-expiration-ms: 3600000
+  refresh-expiration-ms: 1209600000
+
+oauth:
+  google:
+    client-id: 1042509386777-kalf6au8md4ef7n91mi5mb7c1pfg528u.apps.googleusercontent.com
+    client-secret: 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

@@ -1,0 +1,136 @@
+package p5laris.user.domain.application;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import p5laris.user.domain.domain.User;
+import p5laris.user.domain.domain.UserRepository;
+import p5laris.user.domain.infrastructure.auth.JwtProvider;
+
+import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class AuthService {
+
+    private final UserRepository userRepository;
+    private final JwtProvider jwtProvider;
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final HttpClient httpClient = HttpClient.newHttpClient();
+
+    @Value("${oauth.google.client-id}")
+    private String clientId;
+
+    @Value("${oauth.google.client-secret}")
+    private String clientSecret;
+
+    private static final String GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
+    private static final String GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
+    private static final String GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo";
+
+    public String getGoogleAuthUrl(String redirectUri, String state) {
+        return GOOGLE_AUTH_URL + "?client_id=" + clientId
+                + "&redirect_uri=" + URLEncoder.encode(redirectUri, StandardCharsets.UTF_8)
+                + "&response_type=code"
+                + "&scope=email%20profile"
+                + "&state=" + state;
+    }
+
+    @Transactional
+    public LoginResult loginGoogle(String code, String redirectUri) {
+        try {
+            // 1. Get Access Token from Google
+            String tokenRequestBody = "code=" + URLEncoder.encode(code, StandardCharsets.UTF_8)
+                    + "&client_id=" + clientId
+                    + "&client_secret=" + clientSecret
+                    + "&redirect_uri=" + URLEncoder.encode(redirectUri, StandardCharsets.UTF_8)
+                    + "&grant_type=authorization_code";
+
+            HttpRequest tokenRequest = HttpRequest.newBuilder()
+                    .uri(URI.create(GOOGLE_TOKEN_URL))
+                    .header("Content-Type", "application/x-www-form-urlencoded")
+                    .POST(HttpRequest.BodyPublishers.ofString(tokenRequestBody))
+                    .build();
+
+            HttpResponse<String> tokenResponse = httpClient.send(tokenRequest, HttpResponse.BodyHandlers.ofString());
+            if (tokenResponse.statusCode() != 200) {
+                log.error("Google token response: {}", tokenResponse.body());
+                throw new RuntimeException("Failed to get Google access token");
+            }
+
+            JsonNode tokenNode = objectMapper.readTree(tokenResponse.body());
+            String googleAccessToken = tokenNode.get("access_token").asText();
+
+            // 2. Get User Info from Google
+            HttpRequest userinfoRequest = HttpRequest.newBuilder()
+                    .uri(URI.create(GOOGLE_USERINFO_URL))
+                    .header("Authorization", "Bearer " + googleAccessToken)
+                    .GET()
+                    .build();
+
+            HttpResponse<String> userinfoResponse = httpClient.send(userinfoRequest, HttpResponse.BodyHandlers.ofString());
+            if (userinfoResponse.statusCode() != 200) {
+                throw new RuntimeException("Failed to get Google user info");
+            }
+
+            JsonNode userNode = objectMapper.readTree(userinfoResponse.body());
+            String email = userNode.get("email").asText();
+            String name = userNode.has("name") ? userNode.get("name").asText() : "별따라걷기";
+
+            // 3. Find or Create User
+            User user = userRepository.findByEmail(email).orElseGet(() -> {
+                User newUser = User.builder()
+                        .email(email)
+                        .nickname(name)
+                        .provider("GOOGLE")
+                        .role("USER")
+                        .status("ACTIVE")
+                        .build();
+                return userRepository.save(newUser);
+            });
+
+            // 4. Generate Tokens
+            String accessToken = jwtProvider.generateAccessToken(user.getId());
+            String refreshToken = jwtProvider.generateRefreshToken(user.getId());
+
+            user.updateRefreshToken(refreshToken);
+
+            return new LoginResult(accessToken, refreshToken, user);
+
+        } catch (Exception e) {
+            log.error("Google login failed", e);
+            throw new RuntimeException("Google login failed", e);
+        }
+    }
+
+    @Transactional
+    public RefreshResult refreshToken(String refreshToken) {
+        User user = userRepository.findByRefreshToken(refreshToken)
+                .orElseThrow(() -> new RuntimeException("Invalid refresh token"));
+
+        String newAccessToken = jwtProvider.generateAccessToken(user.getId());
+        String newRefreshToken = jwtProvider.generateRefreshToken(user.getId());
+
+        user.updateRefreshToken(newRefreshToken);
+
+        return new RefreshResult(newAccessToken, newRefreshToken);
+    }
+
+    @Transactional
+    public void logout(Long userId) {
+        userRepository.findById(userId).ifPresent(User::clearRefreshToken);
+    }
+
+    public record LoginResult(String accessToken, String refreshToken, User user) {}
+    public record RefreshResult(String accessToken, String refreshToken) {}
+}
