@@ -6,6 +6,12 @@ plugins {
 group = 'p5laris'
 version = '0.0.1'
 
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
 dependencies {
     api 'io.grpc:grpc-stub:1.63.0'
     api 'io.grpc:grpc-protobuf:1.63.0'
