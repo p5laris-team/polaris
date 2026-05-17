@@ -1,20 +1,22 @@
 spring:
   application:
     name: user
+
   data:
     redis:
-      host: localhost
-      port: 6379
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
 
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/users}
+    url: ${DB_URL}
     driver-class-name: org.postgresql.Driver
-    username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:12345678}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
 
   jpa:
     hibernate:
       ddl-auto: none
+
     properties:
       hibernate:
         format_sql: true
@@ -27,29 +29,29 @@ flyway:
 
 grpc:
   server:
-    port: 9091
+    port: ${GRPC_SERVER_PORT}
     reflection-service-enabled: true
 
   client:
     character:
-      address: static://localhost:9092
+      address: ${CHARACTER_GRPC_ADDRESS}
       negotiationType: plaintext
     item:
-      address: static://localhost:9093
+      address: ${ITEM_GRPC_ADDRESS}
       negotiationType: plaintext
     mission:
-      address: static://localhost:9094
+      address: ${MISSION_GRPC_ADDRESS}
       negotiationType: plaintext
     ai:
-      address: static://localhost:9095
+      address: ${AI_GRPC_ADDRESS}
       negotiationType: plaintext
 
 jwt:
-  secret: dummy_jwt_secret_key_which_is_very_long_for_hmac_sha256_algorithm_to_work_properly
-  access-expiration-ms: 3600000
-  refresh-expiration-ms: 1209600000
+  secret: ${JWT_SECRET}
+  access-expiration-ms: ${JWT_ACCESS_EXPIRATION_MS}
+  refresh-expiration-ms: ${JWT_REFRESH_EXPIRATION_MS}
 
 oauth:
   google:
-    client-id: 1042509386777-kalf6au8md4ef7n91mi5mb7c1pfg528u.apps.googleusercontent.com
-    client-secret: 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
+    client-id: ${GOOGLE_CLIENT_ID}
+    client-secret: ${GOOGLE_CLIENT_SECRET}
