@@ -23,7 +23,7 @@ public class AuthInterceptor implements HandlerInterceptor {
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
         String token = extractToken(request);
         if (!StringUtils.hasText(token)) {
-            throw new RuntimeException("Missing Authorization header");
+            throw new BusinessException(CommonErrorCode.INVALID_TOKEN);
         }
 
         if (Boolean.TRUE.equals(redisTemplate.hasKey("blacklist:" + token))) {
@@ -36,7 +36,7 @@ public class AuthInterceptor implements HandlerInterceptor {
             return true;
         } catch (Exception e) {
             log.error("Invalid token", e);
-            throw new RuntimeException("Invalid token", e);
+            throw new BusinessException(CommonErrorCode.INVALID_TOKEN);
         }
     }
 
