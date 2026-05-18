@@ -47,5 +47,29 @@ public class CharacterGatewayService {
                 .items(items)
                 .build();
     }
+
+    /**
+     * Get character assets (API spec 4.2).
+     */
+    public p5laris.gateway.domain.character.api.dto.CharacterAssetsResponse getCharacterAssets(Long characterTypeId) {
+        GetCharacterAssetsResponse response = characterStub.getCharacterAssets(
+                GetCharacterAssetsRequest.newBuilder()
+                        .setCharacterTypeId(characterTypeId)
+                        .build()
+        );
+
+        List<p5laris.gateway.domain.character.api.dto.CharacterAssetsResponse.AssetItem> items = response.getItemsList()
+                .stream()
+                .map(item -> p5laris.gateway.domain.character.api.dto.CharacterAssetsResponse.AssetItem.builder()
+                        .assetType(item.getAssetType())
+                        .assetUrl(item.getAssetUrl())
+                        .build())
+                .toList();
+
+        return p5laris.gateway.domain.character.api.dto.CharacterAssetsResponse.builder()
+                .characterTypeId(response.getCharacterTypeId())
+                .items(items)
+                .build();
+    }
 }
 

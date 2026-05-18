@@ -31,5 +31,15 @@ public class CharacterController {
     public ApiResponse<CharacterTypesResponse> getCharacterTypes() {
         return ApiResponse.success(characterGatewayService.getCharacterTypes());
     }
+
+    /**
+     * Get character assets (API spec 4.2).
+     * GET /api/character/v1/character-types/{characterTypeId}/assets
+     */
+    @GetMapping("/v1/character-types/{characterTypeId}/assets")
+    public ApiResponse<p5laris.gateway.domain.character.api.dto.CharacterAssetsResponse> getCharacterAssets(
+            @org.springframework.web.bind.annotation.PathVariable Long characterTypeId) {
+        return ApiResponse.success(characterGatewayService.getCharacterAssets(characterTypeId));
+    }
 }
 
