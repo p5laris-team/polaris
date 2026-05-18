@@ -8,6 +8,11 @@ option java_outer_classname = "MissionProto";
 
 service MissionService {
   rpc PingPong(PingPongRequest) returns (PingPongResponse);
+  rpc GetCurrentMission(GetCurrentMissionRequest) returns (GetCurrentMissionResponse);
+  rpc CreateNextMission(CreateNextMissionRequest) returns (CreateNextMissionResponse);
+  rpc RejectMission(RejectMissionRequest) returns (RejectMissionResponse);
+  rpc StartCompletionSession(StartCompletionSessionRequest) returns (StartCompletionSessionResponse);
+  rpc SubmitCompletionAnswer(SubmitCompletionAnswerRequest) returns (SubmitCompletionAnswerResponse);
 }
 
 message PingPongRequest {
@@ -24,4 +29,138 @@ enum HealthStatus {
   HEALTHY = 1;
   UNHEALTHY = 2;
   DEGRADED = 3;
+}
+
+message GetCurrentMissionRequest {
+  int64 user_id = 1;
+  int64 character_id = 2;
+}
+
+message GetCurrentMissionResponse {
+  Mission mission = 1;
+}
+
+message CreateNextMissionRequest {
+  int64 user_id = 1;
+  int64 character_id = 2;
+  int64 last_mission_id = 3;
+}
+
+message CreateNextMissionResponse {
+  Mission mission = 1;
+}
+
+message RejectMissionRequest {
+  int64 user_id = 1;
+  int64 character_id = 2;
+  int64 mission_id = 3;
+}
+
+message RejectMissionResponse {
+  int64 mission_id = 1;
+  MissionStatus status = 2;
+  string rejected_at = 3;
+  string character_message = 4;
+  MissionSummary next_mission = 5;
+}
+
+message StartCompletionSessionRequest {
+  int64 user_id = 1;
+  int64 character_id = 2;
+  int64 mission_id = 3;
+}
+
+message StartCompletionSessionResponse {
+  int64 mission_id = 1;
+  MissionStatus status = 2;
+  CompletionQuestion question = 3;
+}
+
+message SubmitCompletionAnswerRequest {
+  int64 user_id = 1;
+  int64 character_id = 2;
+  int64 mission_id = 3;
+  string answer = 4;
+}
+
+message SubmitCompletionAnswerResponse {
+  int64 mission_id = 1;
+  MissionStatus status = 2;
+  CompletionAnswer answer = 3;
+  MissionReward reward = 4;
+  WalletSnapshot wallet = 5;
+  string character_message = 6;
+}
+
+message Mission {
+  int64 id = 1;
+  string mission_date = 2;
+  int32 stack_order = 3;
+  string title = 4;
+  string description = 5;
+  string character_message = 6;
+  MissionCategory category = 7;
+  MissionDifficulty difficulty = 8;
+  int32 reward_star_piece = 9;
+  MissionStatus status = 10;
+}
+
+message MissionSummary {
+  int64 id = 1;
+  string title = 2;
+  int32 stack_order = 3;
+}
+
+message CompletionQuestion {
+  int64 id = 1;
+  string text = 2;
+  CompletionInputType input_type = 3;
+  int32 min_length = 4;
+  int32 max_length = 5;
+}
+
+message CompletionAnswer {
+  string text = 1;
+  string answered_at = 2;
+}
+
+message MissionReward {
+  int32 star_piece = 1;
+  int32 affection = 2;
+}
+
+message WalletSnapshot {
+  int32 star_piece = 1;
+}
+
+enum MissionStatus {
+  MISSION_STATUS_UNSPECIFIED = 0;
+  MISSION_STATUS_GENERATED = 1;
+  MISSION_STATUS_OFFERED = 2;
+  MISSION_STATUS_ANSWERING = 3;
+  MISSION_STATUS_COMPLETED = 4;
+  MISSION_STATUS_REJECTED = 5;
+  MISSION_STATUS_EXPIRED = 6;
+}
+
+enum MissionCategory {
+  MISSION_CATEGORY_UNSPECIFIED = 0;
+  MISSION_CATEGORY_BASIC_ROUTINE = 1;
+  MISSION_CATEGORY_SPACE_RESET = 2;
+  MISSION_CATEGORY_BODY_CARE = 3;
+  MISSION_CATEGORY_OUTDOOR_LIGHT = 4;
+  MISSION_CATEGORY_MIND_RECORD = 5;
+  MISSION_CATEGORY_REST_RECOVERY = 6;
+  MISSION_CATEGORY_SOCIAL_LIGHT = 7;
+}
+
+enum MissionDifficulty {
+  MISSION_DIFFICULTY_UNSPECIFIED = 0;
+  MISSION_DIFFICULTY_EASY = 1;
+  MISSION_DIFFICULTY_NORMAL = 2;
+}
+
+enum CompletionInputType {
+  COMPLETION_INPUT_TYPE_UNSPECIFIED = 0;
+  COMPLETION_INPUT_TYPE_TEXT = 1;
 }
