@@ -74,5 +74,16 @@ public class CharacterController {
             @org.springframework.web.bind.annotation.RequestBody p5laris.gateway.domain.character.api.dto.UpdateCharacterNameRequest request) {
         return ApiResponse.success(characterGatewayService.updateCharacterName(characterId, userId, request));
     }
+
+    /**
+     * Get character status (API spec 4.6).
+     * GET /api/character/v1/characters/{characterId}/status
+     */
+    @GetMapping("/v1/characters/{characterId}/status")
+    public ApiResponse<p5laris.gateway.domain.character.api.dto.CharacterStatusResponse> getCharacterStatus(
+            @org.springframework.web.bind.annotation.PathVariable Long characterId,
+            @p5laris.gateway.global.security.annotation.LoginUserId Long userId) {
+        return ApiResponse.success(characterGatewayService.getCharacterStatus(characterId, userId));
+    }
 }
 

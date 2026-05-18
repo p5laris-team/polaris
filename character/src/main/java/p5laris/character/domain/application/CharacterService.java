@@ -142,4 +142,48 @@ public class CharacterService {
                 .updatedAt(userCharacter.getUpdatedAt())
                 .build();
     }
+
+    /**
+     * Get character status (API spec 4.6).
+     */
+    @Transactional(readOnly = true)
+    public p5laris.character.domain.application.dto.CharacterStatusResponse getCharacterStatus(Long characterId, Long userId) {
+        p5laris.character.domain.domain.entity.UserCharacter userCharacter = userCharacterRepository.findById(characterId)
+                .orElseThrow(() -> new IllegalArgumentException("Character not found: " + characterId));
+
+        if (!userCharacter.getUserId().equals(userId)) {
+            throw new IllegalArgumentException("User does not own this character");
+        }
+
+        return p5laris.character.domain.application.dto.CharacterStatusResponse.builder()
+                .characterId(userCharacter.getId())
+                .states(p5laris.character.domain.application.dto.CharacterStatusResponse.States.builder()
+                        .hunger(buildStateDetail(userCharacter.getFullness(), "든든함", "적당함", "배고픔"))
+                        .energy(buildStateDetail(userCharacter.getEnergy(), "활기참", "졸림", "지침"))
+                        .affection(buildStateDetail(userCharacter.getAffection(), "행복함", "평온함", "쓸쓸함"))
+                        .build())
+                .build();
+    }
+
+    private p5laris.character.domain.application.dto.CharacterStatusResponse.StateDetail buildStateDetail(int value, String goodLabel, String normalLabel, String badLabel) {
+        String grade;
+        String label;
+
+        if (value >= 70) {
+            grade = "GOOD";
+            label = goodLabel;
+        } else if (value >= 30) {
+            grade = "NORMAL";
+            label = normalLabel;
+        } else {
+            grade = "BAD";
+            label = badLabel;
+        }
+
+        return p5laris.character.domain.application.dto.CharacterStatusResponse.StateDetail.builder()
+                .value(value)
+                .label(label)
+                .grade(grade)
+                .build();
+    }
 }

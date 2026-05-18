@@ -143,5 +143,36 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
         responseObserver.onNext(response);
         responseObserver.onCompleted();
     }
+
+    /**
+     * Get character status (API spec 4.6).
+     */
+    @Override
+    public void getCharacterStatus(GetCharacterStatusRequest request,
+                                   StreamObserver<GetCharacterStatusResponse> responseObserver) {
+        var result = characterService.getCharacterStatus(request.getCharacterId(), request.getUserId());
+
+        GetCharacterStatusResponse response = GetCharacterStatusResponse.newBuilder()
+                .setCharacterId(result.characterId())
+                .setHunger(com.p5laris.proto.character.v1.CharacterStateDetail.newBuilder()
+                        .setValue(result.states().hunger().value())
+                        .setLabel(result.states().hunger().label())
+                        .setGrade(result.states().hunger().grade())
+                        .build())
+                .setEnergy(com.p5laris.proto.character.v1.CharacterStateDetail.newBuilder()
+                        .setValue(result.states().energy().value())
+                        .setLabel(result.states().energy().label())
+                        .setGrade(result.states().energy().grade())
+                        .build())
+                .setAffection(com.p5laris.proto.character.v1.CharacterStateDetail.newBuilder()
+                        .setValue(result.states().affection().value())
+                        .setLabel(result.states().affection().label())
+                        .setGrade(result.states().affection().grade())
+                        .build())
+                .build();
+
+        responseObserver.onNext(response);
+        responseObserver.onCompleted();
+    }
 }
 

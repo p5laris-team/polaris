@@ -167,5 +167,38 @@ public class CharacterGatewayService {
                 .updatedAt(java.time.Instant.parse(response.getUpdatedAt()))
                 .build();
     }
+
+    /**
+     * Get character status (API spec 4.6).
+     */
+    public p5laris.gateway.domain.character.api.dto.CharacterStatusResponse getCharacterStatus(Long characterId, Long userId) {
+        com.p5laris.proto.character.v1.GetCharacterStatusResponse response = characterStub.getCharacterStatus(
+                com.p5laris.proto.character.v1.GetCharacterStatusRequest.newBuilder()
+                        .setCharacterId(characterId)
+                        .setUserId(userId)
+                        .build()
+        );
+
+        return p5laris.gateway.domain.character.api.dto.CharacterStatusResponse.builder()
+                .characterId(response.getCharacterId())
+                .states(p5laris.gateway.domain.character.api.dto.CharacterStatusResponse.States.builder()
+                        .hunger(p5laris.gateway.domain.character.api.dto.CharacterStatusResponse.StateDetail.builder()
+                                .value(response.getHunger().getValue())
+                                .label(response.getHunger().getLabel())
+                                .grade(response.getHunger().getGrade())
+                                .build())
+                        .energy(p5laris.gateway.domain.character.api.dto.CharacterStatusResponse.StateDetail.builder()
+                                .value(response.getEnergy().getValue())
+                                .label(response.getEnergy().getLabel())
+                                .grade(response.getEnergy().getGrade())
+                                .build())
+                        .affection(p5laris.gateway.domain.character.api.dto.CharacterStatusResponse.StateDetail.builder()
+                                .value(response.getAffection().getValue())
+                                .label(response.getAffection().getLabel())
+                                .grade(response.getAffection().getGrade())
+                                .build())
+                        .build())
+                .build();
+    }
 }
 

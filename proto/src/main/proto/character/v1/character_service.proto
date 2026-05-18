@@ -13,6 +13,7 @@ service CharacterService {
   rpc CreateCharacter(CreateCharacterRequest) returns (CreateCharacterResponse);
   rpc GetMyCharacter(GetMyCharacterRequest) returns (GetMyCharacterResponse);
   rpc UpdateCharacterName(UpdateCharacterNameRequest) returns (UpdateCharacterNameResponse);
+  rpc GetCharacterStatus(GetCharacterStatusRequest) returns (GetCharacterStatusResponse);
 }
 
 // GetCharacterTypes: returns active character types ordered by sort_order
@@ -109,4 +110,23 @@ message UpdateCharacterNameResponse {
   int64 id = 1;
   string name = 2;
   string updated_at = 3;
+}
+
+// GetCharacterStatus: returns character status values and labels
+message GetCharacterStatusRequest {
+  int64 character_id = 1;
+  int64 user_id = 2; // ownership validation
+}
+
+message GetCharacterStatusResponse {
+  int64 character_id = 1;
+  CharacterStateDetail hunger = 2;
+  CharacterStateDetail energy = 3;
+  CharacterStateDetail affection = 4;
+}
+
+message CharacterStateDetail {
+  int32 value = 1;
+  string label = 2;
+  string grade = 3;
 }
