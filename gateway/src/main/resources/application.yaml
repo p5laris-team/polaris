@@ -1,24 +1,34 @@
 server:
-  port: 8080
+  port: ${SERVER_PORT}
 
 spring:
   application:
     name: gateway
 
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
+
 grpc:
   client:
     user:
-      address: static://localhost:9091
+      address: ${USER_GRPC_ADDRESS}
       negotiationType: plaintext
     character:
-      address: static://localhost:9092
+      address: ${CHARACTER_GRPC_ADDRESS}
       negotiationType: plaintext
     item:
-      address: static://localhost:9093
+      address: ${ITEM_GRPC_ADDRESS}
       negotiationType: plaintext
     mission:
-      address: static://localhost:9094
+      address: ${MISSION_GRPC_ADDRESS}
       negotiationType: plaintext
     ai:
-      address: static://localhost:9095
+      address: ${AI_GRPC_ADDRESS}
       negotiationType: plaintext
+
+jwt:
+  secret: ${JWT_SECRET}
+  access-expiration-ms: ${JWT_ACCESS_EXPIRATION_MS}
+  refresh-expiration-ms: ${JWT_REFRESH_EXPIRATION_MS}
