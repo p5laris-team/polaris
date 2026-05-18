@@ -49,5 +49,28 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
         responseObserver.onNext(response);
         responseObserver.onCompleted();
     }
+
+    /**
+     * Get character assets (API spec 4.2).
+     */
+    @Override
+    public void getCharacterAssets(GetCharacterAssetsRequest request,
+                                   StreamObserver<GetCharacterAssetsResponse> responseObserver) {
+        var items = characterService.getCharacterAssets(request.getCharacterTypeId())
+                .stream()
+                .map(a -> CharacterAssetItem.newBuilder()
+                        .setAssetType(a.assetType())
+                        .setAssetUrl(a.assetUrl())
+                        .build())
+                .toList();
+
+        GetCharacterAssetsResponse response = GetCharacterAssetsResponse.newBuilder()
+                .setCharacterTypeId(request.getCharacterTypeId())
+                .addAllItems(items)
+                .build();
+
+        responseObserver.onNext(response);
+        responseObserver.onCompleted();
+    }
 }
 

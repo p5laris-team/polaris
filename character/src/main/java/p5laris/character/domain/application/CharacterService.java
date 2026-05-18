@@ -4,7 +4,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import p5laris.character.domain.application.dto.CharacterAssetResponse;
 import p5laris.character.domain.application.dto.CharacterTypeResponse;
+import p5laris.character.domain.domain.repository.CharacterAssetRepository;
 import p5laris.character.domain.domain.repository.CharacterTypeRepository;
 
 import java.util.List;
@@ -15,13 +17,11 @@ import java.util.List;
 public class CharacterService {
 
     private final CharacterTypeRepository characterTypeRepository;
+    private final CharacterAssetRepository characterAssetRepository;
 
     /**
-     * 선택 가능한 캐릭터 타입 목록 조회.
-     * API 명세서 §4.1 GET /api/character/v1/character-types
-     *
-     * - active=true인 캐릭터 타입만 반환한다.
-     * - sortOrder 오름차순으로 정렬한다.
+     * Get active character types ordered by sort_order ascending.
+     * API spec 4.1 GET /api/character/v1/character-types
      */
     @Transactional(readOnly = true)
     public List<CharacterTypeResponse> getCharacterTypes() {
@@ -34,6 +34,26 @@ public class CharacterService {
                         .summary(ct.getSummary())
                         .sampleLine(ct.getSampleLine())
                         .sortOrder(ct.getSortOrder())
+                        .build())
+                .toList();
+    }
+
+    /**
+     * Get all assets for a character type.
+     * API spec 4.2 GET /api/character/v1/character-types/{characterTypeId}/assets
+     *
+     * Throws IllegalArgumentException if the character type does not exist.
+     */
+    @Transactional(readOnly = true)
+    public List<CharacterAssetResponse> getCharacterAssets(Long characterTypeId) {
+        if (!characterTypeRepository.existsById(characterTypeId)) {
+            throw new IllegalArgumentException("CharacterType not found: " + characterTypeId);
+        }
+        return characterAssetRepository.findByCharacterTypeId(characterTypeId)
+                .stream()
+                .map(a -> CharacterAssetResponse.builder()
+                        .assetType(a.getAssetType())
+                        .assetUrl(a.getAssetUrl())
                         .build())
                 .toList();
     }

@@ -8,9 +8,12 @@ import java.util.List;
 
 public interface CharacterAssetRepository extends JpaRepository<CharacterAsset, Long> {
 
-    /** 캐릭터 타입에 속한 모든 에셋 조회 */
+    /** Find all assets belonging to the given character type (by FK id) */
+    List<CharacterAsset> findByCharacterTypeId(Long characterTypeId);
+
+    /** Find all assets belonging to the given CharacterType entity */
     List<CharacterAsset> findByCharacterType(CharacterType characterType);
 
-    /** 캐릭터 타입 ID와 에셋 타입으로 조회 */
+    /** Find assets by character type id and asset type */
     List<CharacterAsset> findByCharacterTypeIdAndAssetType(Long characterTypeId, String assetType);
 }
