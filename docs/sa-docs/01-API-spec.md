@@ -144,8 +144,8 @@ Base Pattern: /api/{domain}/v1/{resource}
 | POST   | `⚠️ /api/share/v1/share-events`                                 | 공유 시도 이벤트 생성 및 보상 처리 | body | share event | 🔐 |
 | GET    | `💾 /api/share/v1/share-links/{shareId}`                        | 공개 공유 링크 정보 조회 | path | shared card | Public |
 | POST   | `/api/share/v1/share-clicks`                                    | 공유 링크 클릭 로그 생성 | body | click log | Public |
-| POST   | `⚠️ /api/attendance/v1/attendance-records`                      | 오늘 출석 기록 생성 및 보상 지급 | body | attendance | 🔐 |
-| GET    | `/api/attendance/v1/attendance-records`                         | 출석 기록 조회      | query cursor | attendance list | 🔐 |
+| POST   | `⚠️ /api/attendance/v1/attendance-records`                      | 오늘 출석 기록 생성 및 보상 지급 | none | attendance | 🔐 |
+| GET    | `/api/attendance/v1/attendance-records`                         | 출석 기록 조회      | query year, month | attendance list | 🔐 |
 | GET    | `/api/notification/v1/notifications`                            | 알림 목록 조회      | query cursor | notifications | 🔐 |
 | PATCH  | `/api/notification/v1/notifications/{notificationId}`           | 알림 읽음 처리      | path + body | notification | 🔐 |
 
@@ -1127,22 +1127,17 @@ Refresh Token으로 Access Token을 재발급한다.
 **Request**
 
 ```json
-{
-  "attendanceDate": "2026-05-15"
-}
+{}
 ```
 
 **Response**
 
 ```json
 {
+  "id": 1,
   "attendanceDate": "2026-05-15",
-  "streakCount": 3,
-  "rewardStarPiece": 3,
-  "alreadyChecked": false,
-  "wallet": {
-    "starPiece": 80
-  }
+  "rewardStarPiece": 10,
+  "streakCount": 1
 }
 ```
 
@@ -1151,16 +1146,14 @@ Refresh Token으로 Access Token을 재발급한다.
 ### 10.2 GET `/api/attendance/v1/attendance-records` 🔐
 
 **설명**  
-내 출석 기록을 조회한다.
+달력 UI에 매칭하기 위해 특정 월(Month)의 내 출석 기록 리스트를 조회한다.
 
 **Request**
 
 ```json
 {
-  "from": "2026-05-01",
-  "to": "2026-05-31",
-  "cursor": null,
-  "size": 31
+  "year": 2026,
+  "month": 5
 }
 ```
 
@@ -1168,18 +1161,20 @@ Refresh Token으로 Access Token을 재발급한다.
 
 ```json
 {
-  "items": [
+  "records": [
     {
+      "id": 1,
+      "attendanceDate": "2026-05-01",
+      "rewardStarPiece": 10,
+      "streakCount": 1
+    },
+    {
+      "id": 2,
       "attendanceDate": "2026-05-15",
-      "streakCount": 3,
-      "rewardStarPiece": 3
+      "rewardStarPiece": 10,
+      "streakCount": 2
     }
-  ],
-  "pageInfo": {
-    "nextCursor": null,
-    "hasNext": false,
-    "size": 31
-  }
+  ]
 }
 ```
 

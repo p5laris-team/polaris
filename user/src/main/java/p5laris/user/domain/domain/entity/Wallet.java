@@ -1,4 +1,4 @@
-package p5laris.user.domain.domain;
+package p5laris.user.domain.domain.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
