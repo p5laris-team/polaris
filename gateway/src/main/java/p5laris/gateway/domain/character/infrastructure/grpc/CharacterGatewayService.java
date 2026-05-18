@@ -99,5 +99,52 @@ public class CharacterGatewayService {
                 .createdAt(java.time.Instant.parse(response.getCreatedAt()))
                 .build();
     }
+
+    // TODO [Item Domain Integration]: ItemGatewayService 주입 필요 (현재 주석 처리)
+    // private final p5laris.gateway.domain.item.infrastructure.grpc.ItemGatewayService itemGatewayService;
+
+    // public CharacterGatewayService(ItemGatewayService itemGatewayService) {
+    //     this.itemGatewayService = itemGatewayService;
+    // }
+    // 위 주입은 Lombok의 @RequiredArgsConstructor를 사용하려면 필드에 선언하면 됩니다.
+
+    /**
+     * Get my character (API spec 4.4).
+     */
+    public p5laris.gateway.domain.character.api.dto.MyCharacterResponse getMyCharacter(Long userId) {
+        com.p5laris.proto.character.v1.GetMyCharacterResponse response = characterStub.getMyCharacter(
+                com.p5laris.proto.character.v1.GetMyCharacterRequest.newBuilder()
+                        .setUserId(userId)
+                        .build()
+        );
+
+        p5laris.gateway.domain.character.api.dto.MyCharacterResponse.EquippedSkin skin = null;
+        if (response.getEquippedSkinId() > 0) {
+            
+            // TODO [Item Domain Integration]: 아이템 모듈에서 스킨 이름 조회. 
+            // 구현 후 아래 주석을 해제하고, 하단의 임시(Mock) 코드를 삭제할 것.
+            /*
+            var itemResponse = itemGatewayService.getItem(response.getEquippedSkinId());
+            skin = p5laris.gateway.domain.character.api.dto.MyCharacterResponse.EquippedSkin.builder()
+                    .itemId(itemResponse.getId())
+                    .name(itemResponse.getName())
+                    .build();
+            */
+
+            // 임시(Mock) 코드: Item 도메인 연동 전까지 컴파일 에러 방지용
+            skin = p5laris.gateway.domain.character.api.dto.MyCharacterResponse.EquippedSkin.builder()
+                    .itemId(response.getEquippedSkinId())
+                    .name("스킨 " + response.getEquippedSkinId())
+                    .build();
+        }
+
+        return p5laris.gateway.domain.character.api.dto.MyCharacterResponse.builder()
+                .id(response.getId())
+                .name(response.getName())
+                .characterTypeCode(response.getCharacterTypeCode())
+                .active(response.getActive())
+                .equippedSkin(skin)
+                .build();
+    }
 }
 

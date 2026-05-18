@@ -52,5 +52,15 @@ public class CharacterController {
             @org.springframework.web.bind.annotation.RequestBody p5laris.gateway.domain.character.api.dto.CreateCharacterRequest request) {
         return ApiResponse.success(characterGatewayService.createCharacter(userId, request));
     }
+
+    /**
+     * Get my character (API spec 4.4).
+     * GET /api/character/v1/characters/me
+     */
+    @GetMapping("/v1/characters/me")
+    public ApiResponse<p5laris.gateway.domain.character.api.dto.MyCharacterResponse> getMyCharacter(
+            @p5laris.gateway.global.security.annotation.LoginUserId Long userId) {
+        return ApiResponse.success(characterGatewayService.getMyCharacter(userId));
+    }
 }
 

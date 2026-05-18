@@ -11,6 +11,7 @@ service CharacterService {
   rpc GetCharacterTypes(GetCharacterTypesRequest) returns (GetCharacterTypesResponse);
   rpc GetCharacterAssets(GetCharacterAssetsRequest) returns (GetCharacterAssetsResponse);
   rpc CreateCharacter(CreateCharacterRequest) returns (CreateCharacterResponse);
+  rpc GetMyCharacter(GetMyCharacterRequest) returns (GetMyCharacterResponse);
 }
 
 // GetCharacterTypes: returns active character types ordered by sort_order
@@ -81,4 +82,17 @@ message CharacterStates {
   int32 hunger = 1;
   int32 energy = 2;
   int32 affection = 3;
+}
+
+// GetMyCharacter: returns the user's active character
+message GetMyCharacterRequest {
+  int64 user_id = 1;
+}
+
+message GetMyCharacterResponse {
+  int64 id = 1;
+  string name = 2;
+  string character_type_code = 3;
+  bool active = 4;
+  int64 equipped_skin_id = 5; // Can be 0 if no skin is equipped
 }

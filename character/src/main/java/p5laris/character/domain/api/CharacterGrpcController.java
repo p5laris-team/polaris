@@ -101,5 +101,25 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
         responseObserver.onNext(response);
         responseObserver.onCompleted();
     }
+
+    /**
+     * Get my character (API spec 4.4).
+     */
+    @Override
+    public void getMyCharacter(GetMyCharacterRequest request,
+                               StreamObserver<GetMyCharacterResponse> responseObserver) {
+        var result = characterService.getMyCharacter(request.getUserId());
+
+        GetMyCharacterResponse response = GetMyCharacterResponse.newBuilder()
+                .setId(result.id())
+                .setName(result.name())
+                .setCharacterTypeCode(result.characterTypeCode())
+                .setActive(result.active())
+                .setEquippedSkinId(result.equippedSkinId())
+                .build();
+
+        responseObserver.onNext(response);
+        responseObserver.onCompleted();
+    }
 }
 

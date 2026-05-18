@@ -99,4 +99,25 @@ public class CharacterService {
                 .createdAt(newCharacter.getCreatedAt())
                 .build();
     }
+
+    /**
+     * Get user's active character.
+     * API spec 4.4 GET /api/character/v1/characters/me
+     *
+     * Returns null or throws exception if not found? Let's throw an exception for simplicity if the user has no active character.
+     * Or return Optional. We will throw an exception since the API spec doesn't specify a null response.
+     */
+    @Transactional(readOnly = true)
+    public p5laris.character.domain.application.dto.MyCharacterResponse getMyCharacter(Long userId) {
+        p5laris.character.domain.domain.entity.UserCharacter userCharacter = userCharacterRepository.findByUserIdAndActiveTrue(userId)
+                .orElseThrow(() -> new IllegalArgumentException("Active character not found for user: " + userId));
+
+        return p5laris.character.domain.application.dto.MyCharacterResponse.builder()
+                .id(userCharacter.getId())
+                .name(userCharacter.getName())
+                .characterTypeCode(userCharacter.getCharacterType().getCode())
+                .active(userCharacter.isActive())
+                .equippedSkinId(userCharacter.getEquippedSkinId() != null ? userCharacter.getEquippedSkinId() : 0L)
+                .build();
+    }
 }
