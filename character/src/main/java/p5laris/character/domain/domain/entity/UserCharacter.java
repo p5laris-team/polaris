@@ -5,6 +5,7 @@ import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import p5laris.character.domain.domain.enums.ActionType;
 
 import java.time.Instant;
 
@@ -110,26 +111,15 @@ public class UserCharacter {
     // ── 상태 변경 메서드 ───────────────────────────────────────────────────
 
     /**
-     * FEED 돌봄: fullness 회복. 100 초과 불가.
+     * 돌봄 액션 적용. ActionType에 따라 대응 상태를 amount만큼 회복한다.
+     * 상태는 100을 초과하지 않는다 (AGENTS.md §20.2).
      */
-    public void applyFeed(int amount) {
-        this.fullness = Math.min(100, this.fullness + amount);
-        this.updatedAt = Instant.now();
-    }
-
-    /**
-     * SLEEP 돌봄: energy 회복. 100 초과 불가.
-     */
-    public void applySleep(int amount) {
-        this.energy = Math.min(100, this.energy + amount);
-        this.updatedAt = Instant.now();
-    }
-
-    /**
-     * PLAY 돌봄: affection 회복. 100 초과 불가.
-     */
-    public void applyPlay(int amount) {
-        this.affection = Math.min(100, this.affection + amount);
+    public void applyCare(ActionType actionType, int amount) {
+        switch (actionType) {
+            case FEED  -> this.fullness  = Math.min(100, this.fullness  + amount);
+            case SLEEP -> this.energy    = Math.min(100, this.energy    + amount);
+            case PLAY  -> this.affection = Math.min(100, this.affection + amount);
+        }
         this.updatedAt = Instant.now();
     }
 

@@ -5,6 +5,7 @@ import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import p5laris.character.domain.domain.enums.ActionType;
 
 import java.time.Instant;
 
@@ -46,8 +47,9 @@ public class CharacterCareLog {
     private Long itemId;
 
     /** 돌봄 액션 유형: FEED / SLEEP / PLAY */
+    @Enumerated(EnumType.STRING)
     @Column(name = "action_type", nullable = false)
-    private String actionType;
+    private ActionType actionType;
 
     /** 돌봄 전 상태 snapshot (JSON) */
     @Column(name = "before_state_json", columnDefinition = "TEXT")
@@ -62,7 +64,7 @@ public class CharacterCareLog {
 
     @Builder
     private CharacterCareLog(Long userId, Long characterId, Long itemId,
-                             String actionType, String beforeStateJson, String afterStateJson) {
+                             ActionType actionType, String beforeStateJson, String afterStateJson) {
         this.userId = userId;
         this.characterId = characterId;
         this.itemId = itemId;
