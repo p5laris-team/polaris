@@ -10,7 +10,7 @@ import p5laris.gateway.global.common.ApiResponse;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/onboarding/v1")
+@RequestMapping("/api/onboarding")
 @RequiredArgsConstructor
 public class OnboardingController {
 
@@ -20,7 +20,7 @@ public class OnboardingController {
      * 온보딩 질문 목록 조회
      * @return
      */
-    @GetMapping("/questions")
+    @GetMapping("/v1/questions")
     public ApiResponse<List<OnboardingDto.QuestionResponse>> getQuestions() {
         return ApiResponse.success(onboardingGatewayService.getQuestions());
     }
@@ -30,7 +30,7 @@ public class OnboardingController {
      * @param userId
      * @return
      */
-    @GetMapping("/profiles/me")
+    @GetMapping("/v1/profiles/me")
     public ApiResponse<OnboardingDto.ProfileResponse> getProfile(@LoginUserId Long userId) {
         return ApiResponse.success(onboardingGatewayService.getProfile(userId));
     }
@@ -41,7 +41,7 @@ public class OnboardingController {
      * @param request
      * @return
      */
-    @PutMapping("/profiles/me")
+    @PutMapping("/v1/profiles/me")
     public ApiResponse<OnboardingDto.ProfileResponse> saveProfile(
             @LoginUserId Long userId,
             @RequestBody OnboardingDto.SaveProfileRequest request) {

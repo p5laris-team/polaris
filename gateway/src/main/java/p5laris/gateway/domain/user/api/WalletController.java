@@ -10,7 +10,7 @@ import p5laris.gateway.global.auth.LoginUserId;
 import p5laris.gateway.global.common.ApiResponse;
 
 @RestController
-@RequestMapping("/api/wallet/v1")
+@RequestMapping("/api/wallet")
 @RequiredArgsConstructor
 public class WalletController {
 
@@ -21,7 +21,7 @@ public class WalletController {
      * @param userId
      * @return
      */
-    @GetMapping("/wallets/me")
+    @GetMapping("/v1/wallets/me")
     public ApiResponse<WalletDto.Response> getMyWallet(@LoginUserId Long userId) {
         return ApiResponse.success(walletGatewayService.getMyWallet(userId));
     }

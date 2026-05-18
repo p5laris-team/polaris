@@ -10,7 +10,7 @@ import p5laris.gateway.global.auth.LoginUserId;
 import p5laris.gateway.global.common.ApiResponse;
 
 @RestController
-@RequestMapping("/api/user/v1/users")
+@RequestMapping("/api/user")
 @RequiredArgsConstructor
 public class UserController {
 
@@ -21,7 +21,7 @@ public class UserController {
      * @param userId
      * @return
      */
-    @GetMapping("/me")
+    @GetMapping("/v1/users/me")
     public ApiResponse<UserDto> getMe(@LoginUserId Long userId) {
         return ApiResponse.success(userGatewayService.getUser(userId));
     }

@@ -13,7 +13,7 @@ import p5laris.gateway.global.auth.LoginUserId;
 import p5laris.gateway.global.common.ApiResponse;
 
 @RestController
-@RequestMapping("/api/auth/v1")
+@RequestMapping("/api/auth")
 @RequiredArgsConstructor
 public class AuthController {
 
@@ -24,7 +24,7 @@ public class AuthController {
      * @param request
      * @return
      */
-    @GetMapping("/google/authorization-url")
+    @GetMapping("/v1/google/authorization-url")
     public ApiResponse<AuthResponse.GoogleAuthUrl> getAuthorizationUrl(@Valid @ModelAttribute AuthRequest.GoogleAuthUrl request) {
         return ApiResponse.success(authGatewayService.getAuthorizationUrl(request));
     }
@@ -34,7 +34,7 @@ public class AuthController {
      * @param request
      * @return
      */
-    @PostMapping("/google/sessions")
+    @PostMapping("/v1/google/sessions")
     public ApiResponse<AuthResponse.LoginGoogle> loginGoogle(@Valid @RequestBody AuthRequest.LoginGoogle request) {
         return ApiResponse.success(authGatewayService.loginGoogle(request));
     }
@@ -44,7 +44,7 @@ public class AuthController {
      * @param request
      * @return
      */
-    @PostMapping("/token-refreshes")
+    @PostMapping("/v1/token-refreshes")
     public ApiResponse<AuthResponse.RefreshToken> refreshToken(@Valid @RequestBody AuthRequest.RefreshToken request) {
         return ApiResponse.success(authGatewayService.refreshToken(request));
     }
@@ -54,7 +54,7 @@ public class AuthController {
      * @param userId
      * @return
      */
-    @DeleteMapping("/sessions/current")
+    @DeleteMapping("/v1/sessions/current")
     public ApiResponse<AuthResponse.Logout> logout(
             @LoginUserId Long userId,
             @RequestHeader("Authorization") String authorizationHeader) {
