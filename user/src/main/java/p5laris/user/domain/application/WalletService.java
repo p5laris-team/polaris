@@ -3,10 +3,10 @@ package p5laris.user.domain.application;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import p5laris.user.domain.domain.StarPieceTransaction;
-import p5laris.user.domain.domain.StarPieceTransactionRepository;
-import p5laris.user.domain.domain.Wallet;
-import p5laris.user.domain.domain.WalletRepository;
+import p5laris.user.domain.domain.entity.StarPieceTransaction;
+import p5laris.user.domain.domain.repository.StarPieceTransactionRepository;
+import p5laris.user.domain.domain.entity.Wallet;
+import p5laris.user.domain.domain.repository.WalletRepository;
 
 @Service
 @RequiredArgsConstructor

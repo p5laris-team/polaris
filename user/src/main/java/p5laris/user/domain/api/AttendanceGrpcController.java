@@ -5,7 +5,7 @@ import io.grpc.stub.StreamObserver;
 import lombok.RequiredArgsConstructor;
 import net.devh.boot.grpc.server.service.GrpcService;
 import p5laris.user.domain.application.AttendanceService;
-import p5laris.user.domain.domain.AttendanceRecord;
+import p5laris.user.domain.domain.entity.AttendanceRecord;
 
 import java.util.List;
 import java.util.stream.Collectors;

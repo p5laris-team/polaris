@@ -1,7 +1,9 @@
-package p5laris.user.domain.domain;
+package p5laris.user.domain.domain.enums;
 
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import p5laris.user.domain.domain.dto.AnswerOption;
+
 import java.util.List;
 
 @Getter

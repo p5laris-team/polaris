@@ -5,12 +5,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import p5laris.user.domain.domain.User;
-import p5laris.user.domain.domain.UserRepository;
+import p5laris.user.domain.domain.entity.User;
+import p5laris.user.domain.domain.repository.UserRepository;
 import p5laris.user.core.auth.JwtProvider;
 import p5laris.user.core.auth.TokenBlacklistService;
-import p5laris.user.domain.domain.Wallet;
-import p5laris.user.domain.domain.WalletRepository;
+import p5laris.user.domain.domain.entity.Wallet;
+import p5laris.user.domain.domain.repository.WalletRepository;
 
 import java.net.URI;
 import java.net.URLEncoder;
