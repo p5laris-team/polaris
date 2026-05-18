@@ -41,5 +41,16 @@ public class CharacterController {
             @org.springframework.web.bind.annotation.PathVariable Long characterTypeId) {
         return ApiResponse.success(characterGatewayService.getCharacterAssets(characterTypeId));
     }
+
+    /**
+     * Create a user character (API spec 4.3).
+     * POST /api/character/v1/characters
+     */
+    @org.springframework.web.bind.annotation.PostMapping("/v1/characters")
+    public ApiResponse<p5laris.gateway.domain.character.api.dto.UserCharacterResponse> createCharacter(
+            @p5laris.gateway.global.security.annotation.LoginUserId Long userId,
+            @org.springframework.web.bind.annotation.RequestBody p5laris.gateway.domain.character.api.dto.CreateCharacterRequest request) {
+        return ApiResponse.success(characterGatewayService.createCharacter(userId, request));
+    }
 }
 

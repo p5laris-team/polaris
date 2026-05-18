@@ -10,6 +10,7 @@ service CharacterService {
   rpc PingPong(PingPongRequest) returns (PingPongResponse);
   rpc GetCharacterTypes(GetCharacterTypesRequest) returns (GetCharacterTypesResponse);
   rpc GetCharacterAssets(GetCharacterAssetsRequest) returns (GetCharacterAssetsResponse);
+  rpc CreateCharacter(CreateCharacterRequest) returns (CreateCharacterResponse);
 }
 
 // GetCharacterTypes: returns active character types ordered by sort_order
@@ -58,4 +59,26 @@ enum HealthStatus {
   HEALTHY = 1;
   UNHEALTHY = 2;
   DEGRADED = 3;
+}
+
+// CreateCharacter: creates a user character
+message CreateCharacterRequest {
+  int64 user_id = 1;
+  int64 character_type_id = 2;
+  string name = 3;
+}
+
+message CreateCharacterResponse {
+  int64 id = 1;
+  string name = 2;
+  string character_type_code = 3;
+  bool active = 4;
+  CharacterStates states = 5;
+  string created_at = 6;
+}
+
+message CharacterStates {
+  int32 hunger = 1;
+  int32 energy = 2;
+  int32 affection = 3;
 }

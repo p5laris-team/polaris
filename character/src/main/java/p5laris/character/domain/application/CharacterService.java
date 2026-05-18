@@ -18,6 +18,7 @@ public class CharacterService {
 
     private final CharacterTypeRepository characterTypeRepository;
     private final CharacterAssetRepository characterAssetRepository;
+    private final p5laris.character.domain.domain.repository.UserCharacterRepository userCharacterRepository;
 
     /**
      * Get active character types ordered by sort_order ascending.
@@ -56,5 +57,46 @@ public class CharacterService {
                         .assetUrl(a.getAssetUrl())
                         .build())
                 .toList();
+    }
+
+    /**
+     * Create a user character.
+     * API spec 4.3 POST /api/character/v1/characters
+     */
+    @Transactional
+    public p5laris.character.domain.application.dto.UserCharacterResponse createCharacter(Long userId, Long characterTypeId, String name) {
+        p5laris.character.domain.domain.entity.CharacterType characterType = characterTypeRepository.findById(characterTypeId)
+                .orElseThrow(() -> new IllegalArgumentException("CharacterType not found: " + characterTypeId));
+
+        // Deactivate existing active character if any
+        userCharacterRepository.findByUserIdAndActiveTrue(userId)
+                .ifPresent(p5laris.character.domain.domain.entity.UserCharacter::deactivate);
+
+        p5laris.character.domain.domain.entity.UserCharacter newCharacter = p5laris.character.domain.domain.entity.UserCharacter.builder()
+                .userId(userId)
+                .characterType(characterType)
+                .name(name)
+                .level(1)
+                .exp(0)
+                .fullness(70)
+                .energy(70)
+                .affection(50)
+                .active(true)
+                .build();
+
+        userCharacterRepository.save(newCharacter);
+
+        return p5laris.character.domain.application.dto.UserCharacterResponse.builder()
+                .id(newCharacter.getId())
+                .name(newCharacter.getName())
+                .characterTypeCode(characterType.getCode())
+                .active(newCharacter.isActive())
+                .states(p5laris.character.domain.application.dto.UserCharacterResponse.States.builder()
+                        .hunger(newCharacter.getFullness())
+                        .energy(newCharacter.getEnergy())
+                        .affection(newCharacter.getAffection())
+                        .build())
+                .createdAt(newCharacter.getCreatedAt())
+                .build();
     }
 }

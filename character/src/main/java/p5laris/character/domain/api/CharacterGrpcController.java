@@ -72,5 +72,34 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
         responseObserver.onNext(response);
         responseObserver.onCompleted();
     }
+
+    /**
+     * Create a user character (API spec 4.3).
+     */
+    @Override
+    public void createCharacter(CreateCharacterRequest request,
+                                StreamObserver<CreateCharacterResponse> responseObserver) {
+        var result = characterService.createCharacter(
+                request.getUserId(),
+                request.getCharacterTypeId(),
+                request.getName()
+        );
+
+        CreateCharacterResponse response = CreateCharacterResponse.newBuilder()
+                .setId(result.id())
+                .setName(result.name())
+                .setCharacterTypeCode(result.characterTypeCode())
+                .setActive(result.active())
+                .setStates(CharacterStates.newBuilder()
+                        .setHunger(result.states().hunger())
+                        .setEnergy(result.states().energy())
+                        .setAffection(result.states().affection())
+                        .build())
+                .setCreatedAt(result.createdAt().toString())
+                .build();
+
+        responseObserver.onNext(response);
+        responseObserver.onCompleted();
+    }
 }
 

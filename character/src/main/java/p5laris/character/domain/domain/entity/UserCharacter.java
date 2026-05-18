@@ -137,4 +137,9 @@ public class UserCharacter {
         this.equippedSkinId = null;
         this.updatedAt = Instant.now();
     }
+
+    public void deactivate() {
+        this.active = false;
+        this.updatedAt = Instant.now();
+    }
 }

@@ -71,5 +71,33 @@ public class CharacterGatewayService {
                 .items(items)
                 .build();
     }
+
+    /**
+     * Create a user character (API spec 4.3).
+     */
+    public p5laris.gateway.domain.character.api.dto.UserCharacterResponse createCharacter(
+            Long userId, p5laris.gateway.domain.character.api.dto.CreateCharacterRequest request) {
+        
+        com.p5laris.proto.character.v1.CreateCharacterResponse response = characterStub.createCharacter(
+                com.p5laris.proto.character.v1.CreateCharacterRequest.newBuilder()
+                        .setUserId(userId)
+                        .setCharacterTypeId(request.characterTypeId())
+                        .setName(request.name())
+                        .build()
+        );
+
+        return p5laris.gateway.domain.character.api.dto.UserCharacterResponse.builder()
+                .id(response.getId())
+                .name(response.getName())
+                .characterTypeCode(response.getCharacterTypeCode())
+                .active(response.getActive())
+                .states(p5laris.gateway.domain.character.api.dto.UserCharacterResponse.States.builder()
+                        .hunger(response.getStates().getHunger())
+                        .energy(response.getStates().getEnergy())
+                        .affection(response.getStates().getAffection())
+                        .build())
+                .createdAt(java.time.Instant.parse(response.getCreatedAt()))
+                .build();
+    }
 }
 
