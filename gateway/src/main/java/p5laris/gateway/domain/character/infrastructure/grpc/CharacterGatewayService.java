@@ -146,5 +146,26 @@ public class CharacterGatewayService {
                 .equippedSkin(skin)
                 .build();
     }
+
+    /**
+     * Update character name (API spec 4.5).
+     */
+    public p5laris.gateway.domain.character.api.dto.UpdateCharacterNameResponse updateCharacterName(
+            Long characterId, Long userId, p5laris.gateway.domain.character.api.dto.UpdateCharacterNameRequest request) {
+        
+        com.p5laris.proto.character.v1.UpdateCharacterNameResponse response = characterStub.updateCharacterName(
+                com.p5laris.proto.character.v1.UpdateCharacterNameRequest.newBuilder()
+                        .setCharacterId(characterId)
+                        .setUserId(userId)
+                        .setName(request.name())
+                        .build()
+        );
+
+        return p5laris.gateway.domain.character.api.dto.UpdateCharacterNameResponse.builder()
+                .id(response.getId())
+                .name(response.getName())
+                .updatedAt(java.time.Instant.parse(response.getUpdatedAt()))
+                .build();
+    }
 }
 

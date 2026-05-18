@@ -12,6 +12,7 @@ service CharacterService {
   rpc GetCharacterAssets(GetCharacterAssetsRequest) returns (GetCharacterAssetsResponse);
   rpc CreateCharacter(CreateCharacterRequest) returns (CreateCharacterResponse);
   rpc GetMyCharacter(GetMyCharacterRequest) returns (GetMyCharacterResponse);
+  rpc UpdateCharacterName(UpdateCharacterNameRequest) returns (UpdateCharacterNameResponse);
 }
 
 // GetCharacterTypes: returns active character types ordered by sort_order
@@ -95,4 +96,17 @@ message GetMyCharacterResponse {
   string character_type_code = 3;
   bool active = 4;
   int64 equipped_skin_id = 5; // Can be 0 if no skin is equipped
+}
+
+// UpdateCharacterName: updates character name
+message UpdateCharacterNameRequest {
+  int64 character_id = 1;
+  int64 user_id = 2; // For ownership validation
+  string name = 3;
+}
+
+message UpdateCharacterNameResponse {
+  int64 id = 1;
+  string name = 2;
+  string updated_at = 3;
 }

@@ -120,4 +120,26 @@ public class CharacterService {
                 .equippedSkinId(userCharacter.getEquippedSkinId() != null ? userCharacter.getEquippedSkinId() : 0L)
                 .build();
     }
+
+    /**
+     * Update character name.
+     * API spec 4.5 PATCH /api/character/v1/characters/{characterId}
+     */
+    @Transactional
+    public p5laris.character.domain.application.dto.UpdateCharacterNameResponse updateCharacterName(Long characterId, Long userId, String newName) {
+        p5laris.character.domain.domain.entity.UserCharacter userCharacter = userCharacterRepository.findById(characterId)
+                .orElseThrow(() -> new IllegalArgumentException("Character not found: " + characterId));
+
+        if (!userCharacter.getUserId().equals(userId)) {
+            throw new IllegalArgumentException("User does not own this character");
+        }
+
+        userCharacter.updateName(newName);
+
+        return p5laris.character.domain.application.dto.UpdateCharacterNameResponse.builder()
+                .id(userCharacter.getId())
+                .name(userCharacter.getName())
+                .updatedAt(userCharacter.getUpdatedAt())
+                .build();
+    }
 }

@@ -121,5 +121,27 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
         responseObserver.onNext(response);
         responseObserver.onCompleted();
     }
+
+    /**
+     * Update character name (API spec 4.5).
+     */
+    @Override
+    public void updateCharacterName(UpdateCharacterNameRequest request,
+                                    StreamObserver<UpdateCharacterNameResponse> responseObserver) {
+        var result = characterService.updateCharacterName(
+                request.getCharacterId(),
+                request.getUserId(),
+                request.getName()
+        );
+
+        UpdateCharacterNameResponse response = UpdateCharacterNameResponse.newBuilder()
+                .setId(result.id())
+                .setName(result.name())
+                .setUpdatedAt(result.updatedAt().toString())
+                .build();
+
+        responseObserver.onNext(response);
+        responseObserver.onCompleted();
+    }
 }
 

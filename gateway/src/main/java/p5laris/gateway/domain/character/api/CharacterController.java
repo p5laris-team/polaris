@@ -62,5 +62,17 @@ public class CharacterController {
             @p5laris.gateway.global.security.annotation.LoginUserId Long userId) {
         return ApiResponse.success(characterGatewayService.getMyCharacter(userId));
     }
+
+    /**
+     * Update character name (API spec 4.5).
+     * PATCH /api/character/v1/characters/{characterId}
+     */
+    @org.springframework.web.bind.annotation.PatchMapping("/v1/characters/{characterId}")
+    public ApiResponse<p5laris.gateway.domain.character.api.dto.UpdateCharacterNameResponse> updateCharacterName(
+            @org.springframework.web.bind.annotation.PathVariable Long characterId,
+            @p5laris.gateway.global.security.annotation.LoginUserId Long userId,
+            @org.springframework.web.bind.annotation.RequestBody p5laris.gateway.domain.character.api.dto.UpdateCharacterNameRequest request) {
+        return ApiResponse.success(characterGatewayService.updateCharacterName(characterId, userId, request));
+    }
 }
 

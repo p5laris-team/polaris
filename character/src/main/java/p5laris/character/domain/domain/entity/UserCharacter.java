@@ -142,4 +142,12 @@ public class UserCharacter {
         this.active = false;
         this.updatedAt = Instant.now();
     }
+
+    public void updateName(String newName) {
+        if (newName == null || newName.trim().isEmpty() || newName.length() > 10) {
+            throw new IllegalArgumentException("Invalid character name");
+        }
+        this.name = newName;
+        this.updatedAt = Instant.now();
+    }
 }
