@@ -9,6 +9,8 @@ import p5laris.user.domain.domain.User;
 import p5laris.user.domain.domain.UserRepository;
 import p5laris.user.core.auth.JwtProvider;
 import p5laris.user.core.auth.TokenBlacklistService;
+import p5laris.user.domain.domain.Wallet;
+import p5laris.user.domain.domain.WalletRepository;
 
 import java.net.URI;
 import java.net.URLEncoder;
@@ -25,6 +27,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 public class AuthService {
 
     private final UserRepository userRepository;
+    private final WalletRepository walletRepository;
     private final JwtProvider jwtProvider;
     private final TokenBlacklistService tokenBlacklistService;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -101,7 +104,12 @@ public class AuthService {
                 return userRepository.save(newUser);
             });
 
-            // 4. Generate Tokens
+            // 4. Create Wallet if not exists
+            if (walletRepository.findByUserId(user.getId()).isEmpty()) {
+                walletRepository.save(Wallet.builder().userId(user.getId()).build());
+            }
+
+            // 5. Generate Tokens
             String accessToken = jwtProvider.generateAccessToken(user.getId());
             String refreshToken = jwtProvider.generateRefreshToken(user.getId());
 
