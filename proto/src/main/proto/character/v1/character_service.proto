@@ -8,8 +8,26 @@ option java_outer_classname = "CharacterProto";
 
 service CharacterService {
   rpc PingPong(PingPongRequest) returns (PingPongResponse);
+  rpc GetCharacterTypes(GetCharacterTypesRequest) returns (GetCharacterTypesResponse);
 }
 
+// GetCharacterTypes: returns active character types ordered by sort_order
+message GetCharacterTypesRequest {}
+
+message GetCharacterTypesResponse {
+  repeated CharacterTypeItem items = 1;
+}
+
+message CharacterTypeItem {
+  int64 id = 1;
+  string code = 2;
+  string name = 3;
+  string summary = 4;
+  string sample_line = 5;
+  int32 sort_order = 6;
+}
+
+// PingPong (scaffolding)
 message PingPongRequest {
   string message = 1;
 }
