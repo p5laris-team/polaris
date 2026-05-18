@@ -14,6 +14,8 @@ import p5laris.item.domain.domain.entity.Item;
 import p5laris.item.domain.domain.entity.UserItem;
 import p5laris.item.domain.domain.repository.ItemRepository;
 import p5laris.item.domain.domain.repository.UserItemRepository;
+import p5laris.item.domain.exception.ItemErrorCode;
+import p5laris.item.domain.exception.ItemException;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -132,15 +134,13 @@ public class ItemService {
         int quantity = request.getQuantity() > 0 ? request.getQuantity() : 1;
         
         Item item = itemRepository.findById(itemId)
-                .orElseThrow(() -> new io.grpc.StatusRuntimeException(
-                        io.grpc.Status.NOT_FOUND.withDescription("ITEM_NOT_FOUND")));
+                .orElseThrow(() -> new ItemException(ItemErrorCode.ITEM_NOT_FOUND));
         
         // 스킨 중복 구매 검증
         if ("SKIN".equals(item.getItemType())) {
             Optional<UserItem> existingSkin = userItemRepository.findByUserIdAndItemId(userId, itemId);
             if (existingSkin.isPresent()) {
-                throw new io.grpc.StatusRuntimeException(
-                        io.grpc.Status.ALREADY_EXISTS.withDescription("ITEM_ALREADY_OWNED"));
+                throw new ItemException(ItemErrorCode.ITEM_ALREADY_OWNED);
             }
             quantity = 1;
         }
@@ -163,11 +163,9 @@ public class ItemService {
         } catch (Exception e) {
             String errMsg = e.getMessage();
             if (errMsg != null && errMsg.contains("STAR_PIECE_NOT_ENOUGH")) {
-                throw new io.grpc.StatusRuntimeException(
-                        io.grpc.Status.INVALID_ARGUMENT.withDescription("STAR_PIECE_NOT_ENOUGH"));
+                throw new ItemException(ItemErrorCode.STAR_PIECE_NOT_ENOUGH);
             }
-            throw new io.grpc.StatusRuntimeException(
-                    io.grpc.Status.INTERNAL.withDescription("Wallet service call failed: " + e.getMessage()));
+            throw new ItemException(ItemErrorCode.WALLET_SERVICE_CALL_FAILED);
         }
         
         // UserItem 적재

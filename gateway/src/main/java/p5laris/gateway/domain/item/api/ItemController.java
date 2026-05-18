@@ -1,5 +1,7 @@
 package p5laris.gateway.domain.item.api;
 
+import com.p5laris.proto.item.v1.GetUserItemsResponse;
+import com.p5laris.proto.item.v1.PurchaseItemResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 import p5laris.gateway.domain.item.api.dto.ItemDto;
@@ -71,7 +73,7 @@ public class ItemController {
             @RequestParam(required = false) String cursor,
             @RequestParam(defaultValue = "20") int size
     ) {
-        com.p5laris.proto.item.v1.GetUserItemsResponse protoResponse =
+        GetUserItemsResponse protoResponse =
                 itemGatewayService.getUserItems(userId, itemType, cursor, size);
 
         ItemDto.GetUserItemsResponse response = new ItemDto.GetUserItemsResponse(
@@ -110,7 +112,7 @@ public class ItemController {
         // 중복 방지를 위한 구매 멱등키 생성
         String idempotencyKey = "purchase-" + userId + "-" + request.itemId() + "-" + System.currentTimeMillis();
 
-        com.p5laris.proto.item.v1.PurchaseItemResponse protoResponse =
+        PurchaseItemResponse protoResponse =
                 itemGatewayService.purchaseItem(userId, request.itemId(), request.quantity(), idempotencyKey);
 
         ItemDto.PurchaseResponse response = new ItemDto.PurchaseResponse(
