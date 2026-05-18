@@ -868,16 +868,18 @@ Refresh Token으로 Access Token을 재발급한다.
 ### 8.1 GET `💾 /api/item/v1/items` 🔐
 
 **설명**  
-판매 중인 아이템 목록을 조회한다. 가격은 현금이 아니라 별조각 가격이다.
+판매 중인 아이템 목록을 조회한다. 가격은 현금이 아니라 별조각 가격이다.  
+- **모바일 스크롤 UI 대응**: 페이지 누락이나 중복 노출을 방지하기 위해 **커서(Cursor) 기반 페이징**을 적용합니다.
+- **탭 필터링**: 화면에 탭(`SKIN`, `CONSUMABLE`) 별로 구분하여 보여주기 위해 쿼리 파라미터 `itemType` 필터링을 제공합니다.
 
-**Request**
+**Request (Query Parameters)**
 
 ```json
 {
-  "itemType": "SKIN",
-  "active": true,
-  "cursor": null,
-  "size": 20
+  "itemType": "SKIN", 
+  "active": true,     
+  "cursor": null,    
+  "size": 20         
 }
 ```
 
@@ -892,11 +894,11 @@ Refresh Token으로 Access Token을 재발급한다.
       "itemType": "SKIN",
       "price": 60,
       "imageUrl": "https://cdn.polaris.app/items/skin-soft-star.png",
-      "owned": false
+      "owned": false 
     }
   ],
   "pageInfo": {
-    "nextCursor": null,
+    "nextCursor": "eyJpZCI6M30=",
     "hasNext": false,
     "size": 20
   }
@@ -908,13 +910,15 @@ Refresh Token으로 Access Token을 재발급한다.
 ### 8.2 GET `/api/item/v1/user-items` 🔐
 
 **설명**  
-내가 보유한 아이템과 수량, 장착 여부를 조회한다.
+내가 보유한 아이템과 수량, 장착 여부를 조회한다.  
+- **소모성 아이템**: 보유 개수(`quantity`)가 표현됩니다.
+- **장착형 아이템(스킨 등)**: 대표 캐릭터의 장착 여부(`equipped`)가 표현됩니다.
 
-**Request**
+**Request (Query Parameters)**
 
 ```json
 {
-  "itemType": "CONSUMABLE",
+  "itemType": "CONSUMABLE", 
   "cursor": null,
   "size": 20
 }
@@ -931,8 +935,8 @@ Refresh Token으로 Access Token을 재발급한다.
       "name": "별사탕밥",
       "itemType": "CONSUMABLE",
       "effectType": "FOOD",
-      "quantity": 2,
-      "equipped": false
+      "quantity": 2,     
+      "equipped": false   
     }
   ],
   "pageInfo": {
@@ -948,14 +952,18 @@ Refresh Token으로 Access Token을 재발급한다.
 ### 8.3 POST `⚠️ /api/item/v1/item-purchases` 🔐
 
 **설명**  
-아이템을 구매한다. 별조각 차감과 `user_items` 생성/수량 증가는 하나의 트랜잭션으로 처리한다.
+별조각으로 아이템을 구매한다.  
+- **스킨 아이템 구매 정책**: 유저당 최대 **1개**만 구매 가능합니다. 이미 보유 중인 경우 `ITEM_ALREADY_OWNED` (400) 에러가 발생합니다.
+- **소모성 아이템 구매 정책**: 수량(`quantity`)을 선택하여 다량 구매가 가능하며, 구매 시 기존 보유량에 누적됩니다.
+- **트랜잭션**: 별조각 차감, 거래 내역 기록(`star_piece_transactions`), 보유 아이템(`user_items`) 추가/업데이트는 단일 트랜잭션으로 처리되어 정합성을 유지합니다.
+- **재화 부족**: 지갑 잔액이 부족하면 `STAR_PIECE_NOT_ENOUGH` (400) 에러가 발생합니다.
 
 **Request**
 
 ```json
 {
   "itemId": 3,
-  "quantity": 1
+  "quantity": 1              
 }
 ```
 

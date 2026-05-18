@@ -47,4 +47,34 @@ public class WalletService {
                 
         transactionRepository.save(tx);
     }
+
+    @Transactional
+    public Long spendStarPiece(Long userId, int amount, String reason, String refType, Long refId, String idempotencyKey) {
+        if (amount < 0) throw new IllegalArgumentException("Amount must be positive");
+        
+        Wallet wallet = walletRepository.findByUserId(userId)
+                .orElseThrow(() -> new UserException(UserErrorCode.WALLET_NOT_FOUND));
+
+        if (wallet.getStarPiece() < amount) {
+            throw new UserException(UserErrorCode.STAR_PIECE_NOT_ENOUGH);
+        }
+
+        // 별조각 차감
+        wallet.useStarPiece(amount);
+
+        // 별조각 거래내역에 추가
+        StarPieceTransaction tx = StarPieceTransaction.builder()
+                .userId(userId)
+                .transactionType("SPEND")
+                .amount(-amount)
+                .balanceAfter(wallet.getStarPiece())
+                .reason(reason)
+                .refType(refType)
+                .refId(refId)
+                .idempotencyKey(idempotencyKey)
+                .build();
+                
+        transactionRepository.save(tx);
+        return tx.getId();
+    }
 }
