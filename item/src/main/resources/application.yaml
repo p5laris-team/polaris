@@ -39,3 +39,6 @@ grpc:
     ai:
       address: ${AI_GRPC_ADDRESS}
       negotiationType: plaintext
+    event-log:
+      address: ${EVENT_LOG_GRPC_ADDRESS}
+      negotiationType: plaintext
