@@ -1,15 +1,20 @@
 package p5laris.mission.domain.application;
 
 import com.p5laris.proto.mission.v1.CreateNextMissionResponse;
+import com.p5laris.proto.mission.v1.CompletionInputType;
 import com.p5laris.proto.mission.v1.GetCurrentMissionResponse;
 import com.p5laris.proto.mission.v1.MissionStatus;
 import com.p5laris.proto.mission.v1.RejectMissionResponse;
+import com.p5laris.proto.mission.v1.StartCompletionSessionResponse;
+import com.p5laris.proto.mission.v1.SubmitCompletionAnswerResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import p5laris.mission.domain.domain.entity.MissionCompletionAnswer;
 import p5laris.mission.domain.domain.entity.UserMission;
 import p5laris.mission.domain.domain.enums.UserMissionStatus;
+import p5laris.mission.domain.domain.repository.MissionCompletionAnswerRepository;
 import p5laris.mission.domain.domain.repository.MissionTemplateRepository;
 import p5laris.mission.domain.domain.repository.UserMissionRepository;
 import p5laris.mission.domain.exception.MissionErrorCode;
@@ -32,10 +37,14 @@ class MissionServiceTest {
     private UserMissionRepository userMissionRepository;
 
     @Autowired
+    private MissionCompletionAnswerRepository missionCompletionAnswerRepository;
+
+    @Autowired
     private MissionTemplateRepository missionTemplateRepository;
 
     @BeforeEach
     void setUp() {
+        missionCompletionAnswerRepository.deleteAll();
         userMissionRepository.deleteAll();
     }
 
@@ -111,5 +120,128 @@ class MissionServiceTest {
                 .isInstanceOf(MissionException.class)
                 .extracting("errorCode")
                 .isEqualTo(MissionErrorCode.MISSION_DAILY_LIMIT_EXCEEDED);
+    }
+
+    @Test
+    void OFFERED_미션은_완료_질문_세션을_시작할_수_있다() {
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+
+        StartCompletionSessionResponse response = missionService.startCompletionSession(
+                USER_ID,
+                created.getMission().getId()
+        );
+        UserMission savedMission = userMissionRepository.findById(created.getMission().getId()).orElseThrow();
+        MissionCompletionAnswer savedAnswer = missionCompletionAnswerRepository
+                .findByMissionId(created.getMission().getId())
+                .orElseThrow();
+
+        assertThat(response.getMissionId()).isEqualTo(created.getMission().getId());
+        assertThat(response.getStatus()).isEqualTo(MissionStatus.MISSION_STATUS_ANSWERING);
+        assertThat(response.getQuestion().getId()).isEqualTo(savedAnswer.getId());
+        assertThat(response.getQuestion().getText()).isNotBlank();
+        assertThat(response.getQuestion().getInputType()).isEqualTo(CompletionInputType.COMPLETION_INPUT_TYPE_TEXT);
+        assertThat(response.getQuestion().getMinLength()).isEqualTo(1);
+        assertThat(response.getQuestion().getMaxLength()).isEqualTo(300);
+        assertThat(savedMission.getStatus()).isEqualTo(UserMissionStatus.ANSWERING);
+        assertThat(savedMission.getCompletionStartedAt()).isNotNull();
+        assertThat(savedAnswer.getAnswerText()).isNull();
+        assertThat(savedAnswer.getAnsweredAt()).isNull();
+    }
+
+    @Test
+    void ANSWERING_미션에_완료_질문_세션을_다시_시작하면_기존_질문을_반환한다() {
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        StartCompletionSessionResponse first = missionService.startCompletionSession(
+                USER_ID,
+                created.getMission().getId()
+        );
+
+        StartCompletionSessionResponse second = missionService.startCompletionSession(
+                USER_ID,
+                created.getMission().getId()
+        );
+
+        assertThat(second.getStatus()).isEqualTo(MissionStatus.MISSION_STATUS_ANSWERING);
+        assertThat(second.getQuestion().getId()).isEqualTo(first.getQuestion().getId());
+        assertThat(missionCompletionAnswerRepository.count()).isEqualTo(1);
+    }
+
+    @Test
+    void REJECTED_미션은_완료_질문_세션을_시작할_수_없다() {
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        missionService.rejectMission(USER_ID, created.getMission().getId());
+
+        assertThatThrownBy(() -> missionService.startCompletionSession(USER_ID, created.getMission().getId()))
+                .isInstanceOf(MissionException.class)
+                .extracting("errorCode")
+                .isEqualTo(MissionErrorCode.MISSION_INVALID_STATUS);
+    }
+
+    @Test
+    void ANSWERING_미션은_답변_제출_후_COMPLETED_상태가_된다() {
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        missionService.startCompletionSession(USER_ID, created.getMission().getId());
+
+        SubmitCompletionAnswerResponse response = missionService.submitCompletionAnswer(
+                USER_ID,
+                created.getMission().getId(),
+                "  물 한 컵을 마셨어  "
+        );
+        UserMission savedMission = userMissionRepository.findById(created.getMission().getId()).orElseThrow();
+        MissionCompletionAnswer savedAnswer = missionCompletionAnswerRepository
+                .findByMissionId(created.getMission().getId())
+                .orElseThrow();
+
+        assertThat(response.getMissionId()).isEqualTo(created.getMission().getId());
+        assertThat(response.getStatus()).isEqualTo(MissionStatus.MISSION_STATUS_COMPLETED);
+        assertThat(response.getAnswer().getText()).isEqualTo("물 한 컵을 마셨어");
+        assertThat(response.getAnswer().getAnsweredAt()).isNotBlank();
+        assertThat(response.getReward().getStarPiece()).isEqualTo(10);
+        assertThat(response.getWallet().getStarPiece()).isZero();
+        assertThat(response.getCharacterMessage()).isNotBlank();
+        assertThat(savedMission.getStatus()).isEqualTo(UserMissionStatus.COMPLETED);
+        assertThat(savedMission.getCompletedAt()).isNotNull();
+        assertThat(savedAnswer.getAnswerText()).isEqualTo("물 한 컵을 마셨어");
+        assertThat(savedAnswer.getAnsweredAt()).isNotNull();
+    }
+
+    @Test
+    void 완료_답변은_1자_이상_300자_이하여야_한다() {
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        missionService.startCompletionSession(USER_ID, created.getMission().getId());
+
+        assertThatThrownBy(() -> missionService.submitCompletionAnswer(
+                USER_ID,
+                created.getMission().getId(),
+                "   "
+        ))
+                .isInstanceOf(MissionException.class)
+                .extracting("errorCode")
+                .isEqualTo(MissionErrorCode.MISSION_ANSWER_INVALID);
+
+        assertThatThrownBy(() -> missionService.submitCompletionAnswer(
+                USER_ID,
+                created.getMission().getId(),
+                "가".repeat(301)
+        ))
+                .isInstanceOf(MissionException.class)
+                .extracting("errorCode")
+                .isEqualTo(MissionErrorCode.MISSION_ANSWER_INVALID);
+    }
+
+    @Test
+    void COMPLETED_미션은_답변을_다시_제출할_수_없다() {
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        missionService.startCompletionSession(USER_ID, created.getMission().getId());
+        missionService.submitCompletionAnswer(USER_ID, created.getMission().getId(), "완료했어");
+
+        assertThatThrownBy(() -> missionService.submitCompletionAnswer(
+                USER_ID,
+                created.getMission().getId(),
+                "또 완료했어"
+        ))
+                .isInstanceOf(MissionException.class)
+                .extracting("errorCode")
+                .isEqualTo(MissionErrorCode.MISSION_ALREADY_COMPLETED);
     }
 }

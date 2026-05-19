@@ -1,6 +1,8 @@
 package p5laris.mission.domain.domain.repository;
 
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import p5laris.mission.domain.domain.entity.UserMission;
@@ -34,6 +36,16 @@ public interface UserMissionRepository extends JpaRepository<UserMission, Long> 
 
     // missionId만으로 찾지 않고 userId를 함께 확인해 다른 유저의 미션 처리를 막는다.
     Optional<UserMission> findByIdAndUserId(Long id, Long userId);
+
+    // 완료 질문 시작/답변 제출은 보상 중복과 상태 전이가 걸린 흐름이라 row lock을 잡고 처리한다.
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select m
+            from UserMission m
+            where m.id = :id
+              and m.userId = :userId
+            """)
+    Optional<UserMission> findByIdAndUserIdForUpdate(@Param("id") Long id, @Param("userId") Long userId);
 
     // 오늘 stackOrder의 최대값을 구해 다음 미션 순번을 계산한다.
     @Query("""
