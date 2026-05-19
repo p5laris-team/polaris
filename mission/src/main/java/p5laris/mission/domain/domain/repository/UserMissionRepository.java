@@ -1,0 +1,60 @@
+package p5laris.mission.domain.domain.repository;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import p5laris.mission.domain.domain.entity.UserMission;
+import p5laris.mission.domain.domain.enums.UserMissionStatus;
+
+import java.time.LocalDate;
+import java.util.Collection;
+import java.util.List;
+import java.util.Optional;
+
+public interface UserMissionRepository extends JpaRepository<UserMission, Long> {
+
+    // 오늘 유저에게 진행 중인 현재 미션을 찾는다.
+    // characterId를 조건에 넣지 않는 이유는 현재 미션 정책이 "캐릭터별"이 아니라 "유저별"이기 때문이다.
+    Optional<UserMission> findFirstByUserIdAndMissionDateAndStatusInOrderByStackOrderDesc(
+            Long userId,
+            LocalDate missionDate,
+            Collection<UserMissionStatus> statuses
+    );
+
+    // 새 미션 생성 전에 OFFERED/ANSWERING 상태 미션이 이미 있는지 확인한다.
+    // 애플리케이션 레벨의 1차 중복 생성 방어다.
+    boolean existsByUserIdAndMissionDateAndStatusIn(
+            Long userId,
+            LocalDate missionDate,
+            Collection<UserMissionStatus> statuses
+    );
+
+    // 하루 최대 제안 수 15개를 계산하기 위해 오늘 생성된 전체 미션 수를 센다.
+    long countByUserIdAndMissionDate(Long userId, LocalDate missionDate);
+
+    // missionId만으로 찾지 않고 userId를 함께 확인해 다른 유저의 미션 처리를 막는다.
+    Optional<UserMission> findByIdAndUserId(Long id, Long userId);
+
+    // 오늘 stackOrder의 최대값을 구해 다음 미션 순번을 계산한다.
+    @Query("""
+            select coalesce(max(m.stackOrder), 0)
+            from UserMission m
+            where m.userId = :userId
+              and m.missionDate = :missionDate
+            """)
+    int findMaxStackOrder(@Param("userId") Long userId, @Param("missionDate") LocalDate missionDate);
+
+    // 오늘 이미 사용한 템플릿 id 목록을 가져온다.
+    // 같은 날 동일 seed 미션이 반복 제안되는 것을 피하기 위해 사용한다.
+    @Query("""
+            select m.missionTemplateId
+            from UserMission m
+            where m.userId = :userId
+              and m.missionDate = :missionDate
+              and m.missionTemplateId is not null
+            """)
+    List<Long> findMissionTemplateIdsByUserIdAndMissionDate(
+            @Param("userId") Long userId,
+            @Param("missionDate") LocalDate missionDate
+    );
+}
