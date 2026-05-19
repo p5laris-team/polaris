@@ -1,18 +1,27 @@
 package p5laris.mission.domain.application;
 
 import com.p5laris.proto.mission.v1.CreateNextMissionResponse;
+import com.p5laris.proto.mission.v1.CompletionAnswer;
+import com.p5laris.proto.mission.v1.CompletionInputType;
+import com.p5laris.proto.mission.v1.CompletionQuestion;
 import com.p5laris.proto.mission.v1.GetCurrentMissionResponse;
 import com.p5laris.proto.mission.v1.MissionCategory;
 import com.p5laris.proto.mission.v1.MissionDifficulty;
+import com.p5laris.proto.mission.v1.MissionReward;
 import com.p5laris.proto.mission.v1.MissionStatus;
 import com.p5laris.proto.mission.v1.RejectMissionResponse;
+import com.p5laris.proto.mission.v1.StartCompletionSessionResponse;
+import com.p5laris.proto.mission.v1.SubmitCompletionAnswerResponse;
+import com.p5laris.proto.mission.v1.WalletSnapshot;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import p5laris.mission.domain.domain.entity.MissionCompletionAnswer;
 import p5laris.mission.domain.domain.entity.MissionTemplate;
 import p5laris.mission.domain.domain.entity.UserMission;
 import p5laris.mission.domain.domain.enums.UserMissionStatus;
+import p5laris.mission.domain.domain.repository.MissionCompletionAnswerRepository;
 import p5laris.mission.domain.domain.repository.MissionTemplateRepository;
 import p5laris.mission.domain.domain.repository.UserMissionRepository;
 import p5laris.mission.domain.exception.MissionErrorCode;
@@ -32,6 +41,10 @@ import java.util.Set;
 public class MissionService {
 
     private static final int DAILY_MISSION_OFFER_LIMIT = 15;
+    private static final int COMPLETION_ANSWER_MIN_LENGTH = 1;
+    private static final int COMPLETION_ANSWER_MAX_LENGTH = 300;
+    private static final int WALLET_STAR_PIECE_NOT_INTEGRATED = 0;
+    private static final String DEFAULT_COMPLETION_QUESTION = "해보고 나서 어땠어?";
     private static final String REJECTION_CHARACTER_MESSAGE = "괜찮아요. 다른 별을 찾아볼게요.";
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
     private static final Set<UserMissionStatus> ACTIVE_STATUSES = EnumSet.of(
@@ -41,6 +54,7 @@ public class MissionService {
 
     private final MissionTemplateRepository missionTemplateRepository;
     private final UserMissionRepository userMissionRepository;
+    private final MissionCompletionAnswerRepository missionCompletionAnswerRepository;
     private final Clock clock;
 
     /**
@@ -135,6 +149,81 @@ public class MissionService {
     }
 
     /**
+     * OFFERED 상태의 미션을 완료 질문 답변 중인 ANSWERING 상태로 전환한다.
+     *
+     * 모바일 중복 클릭이나 네트워크 재시도를 고려해 이미 ANSWERING이면 기존 질문을 다시 내려준다.
+     */
+    @Transactional
+    public StartCompletionSessionResponse startCompletionSession(Long userId, Long missionId) {
+        UserMission mission = findOwnedMissionForUpdate(userId, missionId);
+
+        if (mission.isCompleted()) {
+            throw new MissionException(MissionErrorCode.MISSION_ALREADY_COMPLETED);
+        }
+
+        if (!mission.isOffered() && !mission.isAnswering()) {
+            throw new MissionException(MissionErrorCode.MISSION_INVALID_STATUS);
+        }
+
+        if (mission.isOffered()) {
+            mission.startAnswering(LocalDateTime.now(clock));
+        }
+
+        MissionCompletionAnswer answer = findOrCreateCompletionAnswer(mission);
+
+        return StartCompletionSessionResponse.newBuilder()
+                .setMissionId(mission.getId())
+                .setStatus(toProtoStatus(mission.getStatus()))
+                .setQuestion(toProtoQuestion(answer))
+                .build();
+    }
+
+    /**
+     * 완료 질문에 대한 텍스트 답변을 저장하고 미션을 COMPLETED 상태로 전환한다.
+     *
+     * 실제 별조각 지급은 user/wallet gRPC 계약이 준비된 뒤 별도 PR에서 연결한다.
+     * 이번 응답의 reward는 미션이 지급해야 하는 보상 수량을 알려주는 값이다.
+     */
+    @Transactional
+    public SubmitCompletionAnswerResponse submitCompletionAnswer(Long userId, Long missionId, String answerText) {
+        String normalizedAnswer = validateAndNormalizeAnswer(answerText);
+        UserMission mission = findOwnedMissionForUpdate(userId, missionId);
+
+        if (mission.isCompleted()) {
+            throw new MissionException(MissionErrorCode.MISSION_ALREADY_COMPLETED);
+        }
+
+        if (!mission.isAnswering()) {
+            throw new MissionException(MissionErrorCode.MISSION_INVALID_STATUS);
+        }
+
+        MissionCompletionAnswer answer = missionCompletionAnswerRepository.findByMissionId(mission.getId())
+                .orElseThrow(() -> new MissionException(MissionErrorCode.MISSION_INVALID_STATUS));
+
+        if (answer.isAnswered()) {
+            throw new MissionException(MissionErrorCode.MISSION_ALREADY_COMPLETED);
+        }
+
+        LocalDateTime now = LocalDateTime.now(clock);
+        answer.submit(normalizedAnswer, now);
+        mission.complete(now);
+
+        return SubmitCompletionAnswerResponse.newBuilder()
+                .setMissionId(mission.getId())
+                .setStatus(toProtoStatus(mission.getStatus()))
+                .setAnswer(toProtoAnswer(answer))
+                .setReward(MissionReward.newBuilder()
+                        .setStarPiece(mission.getRewardStarPiece())
+                        .setAffection(0)
+                        .build())
+                .setWallet(WalletSnapshot.newBuilder()
+                        .setStarPiece(WALLET_STAR_PIECE_NOT_INTEGRATED)
+                        .build())
+                .setCharacterMessage(mission.getCompletionCharacterResponse())
+                .build();
+    }
+
+    /**
      * 오늘 아직 사용하지 않은 활성 미션 템플릿을 하나 고른다.
      *
      * AI가 미션 제목/보상/카테고리를 임의 생성하지 않도록 seed template을 기준으로 선택한다.
@@ -148,6 +237,44 @@ public class MissionService {
                 .filter(template -> !usedTemplateIdSet.contains(template.getId()))
                 .findFirst()
                 .orElseThrow(() -> new MissionException(MissionErrorCode.MISSION_TEMPLATE_NOT_FOUND));
+    }
+
+    private UserMission findOwnedMissionForUpdate(Long userId, Long missionId) {
+        return userMissionRepository.findByIdAndUserIdForUpdate(missionId, userId)
+                .orElseThrow(() -> new MissionException(MissionErrorCode.MISSION_NOT_FOUND));
+    }
+
+    private MissionCompletionAnswer findOrCreateCompletionAnswer(UserMission mission) {
+        return missionCompletionAnswerRepository.findByMissionId(mission.getId())
+                .orElseGet(() -> missionCompletionAnswerRepository.save(MissionCompletionAnswer.start(
+                        mission.getId(),
+                        mission.getUserId(),
+                        resolveCompletionQuestion(mission)
+                )));
+    }
+
+    private String resolveCompletionQuestion(UserMission mission) {
+        if (mission.getMissionTemplateId() == null) {
+            return DEFAULT_COMPLETION_QUESTION;
+        }
+
+        return missionTemplateRepository.findById(mission.getMissionTemplateId())
+                .map(MissionTemplate::getFallbackQuestion)
+                .orElse(DEFAULT_COMPLETION_QUESTION);
+    }
+
+    private String validateAndNormalizeAnswer(String answerText) {
+        if (answerText == null) {
+            throw new MissionException(MissionErrorCode.MISSION_ANSWER_INVALID);
+        }
+
+        String normalizedAnswer = answerText.trim();
+        if (normalizedAnswer.length() < COMPLETION_ANSWER_MIN_LENGTH
+                || normalizedAnswer.length() > COMPLETION_ANSWER_MAX_LENGTH) {
+            throw new MissionException(MissionErrorCode.MISSION_ANSWER_INVALID);
+        }
+
+        return normalizedAnswer;
     }
 
     /**
@@ -167,6 +294,23 @@ public class MissionService {
                 .setDifficulty(toProtoDifficulty(mission))
                 .setRewardStarPiece(mission.getRewardStarPiece())
                 .setStatus(toProtoStatus(mission.getStatus()))
+                .build();
+    }
+
+    private CompletionQuestion toProtoQuestion(MissionCompletionAnswer answer) {
+        return CompletionQuestion.newBuilder()
+                .setId(answer.getId())
+                .setText(answer.getQuestionText())
+                .setInputType(CompletionInputType.COMPLETION_INPUT_TYPE_TEXT)
+                .setMinLength(COMPLETION_ANSWER_MIN_LENGTH)
+                .setMaxLength(COMPLETION_ANSWER_MAX_LENGTH)
+                .build();
+    }
+
+    private CompletionAnswer toProtoAnswer(MissionCompletionAnswer answer) {
+        return CompletionAnswer.newBuilder()
+                .setText(answer.getAnswerText())
+                .setAnsweredAt(formatDateTime(answer.getAnsweredAt()))
                 .build();
     }
 
