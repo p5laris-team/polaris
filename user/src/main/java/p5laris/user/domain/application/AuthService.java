@@ -20,6 +20,8 @@ import java.nio.charset.StandardCharsets;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.Optional;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -96,7 +98,10 @@ public class AuthService {
             String name = userNode.has("name") ? userNode.get("name").asText() : "별따라걷기";
 
             // 3. 유저 조회 혹은 생성
-            User user = userRepository.findByEmail(email).orElseGet(() -> {
+            Optional<User> existingUser = userRepository.findByEmail(email);
+            boolean signedUp = existingUser.isEmpty();
+
+            User user = existingUser.orElseGet(() -> {
                 User newUser = User.builder()
                         .email(email)
                         .nickname(name)
@@ -119,7 +124,7 @@ public class AuthService {
             user.updateRefreshToken(refreshToken);
 
             // 신규 가입 이벤트
-            if (true) {
+            if (signedUp) {
                 eventPublisher.publishEvent(AuthLogEvent.userSignedUp(
                         user.getId(),
                         user.getProvider(),
