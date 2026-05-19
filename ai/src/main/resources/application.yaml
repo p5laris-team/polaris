@@ -39,3 +39,9 @@ grpc:
     mission:
       address: static://localhost:9094
       negotiationType: plaintext
+
+ai:
+  provider:
+    enabled: ${AI_PROVIDER_ENABLED:false}
+    type: ${AI_PROVIDER_TYPE:local}
+    model: ${AI_PROVIDER_MODEL:local-tone-v1}
