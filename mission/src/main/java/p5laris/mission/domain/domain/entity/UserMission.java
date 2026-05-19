@@ -130,8 +130,30 @@ public class UserMission extends BaseEntity {
         this.rejectedAt = rejectedAt;
     }
 
+    // OFFERED 상태 미션을 완료 질문 답변 중인 ANSWERING 상태로 바꾼다.
+    public void startAnswering(LocalDateTime completionStartedAt) {
+        this.status = UserMissionStatus.ANSWERING;
+        this.completionStartedAt = completionStartedAt;
+    }
+
+    // 답변이 제출된 미션을 COMPLETED 상태로 바꾸고 완료 시각을 기록한다.
+    public void complete(LocalDateTime completedAt) {
+        this.status = UserMissionStatus.COMPLETED;
+        this.completedAt = completedAt;
+    }
+
     // 현재 미션이 거절 가능한 제안 상태인지 확인한다.
     public boolean isOffered() {
         return status == UserMissionStatus.OFFERED;
+    }
+
+    // 완료 질문 세션이 이미 시작된 상태인지 확인한다.
+    public boolean isAnswering() {
+        return status == UserMissionStatus.ANSWERING;
+    }
+
+    // 이미 완료 처리된 미션인지 확인한다.
+    public boolean isCompleted() {
+        return status == UserMissionStatus.COMPLETED;
     }
 }
