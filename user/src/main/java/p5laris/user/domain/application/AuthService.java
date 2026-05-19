@@ -3,8 +3,10 @@ package p5laris.user.domain.application;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import p5laris.user.domain.application.event.AuthLogEvent;
 import p5laris.user.domain.domain.entity.User;
 import p5laris.user.domain.domain.repository.UserRepository;
 import p5laris.user.core.auth.JwtProvider;
@@ -30,6 +32,7 @@ public class AuthService {
     private final WalletRepository walletRepository;
     private final JwtProvider jwtProvider;
     private final TokenBlacklistService tokenBlacklistService;
+    private final ApplicationEventPublisher eventPublisher;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final HttpClient httpClient = HttpClient.newHttpClient();
 
@@ -114,6 +117,18 @@ public class AuthService {
             String refreshToken = jwtProvider.generateRefreshToken(user.getId());
 
             user.updateRefreshToken(refreshToken);
+
+            // 신규 가입 이벤트
+            if (true) {
+                eventPublisher.publishEvent(AuthLogEvent.userSignedUp(
+                        user.getId(),
+                        user.getProvider(),
+                        user.getRole(),
+                        user.getStatus()
+                ));
+            }
+            // 기존 사용자 로그인 이벤트
+            eventPublisher.publishEvent(AuthLogEvent.userLoggedIn(user.getId(), user.getProvider()));
 
             return new LoginResult(accessToken, refreshToken, user);
 
