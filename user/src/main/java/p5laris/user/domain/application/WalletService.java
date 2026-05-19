@@ -24,7 +24,7 @@ public class WalletService {
     }
 
     @Transactional
-    public void earnStarPiece(Long userId, int amount, String reason, String refType, Long refId, String idempotencyKey) {
+    public StarPieceTransaction earnStarPiece(Long userId, int amount, String reason, String refType, Long refId, String idempotencyKey) {
         if (amount < 0) throw new UserException(UserErrorCode.EARN_AMOUNT_MUST_BE_POSITIVE);
         
         Wallet wallet = walletRepository.findByUserId(userId)
@@ -45,7 +45,7 @@ public class WalletService {
                 .idempotencyKey(idempotencyKey)
                 .build();
                 
-        transactionRepository.save(tx);
+        return transactionRepository.save(tx);
     }
 
     @Transactional
