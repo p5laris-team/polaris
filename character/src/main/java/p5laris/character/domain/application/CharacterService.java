@@ -52,7 +52,7 @@ public class CharacterService {
     @Transactional(readOnly = true)
     public List<CharacterAssetResponse> getCharacterAssets(Long characterTypeId) {
         if (!characterTypeRepository.existsById(characterTypeId)) {
-            throw new IllegalArgumentException("CharacterType not found: " + characterTypeId);
+            throw new p5laris.character.domain.exception.CharacterException(p5laris.character.domain.exception.CharacterErrorCode.CHARACTER_TYPE_NOT_FOUND);
         }
         return characterAssetRepository.findByCharacterTypeId(characterTypeId)
                 .stream()
@@ -70,7 +70,7 @@ public class CharacterService {
     @Transactional
     public p5laris.character.domain.application.dto.UserCharacterResponse createCharacter(Long userId, Long characterTypeId, String name) {
         p5laris.character.domain.domain.entity.CharacterType characterType = characterTypeRepository.findById(characterTypeId)
-                .orElseThrow(() -> new IllegalArgumentException("CharacterType not found: " + characterTypeId));
+                .orElseThrow(() -> new p5laris.character.domain.exception.CharacterException(p5laris.character.domain.exception.CharacterErrorCode.CHARACTER_TYPE_NOT_FOUND));
 
         // Deactivate existing active character if any
         userCharacterRepository.findByUserIdAndActiveTrue(userId)
@@ -111,10 +111,13 @@ public class CharacterService {
      * Returns null or throws exception if not found? Let's throw an exception for simplicity if the user has no active character.
      * Or return Optional. We will throw an exception since the API spec doesn't specify a null response.
      */
-    @Transactional(readOnly = true)
+    @Transactional
     public p5laris.character.domain.application.dto.MyCharacterResponse getMyCharacter(Long userId) {
         p5laris.character.domain.domain.entity.UserCharacter userCharacter = userCharacterRepository.findByUserIdAndActiveTrue(userId)
-                .orElseThrow(() -> new IllegalArgumentException("Active character not found for user: " + userId));
+                .orElseThrow(() -> new p5laris.character.domain.exception.CharacterException(p5laris.character.domain.exception.CharacterErrorCode.CHARACTER_NOT_FOUND));
+
+        // 지연 평가: 상태 감소 로직 실행 (JPA Dirty checking으로 DB 반영됨)
+        userCharacter.calculateTimeBasedStatDecrease();
 
         return p5laris.character.domain.application.dto.MyCharacterResponse.builder()
                 .id(userCharacter.getId())
@@ -132,10 +135,10 @@ public class CharacterService {
     @Transactional
     public p5laris.character.domain.application.dto.UpdateCharacterNameResponse updateCharacterName(Long characterId, Long userId, String newName) {
         p5laris.character.domain.domain.entity.UserCharacter userCharacter = userCharacterRepository.findById(characterId)
-                .orElseThrow(() -> new IllegalArgumentException("Character not found: " + characterId));
+                .orElseThrow(() -> new p5laris.character.domain.exception.CharacterException(p5laris.character.domain.exception.CharacterErrorCode.CHARACTER_NOT_FOUND));
 
         if (!userCharacter.getUserId().equals(userId)) {
-            throw new IllegalArgumentException("User does not own this character");
+            throw new p5laris.character.domain.exception.CharacterException(p5laris.character.domain.exception.CharacterErrorCode.NOT_CHARACTER_OWNER);
         }
 
         userCharacter.updateName(newName);
@@ -150,44 +153,35 @@ public class CharacterService {
     /**
      * Get character status (API spec 4.6).
      */
-    @Transactional(readOnly = true)
+    @Transactional
     public p5laris.character.domain.application.dto.CharacterStatusResponse getCharacterStatus(Long characterId, Long userId) {
         p5laris.character.domain.domain.entity.UserCharacter userCharacter = userCharacterRepository.findById(characterId)
-                .orElseThrow(() -> new IllegalArgumentException("Character not found: " + characterId));
+                .orElseThrow(() -> new p5laris.character.domain.exception.CharacterException(p5laris.character.domain.exception.CharacterErrorCode.CHARACTER_NOT_FOUND));
 
         if (!userCharacter.getUserId().equals(userId)) {
-            throw new IllegalArgumentException("User does not own this character");
+            throw new p5laris.character.domain.exception.CharacterException(p5laris.character.domain.exception.CharacterErrorCode.NOT_CHARACTER_OWNER);
         }
+
+        // 지연 평가: 상태 감소 로직 실행
+        userCharacter.calculateTimeBasedStatDecrease();
 
         return p5laris.character.domain.application.dto.CharacterStatusResponse.builder()
                 .characterId(userCharacter.getId())
                 .states(p5laris.character.domain.application.dto.CharacterStatusResponse.States.builder()
-                        .hunger(buildStateDetail(userCharacter.getFullness(), "든든함", "적당함", "배고픔"))
-                        .energy(buildStateDetail(userCharacter.getEnergy(), "활기참", "졸림", "지침"))
-                        .affection(buildStateDetail(userCharacter.getAffection(), "행복함", "평온함", "쓸쓸함"))
+                        .hunger(buildStateDetail(userCharacter.getFullness(), p5laris.character.domain.domain.enums.StatType.FULLNESS))
+                        .energy(buildStateDetail(userCharacter.getEnergy(), p5laris.character.domain.domain.enums.StatType.ENERGY))
+                        .affection(buildStateDetail(userCharacter.getAffection(), p5laris.character.domain.domain.enums.StatType.AFFECTION))
                         .build())
                 .build();
     }
 
-    private p5laris.character.domain.application.dto.CharacterStatusResponse.StateDetail buildStateDetail(int value, String goodLabel, String normalLabel, String badLabel) {
-        String grade;
-        String label;
-
-        if (value >= 70) {
-            grade = "GOOD";
-            label = goodLabel;
-        } else if (value >= 30) {
-            grade = "NORMAL";
-            label = normalLabel;
-        } else {
-            grade = "BAD";
-            label = badLabel;
-        }
+    private p5laris.character.domain.application.dto.CharacterStatusResponse.StateDetail buildStateDetail(int value, p5laris.character.domain.domain.enums.StatType statType) {
+        p5laris.character.domain.domain.enums.StatGrade grade = p5laris.character.domain.domain.enums.StatGrade.fromValue(value);
 
         return p5laris.character.domain.application.dto.CharacterStatusResponse.StateDetail.builder()
                 .value(value)
-                .label(label)
-                .grade(grade)
+                .label(statType.getLabel(grade))
+                .grade(grade.name())
                 .build();
     }
 
@@ -210,10 +204,10 @@ public class CharacterService {
 
         // 1. Ownership validation
         p5laris.character.domain.domain.entity.UserCharacter character = userCharacterRepository.findById(characterId)
-                .orElseThrow(() -> new IllegalArgumentException("Character not found: " + characterId));
+                .orElseThrow(() -> new p5laris.character.domain.exception.CharacterException(p5laris.character.domain.exception.CharacterErrorCode.CHARACTER_NOT_FOUND));
 
         if (!character.getUserId().equals(userId)) {
-            throw new IllegalArgumentException("User does not own this character");
+            throw new p5laris.character.domain.exception.CharacterException(p5laris.character.domain.exception.CharacterErrorCode.NOT_CHARACTER_OWNER);
         }
 
         // 2. Parse action type
@@ -221,7 +215,7 @@ public class CharacterService {
         try {
             actionType = ActionType.valueOf(actionTypeStr);
         } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("Invalid action type: " + actionTypeStr);
+            throw new p5laris.character.domain.exception.CharacterException(p5laris.character.domain.exception.CharacterErrorCode.INVALID_ACTION_TYPE);
         }
 
         // 3. Capture before state
@@ -303,10 +297,10 @@ public class CharacterService {
 
         // 1. Load character and validate ownership
         p5laris.character.domain.domain.entity.UserCharacter character = userCharacterRepository.findById(characterId)
-                .orElseThrow(() -> new IllegalArgumentException("Character not found: " + characterId));
+                .orElseThrow(() -> new p5laris.character.domain.exception.CharacterException(p5laris.character.domain.exception.CharacterErrorCode.CHARACTER_NOT_FOUND));
 
         if (!character.getUserId().equals(userId)) {
-            throw new IllegalArgumentException("User does not own this character");
+            throw new p5laris.character.domain.exception.CharacterException(p5laris.character.domain.exception.CharacterErrorCode.NOT_CHARACTER_OWNER);
         }
 
         // 2. TODO [Item Domain Integration]: verify user owns the skin item.
