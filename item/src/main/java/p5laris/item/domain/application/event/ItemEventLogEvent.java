@@ -15,6 +15,7 @@ public record ItemEventLogEvent(
         Map<String, Object> metadata,
         OffsetDateTime occurredAt
 ) {
+    // 아이템 구매 이벤트
     public static ItemEventLogEvent itemPurchased(
             Long userId,
             UserItem userItem,
@@ -44,6 +45,7 @@ public record ItemEventLogEvent(
         );
     }
 
+    // 별조각 사용 이벤트
     public static ItemEventLogEvent starPieceSpent(
             Long userId,
             Item item,

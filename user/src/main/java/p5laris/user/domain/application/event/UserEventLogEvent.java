@@ -16,6 +16,7 @@ public record UserEventLogEvent(
         Map<String, Object> metadata,
         OffsetDateTime occurredAt
 ) {
+    // 신규 가입 이벤트
     public static UserEventLogEvent userSignedUp(Long userId, String provider, String role, String status) {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("provider", provider);
@@ -24,12 +25,14 @@ public record UserEventLogEvent(
         return new UserEventLogEvent("USER_SIGNED_UP", userId, "USER", userId, metadata, OffsetDateTime.now());
     }
 
+    // 기존 사용자 로그인 이벤트
     public static UserEventLogEvent userLoggedIn(Long userId, String provider) {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("provider", provider);
         return new UserEventLogEvent("USER_LOGGED_IN", userId, "USER", userId, metadata, OffsetDateTime.now());
     }
 
+    // 온보딩 설문지 중간 저장 이벤트
     public static UserEventLogEvent onboardingProfileSaved(OnboardingProfile profile) {
         Map<String, Object> metadata = onboardingMetadata(profile);
         metadata.put("completed", profile.isCompleted());
@@ -43,6 +46,7 @@ public record UserEventLogEvent(
         );
     }
 
+    // 온보딩 완료 이벤트
     public static UserEventLogEvent onboardingCompleted(OnboardingProfile profile) {
         return new UserEventLogEvent(
                 "ONBOARDING_COMPLETED",
@@ -54,6 +58,7 @@ public record UserEventLogEvent(
         );
     }
 
+    // 출석 체크 이벤트
     public static UserEventLogEvent attendanceChecked(AttendanceRecord record) {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("attendanceDate", record.getAttendanceDate().toString());
@@ -69,6 +74,7 @@ public record UserEventLogEvent(
         );
     }
 
+    // 보상 수령 이벤트
     public static UserEventLogEvent starPieceEarned(AttendanceRecord record, StarPieceTransaction transaction) {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("reason", transaction.getReason());
