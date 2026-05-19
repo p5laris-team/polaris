@@ -111,10 +111,13 @@ public class CharacterService {
      * Returns null or throws exception if not found? Let's throw an exception for simplicity if the user has no active character.
      * Or return Optional. We will throw an exception since the API spec doesn't specify a null response.
      */
-    @Transactional(readOnly = true)
+    @Transactional
     public p5laris.character.domain.application.dto.MyCharacterResponse getMyCharacter(Long userId) {
         p5laris.character.domain.domain.entity.UserCharacter userCharacter = userCharacterRepository.findByUserIdAndActiveTrue(userId)
                 .orElseThrow(() -> new IllegalArgumentException("Active character not found for user: " + userId));
+
+        // 지연 평가: 상태 감소 로직 실행 (JPA Dirty checking으로 DB 반영됨)
+        userCharacter.calculateTimeBasedStatDecrease();
 
         return p5laris.character.domain.application.dto.MyCharacterResponse.builder()
                 .id(userCharacter.getId())
@@ -150,7 +153,7 @@ public class CharacterService {
     /**
      * Get character status (API spec 4.6).
      */
-    @Transactional(readOnly = true)
+    @Transactional
     public p5laris.character.domain.application.dto.CharacterStatusResponse getCharacterStatus(Long characterId, Long userId) {
         p5laris.character.domain.domain.entity.UserCharacter userCharacter = userCharacterRepository.findById(characterId)
                 .orElseThrow(() -> new IllegalArgumentException("Character not found: " + characterId));
@@ -158,6 +161,9 @@ public class CharacterService {
         if (!userCharacter.getUserId().equals(userId)) {
             throw new IllegalArgumentException("User does not own this character");
         }
+
+        // 지연 평가: 상태 감소 로직 실행
+        userCharacter.calculateTimeBasedStatDecrease();
 
         return p5laris.character.domain.application.dto.CharacterStatusResponse.builder()
                 .characterId(userCharacter.getId())

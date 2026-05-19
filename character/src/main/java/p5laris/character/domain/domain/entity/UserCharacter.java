@@ -86,6 +86,10 @@ public class UserCharacter {
     @Column(name = "equipped_skin_id")
     private Long equippedSkinId;
 
+    /** 마지막으로 상태값이 차감된 시간 (지연 평가용) */
+    @Column(name = "last_stat_decreased_at", nullable = false)
+    private Instant lastStatDecreasedAt;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -104,6 +108,7 @@ public class UserCharacter {
         this.energy = energy;
         this.affection = affection;
         this.active = active;
+        this.lastStatDecreasedAt = Instant.now();
         this.createdAt = Instant.now();
         this.updatedAt = Instant.now();
     }
@@ -111,10 +116,37 @@ public class UserCharacter {
     // ── 상태 변경 메서드 ───────────────────────────────────────────────────
 
     /**
+     * 접속/조회 시 시간에 따른 상태 차감 로직 (지연 평가).
+     * 정책: 5시간마다 fullness -20, energy -10, affection -5
+     * @return 변경이 발생했으면 true, 아니면 false
+     */
+    public boolean calculateTimeBasedStatDecrease() {
+        Instant now = Instant.now();
+        long secondsElapsed = java.time.Duration.between(this.lastStatDecreasedAt, now).getSeconds();
+        long hoursElapsed = secondsElapsed / 3600;
+        long cycles = hoursElapsed / 5; // 5시간 단위 사이클
+
+        if (cycles > 0) {
+            this.fullness = Math.max(0, this.fullness - (int)(cycles * 20));
+            this.energy = Math.max(0, this.energy - (int)(cycles * 10));
+            this.affection = Math.max(0, this.affection - (int)(cycles * 5));
+            
+            // 처리한 사이클만큼만 시간 증가 (나머지 자투리 시간 보존)
+            this.lastStatDecreasedAt = this.lastStatDecreasedAt.plusSeconds(cycles * 5 * 3600);
+            this.updatedAt = Instant.now();
+            return true;
+        }
+        return false;
+    }
+
+    /**
      * 돌봄 액션 적용. ActionType에 따라 대응 상태를 amount만큼 회복한다.
      * 상태는 100을 초과하지 않는다 (AGENTS.md §20.2).
      */
     public void applyCare(ActionType actionType, int amount) {
+        // 돌봄 액션 전에 밀린 시간 기반 차감 먼저 처리
+        calculateTimeBasedStatDecrease();
+        
         switch (actionType) {
             case FEED  -> this.fullness  = Math.min(100, this.fullness  + amount);
             case SLEEP -> this.energy    = Math.min(100, this.energy    + amount);
