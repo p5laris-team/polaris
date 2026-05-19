@@ -14,6 +14,8 @@ service CharacterService {
   rpc GetMyCharacter(GetMyCharacterRequest) returns (GetMyCharacterResponse);
   rpc UpdateCharacterName(UpdateCharacterNameRequest) returns (UpdateCharacterNameResponse);
   rpc GetCharacterStatus(GetCharacterStatusRequest) returns (GetCharacterStatusResponse);
+  rpc PerformCareAction(PerformCareActionRequest) returns (PerformCareActionResponse);
+  rpc EquipSkin(EquipSkinRequest) returns (EquipSkinResponse);
 }
 
 // GetCharacterTypes: returns active character types ordered by sort_order
@@ -129,4 +131,36 @@ message CharacterStateDetail {
   int32 value = 1;
   string label = 2;
   string grade = 3;
+}
+
+// PerformCareAction: performs a care action (FEED/SLEEP/PLAY) on a character
+message PerformCareActionRequest {
+  int64 character_id = 1;
+  int64 user_id = 2;       // ownership validation
+  string action_type = 3;  // FEED | SLEEP | PLAY
+  int64 item_id = 4;       // 0 if no item used
+}
+
+message PerformCareActionResponse {
+  int64 care_log_id = 1;
+  int64 character_id = 2;
+  string action_type = 3;
+  int64 consumed_item_id = 4;   // 0 if no item consumed
+  int32 consumed_quantity = 5;  // 0 if no item consumed
+  CharacterStates before_states = 6;
+  CharacterStates after_states = 7;
+  string character_message = 8;
+}
+
+// EquipSkin: equips a skin item on a character
+message EquipSkinRequest {
+  int64 character_id = 1;
+  int64 user_id = 2;   // ownership validation
+  int64 item_id = 3;   // skin item to equip
+}
+
+message EquipSkinResponse {
+  int64 character_id = 1;
+  int64 equipped_skin_id = 2;
+  string updated_at = 3;
 }

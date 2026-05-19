@@ -85,5 +85,17 @@ public class CharacterController {
             @p5laris.gateway.global.security.annotation.LoginUserId Long userId) {
         return ApiResponse.success(characterGatewayService.getCharacterStatus(characterId, userId));
     }
+
+    /**
+     * Perform care action (API spec 4.7).
+     * POST /api/character/v1/characters/{characterId}/care-logs
+     */
+    @org.springframework.web.bind.annotation.PostMapping("/v1/characters/{characterId}/care-logs")
+    public ApiResponse<p5laris.gateway.domain.character.api.dto.CareActionResponse> performCareAction(
+            @org.springframework.web.bind.annotation.PathVariable Long characterId,
+            @p5laris.gateway.global.security.annotation.LoginUserId Long userId,
+            @org.springframework.web.bind.annotation.RequestBody p5laris.gateway.domain.character.api.dto.CareActionRequest request) {
+        return ApiResponse.success(characterGatewayService.performCareAction(characterId, userId, request));
+    }
 }
 

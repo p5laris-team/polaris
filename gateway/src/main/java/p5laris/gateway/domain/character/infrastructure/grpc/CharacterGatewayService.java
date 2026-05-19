@@ -200,5 +200,47 @@ public class CharacterGatewayService {
                         .build())
                 .build();
     }
+
+    /**
+     * Perform care action (API spec 4.7).
+     */
+    public p5laris.gateway.domain.character.api.dto.CareActionResponse performCareAction(
+            Long characterId, Long userId,
+            p5laris.gateway.domain.character.api.dto.CareActionRequest request) {
+
+        com.p5laris.proto.character.v1.PerformCareActionResponse response =
+                characterStub.performCareAction(
+                        com.p5laris.proto.character.v1.PerformCareActionRequest.newBuilder()
+                                .setCharacterId(characterId)
+                                .setUserId(userId)
+                                .setActionType(request.actionType())
+                                .setItemId(request.itemId() != null ? request.itemId() : 0L)
+                                .build()
+                );
+
+        // itemId=0 means no item was consumed
+        Long consumedItemId = response.getConsumedItemId() > 0 ? response.getConsumedItemId() : null;
+
+        return p5laris.gateway.domain.character.api.dto.CareActionResponse.builder()
+                .careLogId(response.getCareLogId())
+                .characterId(response.getCharacterId())
+                .actionType(response.getActionType())
+                .consumed(p5laris.gateway.domain.character.api.dto.CareActionResponse.Consumed.builder()
+                        .itemId(consumedItemId)
+                        .quantity(response.getConsumedQuantity())
+                        .build())
+                .beforeStates(p5laris.gateway.domain.character.api.dto.CareActionResponse.States.builder()
+                        .hunger(response.getBeforeStates().getHunger())
+                        .energy(response.getBeforeStates().getEnergy())
+                        .affection(response.getBeforeStates().getAffection())
+                        .build())
+                .afterStates(p5laris.gateway.domain.character.api.dto.CareActionResponse.States.builder()
+                        .hunger(response.getAfterStates().getHunger())
+                        .energy(response.getAfterStates().getEnergy())
+                        .affection(response.getAfterStates().getAffection())
+                        .build())
+                .characterMessage(response.getCharacterMessage())
+                .build();
+    }
 }
 

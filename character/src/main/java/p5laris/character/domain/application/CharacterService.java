@@ -6,7 +6,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import p5laris.character.domain.application.dto.CharacterAssetResponse;
 import p5laris.character.domain.application.dto.CharacterTypeResponse;
+import p5laris.character.domain.domain.entity.CharacterCareLog;
+import p5laris.character.domain.domain.enums.ActionType;
 import p5laris.character.domain.domain.repository.CharacterAssetRepository;
+import p5laris.character.domain.domain.repository.CharacterCareLogRepository;
 import p5laris.character.domain.domain.repository.CharacterTypeRepository;
 
 import java.util.List;
@@ -19,6 +22,7 @@ public class CharacterService {
     private final CharacterTypeRepository characterTypeRepository;
     private final CharacterAssetRepository characterAssetRepository;
     private final p5laris.character.domain.domain.repository.UserCharacterRepository userCharacterRepository;
+    private final CharacterCareLogRepository characterCareLogRepository;
 
     /**
      * Get active character types ordered by sort_order ascending.
@@ -184,6 +188,104 @@ public class CharacterService {
                 .value(value)
                 .label(label)
                 .grade(grade)
+                .build();
+    }
+
+    /**
+     * Perform a care action on a character.
+     * API spec 4.7 POST /api/character/v1/characters/{characterId}/care-logs
+     *
+     * Business rules (AGENTS.md §20.2):
+     * - FEED  → fullness  +30 (max 100)
+     * - SLEEP → energy    +30 (max 100)
+     * - PLAY  → affection +30 (max 100)
+     *
+     * Item consumption:
+     * TODO [Item Domain Integration]: if itemId > 0, call item domain to deduct 1 quantity.
+     * Currently skipped; itemId is stored in care log but no deduction is made.
+     */
+    @Transactional
+    public p5laris.character.domain.application.dto.CareActionResponse performCareAction(
+            Long characterId, Long userId, String actionTypeStr, Long itemId) {
+
+        // 1. Ownership validation
+        p5laris.character.domain.domain.entity.UserCharacter character = userCharacterRepository.findById(characterId)
+                .orElseThrow(() -> new IllegalArgumentException("Character not found: " + characterId));
+
+        if (!character.getUserId().equals(userId)) {
+            throw new IllegalArgumentException("User does not own this character");
+        }
+
+        // 2. Parse action type
+        ActionType actionType;
+        try {
+            actionType = ActionType.valueOf(actionTypeStr);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Invalid action type: " + actionTypeStr);
+        }
+
+        // 3. Capture before state
+        p5laris.character.domain.application.dto.CareActionResponse.States beforeStates =
+                p5laris.character.domain.application.dto.CareActionResponse.States.builder()
+                        .hunger(character.getFullness())
+                        .energy(character.getEnergy())
+                        .affection(character.getAffection())
+                        .build();
+
+        // 4. Apply care (fixed +30 per action, MVP)
+        final int CARE_AMOUNT = 30;
+        character.applyCare(actionType, CARE_AMOUNT);
+
+        // 5. Capture after state
+        p5laris.character.domain.application.dto.CareActionResponse.States afterStates =
+                p5laris.character.domain.application.dto.CareActionResponse.States.builder()
+                        .hunger(character.getFullness())
+                        .energy(character.getEnergy())
+                        .affection(character.getAffection())
+                        .build();
+
+        // 6. TODO [Item Domain Integration]: if itemId > 0, call item service to deduct quantity.
+        //    Example (uncomment after item domain is ready):
+        //    if (itemId != null && itemId > 0) {
+        //        itemService.deductUserItem(userId, itemId, 1);
+        //    }
+        long resolvedItemId = (itemId != null) ? itemId : 0L;
+
+        // 7. Build state snapshot JSON (simple format)
+        String beforeJson = String.format(
+                "{\"fullness\":%d,\"energy\":%d,\"affection\":%d}",
+                beforeStates.hunger(), beforeStates.energy(), beforeStates.affection());
+        String afterJson = String.format(
+                "{\"fullness\":%d,\"energy\":%d,\"affection\":%d}",
+                afterStates.hunger(), afterStates.energy(), afterStates.affection());
+
+        // 8. Persist care log
+        CharacterCareLog careLog = CharacterCareLog.builder()
+                .userId(userId)
+                .characterId(characterId)
+                .itemId(resolvedItemId > 0 ? resolvedItemId : null)
+                .actionType(actionType)
+                .beforeStateJson(beforeJson)
+                .afterStateJson(afterJson)
+                .build();
+        characterCareLogRepository.save(careLog);
+
+        // 9. Build character message (MVP fixed messages per action type)
+        String characterMessage = switch (actionType) {
+            case FEED  -> "Mmm... light has a taste too.";
+            case SLEEP -> "...zz. Thanks.";
+            case PLAY  -> "That was fun. Let's do it again sometime.";
+        };
+
+        return p5laris.character.domain.application.dto.CareActionResponse.builder()
+                .careLogId(careLog.getId())
+                .characterId(characterId)
+                .actionType(actionType.name())
+                .consumedItemId(resolvedItemId > 0 ? resolvedItemId : null)
+                .consumedQuantity(resolvedItemId > 0 ? 1 : 0)
+                .beforeStates(beforeStates)
+                .afterStates(afterStates)
+                .characterMessage(characterMessage)
                 .build();
     }
 }

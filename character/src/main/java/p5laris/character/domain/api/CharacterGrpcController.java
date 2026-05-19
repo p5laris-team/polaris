@@ -174,5 +174,41 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
         responseObserver.onNext(response);
         responseObserver.onCompleted();
     }
+
+    /**
+     * Perform care action (API spec 4.7).
+     */
+    @Override
+    public void performCareAction(PerformCareActionRequest request,
+                                  StreamObserver<PerformCareActionResponse> responseObserver) {
+        var result = characterService.performCareAction(
+                request.getCharacterId(),
+                request.getUserId(),
+                request.getActionType(),
+                request.getItemId()
+        );
+
+        PerformCareActionResponse response = PerformCareActionResponse.newBuilder()
+                .setCareLogId(result.careLogId() != null ? result.careLogId() : 0L)
+                .setCharacterId(result.characterId())
+                .setActionType(result.actionType())
+                .setConsumedItemId(result.consumedItemId() != null ? result.consumedItemId() : 0L)
+                .setConsumedQuantity(result.consumedQuantity())
+                .setBeforeStates(CharacterStates.newBuilder()
+                        .setHunger(result.beforeStates().hunger())
+                        .setEnergy(result.beforeStates().energy())
+                        .setAffection(result.beforeStates().affection())
+                        .build())
+                .setAfterStates(CharacterStates.newBuilder()
+                        .setHunger(result.afterStates().hunger())
+                        .setEnergy(result.afterStates().energy())
+                        .setAffection(result.afterStates().affection())
+                        .build())
+                .setCharacterMessage(result.characterMessage())
+                .build();
+
+        responseObserver.onNext(response);
+        responseObserver.onCompleted();
+    }
 }
 
