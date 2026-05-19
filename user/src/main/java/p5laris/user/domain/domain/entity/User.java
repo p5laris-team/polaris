@@ -1,4 +1,4 @@
-package p5laris.user.domain.domain;
+package p5laris.user.domain.domain.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -10,11 +10,7 @@ import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
 import p5laris.user.core.entity.BaseEntity;
-
-import java.time.Instant;
 
 @Entity
 @Table(name = "users")

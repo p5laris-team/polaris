@@ -1,4 +1,4 @@
-package p5laris.user.domain.domain;
+package p5laris.user.domain.domain.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
@@ -7,7 +7,6 @@ import org.hibernate.type.SqlTypes;
 import p5laris.user.core.entity.BaseEntity;
 
 import java.time.LocalDateTime;
-import java.util.Map;
 
 @Entity
 @Table(name = "onboarding_profiles")

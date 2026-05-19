@@ -7,7 +7,7 @@ import io.grpc.stub.StreamObserver;
 import lombok.RequiredArgsConstructor;
 import net.devh.boot.grpc.server.service.GrpcService;
 import p5laris.user.domain.application.WalletService;
-import p5laris.user.domain.domain.Wallet;
+import p5laris.user.domain.domain.entity.Wallet;
 
 @GrpcService
 @RequiredArgsConstructor

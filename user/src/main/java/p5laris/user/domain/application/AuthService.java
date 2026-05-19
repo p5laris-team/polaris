@@ -5,12 +5,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import p5laris.user.domain.domain.User;
-import p5laris.user.domain.domain.UserRepository;
+import p5laris.user.domain.domain.entity.User;
+import p5laris.user.domain.domain.repository.UserRepository;
 import p5laris.user.core.auth.JwtProvider;
 import p5laris.user.core.auth.TokenBlacklistService;
-import p5laris.user.domain.domain.Wallet;
-import p5laris.user.domain.domain.WalletRepository;
+import p5laris.user.domain.domain.entity.Wallet;
+import p5laris.user.domain.domain.repository.WalletRepository;
 
 import java.net.URI;
 import java.net.URLEncoder;
@@ -54,7 +54,7 @@ public class AuthService {
     @Transactional
     public LoginResult loginGoogle(String code, String redirectUri) {
         try {
-            // 1. Get Access Token from Google
+            // 1. 구글에서 Access Token 가져오기
             String tokenRequestBody = "code=" + URLEncoder.encode(code, StandardCharsets.UTF_8)
                     + "&client_id=" + clientId
                     + "&client_secret=" + clientSecret
@@ -76,7 +76,7 @@ public class AuthService {
             JsonNode tokenNode = objectMapper.readTree(tokenResponse.body());
             String googleAccessToken = tokenNode.get("access_token").asText();
 
-            // 2. Get User Info from Google
+            // 2. 구글에서 유저 정보 가져오기
             HttpRequest userinfoRequest = HttpRequest.newBuilder()
                     .uri(URI.create(GOOGLE_USERINFO_URL))
                     .header("Authorization", "Bearer " + googleAccessToken)
@@ -92,7 +92,7 @@ public class AuthService {
             String email = userNode.get("email").asText();
             String name = userNode.has("name") ? userNode.get("name").asText() : "별따라걷기";
 
-            // 3. Find or Create User
+            // 3. 유저 조회 혹은 생성
             User user = userRepository.findByEmail(email).orElseGet(() -> {
                 User newUser = User.builder()
                         .email(email)
@@ -104,12 +104,12 @@ public class AuthService {
                 return userRepository.save(newUser);
             });
 
-            // 4. Create Wallet if not exists
+            // 4. 해당 유저의 지갑이 없다면 생성
             if (walletRepository.findByUserId(user.getId()).isEmpty()) {
                 walletRepository.save(Wallet.builder().userId(user.getId()).build());
             }
 
-            // 5. Generate Tokens
+            // 5. 토큰 생성
             String accessToken = jwtProvider.generateAccessToken(user.getId());
             String refreshToken = jwtProvider.generateRefreshToken(user.getId());
 

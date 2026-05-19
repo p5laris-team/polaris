@@ -6,7 +6,6 @@ import lombok.RequiredArgsConstructor;
 import net.devh.boot.grpc.server.service.GrpcService;
 import p5laris.user.domain.application.AuthService;
 import p5laris.user.domain.application.UserService;
-import p5laris.user.domain.domain.UserRepository;
 
 @GrpcService
 @RequiredArgsConstructor

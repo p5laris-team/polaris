@@ -4,9 +4,9 @@ import com.p5laris.proto.user.v1.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import p5laris.user.domain.domain.OnboardingProfile;
-import p5laris.user.domain.domain.OnboardingProfileRepository;
-import p5laris.user.domain.domain.OnboardingQuestion;
+import p5laris.user.domain.domain.entity.OnboardingProfile;
+import p5laris.user.domain.domain.repository.OnboardingProfileRepository;
+import p5laris.user.domain.domain.enums.OnboardingQuestion;
 
 import java.util.Arrays;
 import java.util.stream.Collectors;
