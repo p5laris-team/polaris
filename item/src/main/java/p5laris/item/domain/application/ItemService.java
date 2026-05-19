@@ -5,6 +5,7 @@ import com.p5laris.proto.user.v1.SpendStarPieceRequest;
 import com.p5laris.proto.user.v1.SpendStarPieceResponse;
 import com.p5laris.proto.user.v1.WalletServiceGrpc;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.client.inject.GrpcClient;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -20,6 +21,7 @@ import p5laris.item.domain.exception.ItemException;
 import java.util.*;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ItemService {
@@ -161,8 +163,9 @@ public class ItemService {
                     .build()
             );
         } catch (Exception e) {
+            log.error("Failed to spend star piece for userId: {}, amount: {}, itemId: {}", userId, totalPrice, itemId, e);
             String errMsg = e.getMessage();
-            if (errMsg != null && errMsg.contains("STAR_PIECE_NOT_ENOUGH")) {
+            if (errMsg != null && (errMsg.contains("STAR_PIECE_NOT_ENOUGH") || errMsg.contains("별조각이 부족합니다."))) {
                 throw new ItemException(ItemErrorCode.STAR_PIECE_NOT_ENOUGH);
             }
             throw new ItemException(ItemErrorCode.WALLET_SERVICE_CALL_FAILED);

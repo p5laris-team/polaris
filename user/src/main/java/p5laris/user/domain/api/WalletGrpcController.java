@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import net.devh.boot.grpc.server.service.GrpcService;
 import p5laris.user.domain.application.WalletService;
 import p5laris.user.domain.domain.entity.Wallet;
+import p5laris.user.domain.exception.UserException;
 
 @GrpcService
 @RequiredArgsConstructor
@@ -28,6 +29,9 @@ public class WalletGrpcController extends WalletServiceGrpc.WalletServiceImplBas
                     
             responseObserver.onNext(response);
             responseObserver.onCompleted();
+        } catch (UserException e) {
+            String errorCodeName = e.getErrorCode() instanceof Enum ? ((Enum<?>) e.getErrorCode()).name() : e.getErrorCode().getCode();
+            responseObserver.onError(io.grpc.Status.INTERNAL.withDescription(errorCodeName).asRuntimeException());
         } catch (Exception e) {
             responseObserver.onError(io.grpc.Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
         }
@@ -54,6 +58,9 @@ public class WalletGrpcController extends WalletServiceGrpc.WalletServiceImplBas
                     
             responseObserver.onNext(response);
             responseObserver.onCompleted();
+        } catch (UserException e) {
+            String errorCodeName = e.getErrorCode() instanceof Enum ? ((Enum<?>) e.getErrorCode()).name() : e.getErrorCode().getCode();
+            responseObserver.onError(io.grpc.Status.INTERNAL.withDescription(errorCodeName).asRuntimeException());
         } catch (Exception e) {
             responseObserver.onError(io.grpc.Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
         }
