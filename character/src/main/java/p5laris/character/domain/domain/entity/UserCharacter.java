@@ -33,6 +33,12 @@ import java.time.Instant;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class UserCharacter {
 
+    // ── 정책 상수 (AGENTS.md 및 상태 감소 지연 평가 정책) ──
+    private static final int STAT_DECREASE_CYCLE_HOURS = 5;
+    private static final int DECREASE_AMOUNT_FULLNESS = 20;
+    private static final int DECREASE_AMOUNT_ENERGY = 10;
+    private static final int DECREASE_AMOUNT_AFFECTION = 5;
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -117,22 +123,21 @@ public class UserCharacter {
 
     /**
      * 접속/조회 시 시간에 따른 상태 차감 로직 (지연 평가).
-     * 정책: 5시간마다 fullness -20, energy -10, affection -5
      * @return 변경이 발생했으면 true, 아니면 false
      */
     public boolean calculateTimeBasedStatDecrease() {
         Instant now = Instant.now();
         long secondsElapsed = java.time.Duration.between(this.lastStatDecreasedAt, now).getSeconds();
         long hoursElapsed = secondsElapsed / 3600;
-        long cycles = hoursElapsed / 5; // 5시간 단위 사이클
+        long cycles = hoursElapsed / STAT_DECREASE_CYCLE_HOURS;
 
         if (cycles > 0) {
-            this.fullness = Math.max(0, this.fullness - (int)(cycles * 20));
-            this.energy = Math.max(0, this.energy - (int)(cycles * 10));
-            this.affection = Math.max(0, this.affection - (int)(cycles * 5));
+            this.fullness = Math.max(0, this.fullness - (int)(cycles * DECREASE_AMOUNT_FULLNESS));
+            this.energy = Math.max(0, this.energy - (int)(cycles * DECREASE_AMOUNT_ENERGY));
+            this.affection = Math.max(0, this.affection - (int)(cycles * DECREASE_AMOUNT_AFFECTION));
             
             // 처리한 사이클만큼만 시간 증가 (나머지 자투리 시간 보존)
-            this.lastStatDecreasedAt = this.lastStatDecreasedAt.plusSeconds(cycles * 5 * 3600);
+            this.lastStatDecreasedAt = this.lastStatDecreasedAt.plusSeconds(cycles * STAT_DECREASE_CYCLE_HOURS * 3600);
             this.updatedAt = Instant.now();
             return true;
         }
@@ -157,7 +162,22 @@ public class UserCharacter {
 
     public void gainExp(int amount) {
         this.exp += amount;
+        this.level = calculateLevel(this.exp);
         this.updatedAt = Instant.now();
+    }
+
+    /**
+     * PRD 6.3 기준 경험치별 레벨업 테이블
+     * Lv.1: 0~99
+     * Lv.2: 100~299
+     * Lv.3: 300~599
+     * Lv.4: 600 이상 (만렙)
+     */
+    private int calculateLevel(int currentExp) {
+        if (currentExp >= 600) return 4;
+        if (currentExp >= 300) return 3;
+        if (currentExp >= 100) return 2;
+        return 1;
     }
 
     public void equipSkin(Long skinId) {
