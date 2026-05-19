@@ -16,6 +16,12 @@ service CharacterService {
   rpc GetCharacterStatus(GetCharacterStatusRequest) returns (GetCharacterStatusResponse);
   rpc PerformCareAction(PerformCareActionRequest) returns (PerformCareActionResponse);
   rpc EquipSkin(EquipSkinRequest) returns (EquipSkinResponse);
+  // Share APIs (spec §9)
+  rpc CreateShareCard(CreateShareCardRequest) returns (CreateShareCardResponse);
+  rpc GetShareCard(GetShareCardRequest) returns (GetShareCardResponse);
+  rpc CreateShareEvent(CreateShareEventRequest) returns (CreateShareEventResponse);
+  rpc GetShareLink(GetShareLinkRequest) returns (GetShareLinkResponse);
+  rpc RecordShareClick(RecordShareClickRequest) returns (RecordShareClickResponse);
 }
 
 // GetCharacterTypes: returns active character types ordered by sort_order
@@ -164,3 +170,74 @@ message EquipSkinResponse {
   int64 equipped_skin_id = 2;
   string updated_at = 3;
 }
+
+// CreateShareCard: creates a share card for user's character (spec 9.1)
+message CreateShareCardRequest {
+  int64 user_id = 1;
+  int64 character_id = 2;
+  string image_url = 3; // Frontend uploads image and provides URL
+}
+
+message CreateShareCardResponse {
+  int64 share_card_id = 1;
+  string share_id = 2;
+  string image_url = 3;
+  string share_url = 4;
+}
+
+// GetShareCard: retrieves an owned share card detail (spec 9.2)
+message GetShareCardRequest {
+  int64 share_card_id = 1;
+  int64 user_id = 2; // ownership validation
+}
+
+message GetShareCardResponse {
+  int64 share_card_id = 1;
+  string character_name = 2;
+  string image_url = 3;
+  string share_url = 4;
+}
+
+// CreateShareEvent: records a share event and pays daily reward (spec 9.3)
+message CreateShareEventRequest {
+  int64 user_id = 1;
+  int64 share_card_id = 2;
+  string platform = 3;
+  string share_type = 4;
+  string idempotency_key = 5;
+}
+
+message CreateShareEventResponse {
+  int64 share_event_id = 1;
+  bool reward_paid = 2;
+  int32 reward_star_piece = 3;
+  int32 wallet_star_piece = 4; // updated wallet balance (0 if wallet not yet integrated)
+}
+
+// GetShareLink: public endpoint - returns shared card info (spec 9.4)
+message GetShareLinkRequest {
+  string share_id = 1;
+}
+
+message GetShareLinkResponse {
+  string share_id = 1;
+  string character_name = 2;
+  string image_url = 3;
+  string headline = 4;
+  string signup_url = 5;
+}
+
+// RecordShareClick: public endpoint - records a share link click (spec 9.5)
+message RecordShareClickRequest {
+  string share_id = 1;
+  string referrer = 2;
+  string utm_source = 3;
+  string utm_medium = 4;
+  string utm_campaign = 5;
+}
+
+message RecordShareClickResponse {
+  string share_id = 1;
+  bool recorded = 2;
+}
+

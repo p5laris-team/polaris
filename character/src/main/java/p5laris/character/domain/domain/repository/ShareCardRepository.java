@@ -7,6 +7,9 @@ import java.util.Optional;
 
 public interface ShareCardRepository extends JpaRepository<ShareCard, Long> {
 
-    /** 사용자 + 캐릭터 기준으로 공유 카드 조회 */
+    /** Finds share card by userId and characterId (for idempotent creation). */
     Optional<ShareCard> findByUserIdAndCharacterId(Long userId, Long characterId);
+
+    /** Finds share card by its share URL (for public share link lookup). */
+    Optional<ShareCard> findByShareUrl(String shareUrl);
 }

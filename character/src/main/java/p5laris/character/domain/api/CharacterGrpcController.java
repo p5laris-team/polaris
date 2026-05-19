@@ -5,12 +5,14 @@ import io.grpc.stub.StreamObserver;
 import lombok.RequiredArgsConstructor;
 import net.devh.boot.grpc.server.service.GrpcService;
 import p5laris.character.domain.application.CharacterService;
+import p5laris.character.domain.application.ShareService;
 
 @GrpcService
 @RequiredArgsConstructor
 public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServiceImplBase {
 
     private final CharacterService characterService;
+    private final ShareService shareService;
 
     @Override
     public void pingPong(PingPongRequest request, StreamObserver<PingPongResponse> responseObserver) {
@@ -230,6 +232,93 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
                 .build();
 
         responseObserver.onNext(response);
+        responseObserver.onCompleted();
+    }
+
+    // ---------- Share APIs (§9) ----------
+
+    @Override
+    public void createShareCard(CreateShareCardRequest request,
+                                StreamObserver<CreateShareCardResponse> responseObserver) {
+        var result = shareService.createShareCard(
+                request.getUserId(), 
+                request.getCharacterId(), 
+                request.getImageUrl()
+        );
+
+        responseObserver.onNext(CreateShareCardResponse.newBuilder()
+                .setShareCardId(result.shareCardId())
+                .setShareId(result.shareId())
+                .setImageUrl(result.imageUrl() != null ? result.imageUrl() : "")
+                .setShareUrl(result.shareUrl())
+                .build());
+        responseObserver.onCompleted();
+    }
+
+    @Override
+    public void getShareCard(GetShareCardRequest request,
+                             StreamObserver<GetShareCardResponse> responseObserver) {
+        var result = shareService.getShareCard(request.getShareCardId(), request.getUserId());
+
+        responseObserver.onNext(GetShareCardResponse.newBuilder()
+                .setShareCardId(result.shareCardId())
+                .setCharacterName(result.characterName())
+                .setImageUrl(result.imageUrl() != null ? result.imageUrl() : "")
+                .setShareUrl(result.shareUrl())
+                .build());
+        responseObserver.onCompleted();
+    }
+
+    @Override
+    public void createShareEvent(CreateShareEventRequest request,
+                                 StreamObserver<CreateShareEventResponse> responseObserver) {
+        var result = shareService.createShareEvent(
+                request.getUserId(),
+                request.getShareCardId(),
+                request.getPlatform(),
+                request.getShareType(),
+                request.getIdempotencyKey()
+        );
+
+        responseObserver.onNext(CreateShareEventResponse.newBuilder()
+                .setShareEventId(result.shareEventId())
+                .setRewardPaid(result.rewardPaid())
+                .setRewardStarPiece(result.rewardStarPiece())
+                .setWalletStarPiece(result.walletStarPiece())
+                .build());
+        responseObserver.onCompleted();
+    }
+
+    @Override
+    public void getShareLink(GetShareLinkRequest request,
+                             StreamObserver<GetShareLinkResponse> responseObserver) {
+        var result = shareService.getShareLink(request.getShareId());
+
+        responseObserver.onNext(GetShareLinkResponse.newBuilder()
+                .setShareId(result.shareId())
+                .setCharacterName(result.characterName())
+                .setImageUrl(result.imageUrl() != null ? result.imageUrl() : "")
+                .setHeadline(result.headline())
+                .setSignupUrl(result.signupUrl())
+                .build());
+        responseObserver.onCompleted();
+    }
+
+    @Override
+    public void recordShareClick(RecordShareClickRequest request,
+                                 StreamObserver<RecordShareClickResponse> responseObserver) {
+        var result = shareService.recordShareClick(
+                request.getShareId(),
+                request.getReferrer(),
+                request.getUtmSource(),
+                request.getUtmMedium(),
+                request.getUtmCampaign()
+        );
+
+        responseObserver.onNext(RecordShareClickResponse.newBuilder()
+                .setShareId(result.shareId())
+                .setRecorded(result.recorded())
+                .build());
         responseObserver.onCompleted();
     }
 }
