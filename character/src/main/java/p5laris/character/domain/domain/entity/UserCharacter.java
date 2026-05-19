@@ -197,7 +197,7 @@ public class UserCharacter {
 
     public void updateName(String newName) {
         if (newName == null || newName.trim().isEmpty() || newName.length() > 10) {
-            throw new IllegalArgumentException("Invalid character name");
+            throw new p5laris.character.domain.exception.CharacterException(p5laris.character.domain.exception.CharacterErrorCode.INVALID_CHARACTER_NAME);
         }
         this.name = newName;
         this.updatedAt = Instant.now();
