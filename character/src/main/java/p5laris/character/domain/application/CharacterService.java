@@ -168,32 +168,20 @@ public class CharacterService {
         return p5laris.character.domain.application.dto.CharacterStatusResponse.builder()
                 .characterId(userCharacter.getId())
                 .states(p5laris.character.domain.application.dto.CharacterStatusResponse.States.builder()
-                        .hunger(buildStateDetail(userCharacter.getFullness(), "든든함", "적당함", "배고픔"))
-                        .energy(buildStateDetail(userCharacter.getEnergy(), "활기참", "졸림", "지침"))
-                        .affection(buildStateDetail(userCharacter.getAffection(), "행복함", "평온함", "쓸쓸함"))
+                        .hunger(buildStateDetail(userCharacter.getFullness(), p5laris.character.domain.domain.enums.StatType.FULLNESS))
+                        .energy(buildStateDetail(userCharacter.getEnergy(), p5laris.character.domain.domain.enums.StatType.ENERGY))
+                        .affection(buildStateDetail(userCharacter.getAffection(), p5laris.character.domain.domain.enums.StatType.AFFECTION))
                         .build())
                 .build();
     }
 
-    private p5laris.character.domain.application.dto.CharacterStatusResponse.StateDetail buildStateDetail(int value, String goodLabel, String normalLabel, String badLabel) {
-        String grade;
-        String label;
-
-        if (value >= 70) {
-            grade = "GOOD";
-            label = goodLabel;
-        } else if (value >= 30) {
-            grade = "NORMAL";
-            label = normalLabel;
-        } else {
-            grade = "BAD";
-            label = badLabel;
-        }
+    private p5laris.character.domain.application.dto.CharacterStatusResponse.StateDetail buildStateDetail(int value, p5laris.character.domain.domain.enums.StatType statType) {
+        p5laris.character.domain.domain.enums.StatGrade grade = p5laris.character.domain.domain.enums.StatGrade.fromValue(value);
 
         return p5laris.character.domain.application.dto.CharacterStatusResponse.StateDetail.builder()
                 .value(value)
-                .label(label)
-                .grade(grade)
+                .label(statType.getLabel(grade))
+                .grade(grade.name())
                 .build();
     }
 
