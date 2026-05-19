@@ -1,8 +1,6 @@
 package p5laris.gateway.domain.item.infrastructure.grpc;
 
-import com.p5laris.proto.item.v1.ItemServiceGrpc;
-import com.p5laris.proto.item.v1.PingPongRequest;
-import com.p5laris.proto.item.v1.PingPongResponse;
+import com.p5laris.proto.item.v1.*;
 import net.devh.boot.grpc.client.inject.GrpcClient;
 import org.springframework.stereotype.Service;
 
@@ -12,13 +10,37 @@ public class ItemGatewayService {
     @GrpcClient("item")
     private ItemServiceGrpc.ItemServiceBlockingStub itemStub;
 
-    public String getItem(String value) {
-        PingPongResponse response = itemStub.pingPong(
-                PingPongRequest.newBuilder()
-                        .setMessage(value)
+    // 상점 아이템 목록 조회
+    public GetItemsResponse getItems(Long userId, String itemType, String cursor, int size) {
+        return itemStub.getItems(
+                GetItemsRequest.newBuilder()
+                        .setUserId(userId != null ? userId : 0L)
+                        .setItemType(itemType != null ? itemType : "")
+                        .setCursor(cursor != null ? cursor : "")
+                        .setSize(size)
                         .build()
         );
+    }
 
-        return response.getMessage();
+    public GetUserItemsResponse getUserItems(Long userId, String itemType, String cursor, int size) {
+        return itemStub.getUserItems(
+                GetUserItemsRequest.newBuilder()
+                        .setUserId(userId)
+                        .setItemType(itemType != null ? itemType : "")
+                        .setCursor(cursor != null ? cursor : "")
+                        .setSize(size)
+                        .build()
+        );
+    }
+
+    public PurchaseItemResponse purchaseItem(Long userId, Long itemId, int quantity, String idempotencyKey) {
+        return itemStub.purchaseItem(
+                PurchaseItemRequest.newBuilder()
+                        .setUserId(userId)
+                        .setItemId(itemId)
+                        .setQuantity(quantity)
+                        .setIdempotencyKey(idempotencyKey != null ? idempotencyKey : "")
+                        .build()
+        );
     }
 }

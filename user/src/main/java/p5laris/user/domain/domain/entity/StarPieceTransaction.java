@@ -2,6 +2,8 @@ package p5laris.user.domain.domain.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import p5laris.user.core.entity.BaseEntity;
+
 import java.time.LocalDateTime;
 
 @Entity
@@ -10,7 +12,7 @@ import java.time.LocalDateTime;
 @Builder
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
-public class StarPieceTransaction {
+public class StarPieceTransaction extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -40,7 +42,4 @@ public class StarPieceTransaction {
     @Column(name = "idempotency_key", length = 100, unique = true)
     private String idempotencyKey;
 
-    @Column(nullable = false, updatable = false)
-    @Builder.Default
-    private LocalDateTime createdAt = LocalDateTime.now();
 }

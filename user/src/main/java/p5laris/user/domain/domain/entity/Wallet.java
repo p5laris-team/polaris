@@ -2,7 +2,7 @@ package p5laris.user.domain.domain.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
-import java.time.LocalDateTime;
+import p5laris.user.core.entity.BaseEntity;
 
 @Entity
 @Table(name = "wallets")
@@ -10,7 +10,7 @@ import java.time.LocalDateTime;
 @Builder
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
-public class Wallet {
+public class Wallet extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -23,18 +23,9 @@ public class Wallet {
     @Builder.Default
     private int starPiece = 0;
 
-    @Column(nullable = false, updatable = false)
-    @Builder.Default
-    private LocalDateTime createdAt = LocalDateTime.now();
-
-    @Column(nullable = false)
-    @Builder.Default
-    private LocalDateTime updatedAt = LocalDateTime.now();
-
     public void addStarPiece(int amount) {
         if (amount < 0) throw new IllegalArgumentException("Amount must be positive");
         this.starPiece += amount;
-        this.updatedAt = LocalDateTime.now();
     }
 
     public void useStarPiece(int amount) {
@@ -43,6 +34,5 @@ public class Wallet {
             throw new IllegalStateException("Not enough star pieces");
         }
         this.starPiece -= amount;
-        this.updatedAt = LocalDateTime.now();
     }
 }
