@@ -1,0 +1,154 @@
+package p5laris.ai.domain.application;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import p5laris.ai.domain.application.dto.MissionTextGenerationCommand;
+import p5laris.ai.domain.application.dto.MissionTextGenerationResult;
+import p5laris.ai.domain.domain.enums.AiErrorType;
+import p5laris.ai.domain.domain.enums.AiGenerationStatus;
+import p5laris.ai.domain.domain.enums.AiUsageStatus;
+import p5laris.ai.domain.domain.enums.PromptCategory;
+import p5laris.ai.domain.domain.repository.AiMissionGenerationRepository;
+import p5laris.ai.domain.domain.repository.AiUsageLogRepository;
+import p5laris.ai.domain.domain.repository.PromptTemplateRepository;
+import p5laris.ai.domain.exception.AiErrorCode;
+import p5laris.ai.domain.exception.AiException;
+
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+@SpringBootTest(properties = "grpc.server.port=0")
+class AiMissionTextServiceTest {
+
+    @Autowired
+    private AiMissionTextService aiMissionTextService;
+
+    @Autowired
+    private AiMissionGenerationRepository aiMissionGenerationRepository;
+
+    @Autowired
+    private AiUsageLogRepository aiUsageLogRepository;
+
+    @Autowired
+    private PromptTemplateRepository promptTemplateRepository;
+
+    @BeforeEach
+    void setUp() {
+        aiUsageLogRepository.deleteAll();
+        aiMissionGenerationRepository.deleteAll();
+    }
+
+    @Test
+    void 캐릭터_말투로_미션_문구를_생성하고_결과와_사용_로그를_저장한다() {
+        MissionTextGenerationCommand command = validCommand("NOVA");
+
+        MissionTextGenerationResult result = aiMissionTextService.generateMissionTexts(command);
+
+        assertThat(result.status()).isEqualTo(AiGenerationStatus.SUCCESS);
+        assertThat(result.fallbackUsed()).isFalse();
+        assertThat(result.errorType()).isNull();
+        assertThat(result.characterMessage()).contains("천천히");
+        assertThat(result.completionQuestion()).isNotBlank();
+        assertThat(result.completionCharacterResponse()).isNotBlank();
+        assertThat(result.aiGenerationId()).isPositive();
+        assertThat(aiMissionGenerationRepository.count()).isEqualTo(1);
+        assertThat(aiUsageLogRepository.count()).isEqualTo(1);
+        assertThat(aiUsageLogRepository.findByRequestId(command.requestId()).orElseThrow().getStatus())
+                .isEqualTo(AiUsageStatus.SUCCESS);
+        assertThat(promptTemplateRepository.findFirstByCategoryAndActiveTrueOrderByVersionDescIdDesc(PromptCategory.CHARACTER_TONE))
+                .isPresent();
+    }
+
+    @Test
+    void 지원하지_않는_캐릭터_타입이면_fallback_문구를_저장하고_반환한다() {
+        MissionTextGenerationCommand command = validCommand("UNKNOWN");
+
+        MissionTextGenerationResult result = aiMissionTextService.generateMissionTexts(command);
+
+        assertThat(result.status()).isEqualTo(AiGenerationStatus.FALLBACK);
+        assertThat(result.fallbackUsed()).isTrue();
+        assertThat(result.errorType()).isEqualTo(AiErrorType.INVALID_OUTPUT);
+        assertThat(result.characterMessage()).isEqualTo(command.fallbackCharacterMessage());
+        assertThat(result.completionQuestion()).isEqualTo(command.fallbackQuestion());
+        assertThat(result.completionCharacterResponse()).isEqualTo(command.fallbackCompletionResponse());
+        assertThat(aiMissionGenerationRepository.count()).isEqualTo(1);
+        assertThat(aiUsageLogRepository.findByRequestId(command.requestId()).orElseThrow().getStatus())
+                .isEqualTo(AiUsageStatus.FALLBACK);
+    }
+
+    @Test
+    void 무무_말투는_무_중심_문구와_해석을_함께_반환한다() {
+        MissionTextGenerationCommand command = validCommand("MUMU");
+
+        MissionTextGenerationResult result = aiMissionTextService.generateMissionTexts(command);
+
+        assertThat(result.status()).isEqualTo(AiGenerationStatus.SUCCESS);
+        assertThat(result.characterMessage()).startsWith("무... 무무...");
+        assertThat(result.characterMessage()).contains("(해석:");
+        assertThat(result.completionQuestion()).startsWith("무...?");
+        assertThat(result.completionCharacterResponse()).contains("무무가 조용히 좋아하고 있어요");
+    }
+
+    @Test
+    void fallback_문구도_금지_표현을_포함하면_예외를_던지고_저장하지_않는다() {
+        MissionTextGenerationCommand command = new MissionTextGenerationCommand(
+                1001L,
+                2001L,
+                "UNKNOWN",
+                3001L,
+                "물 한 컵 마시기",
+                "지금 자리에서 물 한 컵을 천천히 마셔보세요.",
+                "BASIC_ROUTINE",
+                "EASY",
+                "한심하니까 지금 해.",
+                "해보고 나서 어땠어?",
+                "완료한 일을 기억할게.",
+                "{}",
+                "{}",
+                UUID.randomUUID().toString()
+        );
+
+        assertThatThrownBy(() -> aiMissionTextService.generateMissionTexts(command))
+                .isInstanceOf(AiException.class)
+                .extracting("errorCode")
+                .isEqualTo(AiErrorCode.AI_FALLBACK_INVALID);
+        assertThat(aiMissionGenerationRepository.count()).isZero();
+        assertThat(aiUsageLogRepository.count()).isZero();
+    }
+
+    @Test
+    void 같은_requestId는_중복으로_처리하지_않는다() {
+        MissionTextGenerationCommand command = validCommand("JJORY");
+        aiMissionTextService.generateMissionTexts(command);
+
+        assertThatThrownBy(() -> aiMissionTextService.generateMissionTexts(command))
+                .isInstanceOf(AiException.class)
+                .extracting("errorCode")
+                .isEqualTo(AiErrorCode.AI_DUPLICATED_REQUEST);
+        assertThat(aiMissionGenerationRepository.count()).isEqualTo(1);
+        assertThat(aiUsageLogRepository.count()).isEqualTo(1);
+    }
+
+    private MissionTextGenerationCommand validCommand(String characterType) {
+        return new MissionTextGenerationCommand(
+                1001L,
+                2001L,
+                characterType,
+                3001L,
+                "물 한 컵 마시기",
+                "지금 자리에서 물 한 컵을 천천히 마셔보세요.",
+                "BASIC_ROUTINE",
+                "EASY",
+                "물 한 컵 마셔볼래? 작은 시작도 별조각이 될 수 있어.",
+                "물 마시고 나서 기분이 조금 달라졌어?",
+                "잘했어. 오늘의 작은 수분 보충을 별조각으로 기억할게.",
+                "{\"routineGoal\":\"WAKE_UP\"}",
+                "{\"recentRejected\":[]}",
+                UUID.randomUUID().toString()
+        );
+    }
+}
