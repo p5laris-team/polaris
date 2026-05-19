@@ -2,6 +2,8 @@ package p5laris.user.domain.domain.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import p5laris.user.core.entity.BaseEntity;
+
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
@@ -13,7 +15,7 @@ import java.time.LocalDateTime;
 @Builder
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
-public class AttendanceRecord {
+public class AttendanceRecord extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -32,7 +34,4 @@ public class AttendanceRecord {
     @Builder.Default
     private int streakCount = 1;
 
-    @Column(nullable = false, updatable = false)
-    @Builder.Default
-    private LocalDateTime createdAt = LocalDateTime.now();
 }

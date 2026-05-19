@@ -6,6 +6,7 @@ option java_package = "com.p5laris.proto.user.v1";
 
 service WalletService {
     rpc GetMyWallet(GetMyWalletRequest) returns (WalletResponse);
+    rpc SpendStarPiece(SpendStarPieceRequest) returns (SpendStarPieceResponse);
 }
 
 message GetMyWalletRequest {
@@ -14,4 +15,18 @@ message GetMyWalletRequest {
 
 message WalletResponse {
     int32 star_piece = 1;
+}
+
+message SpendStarPieceRequest {
+    int64 user_id = 1;
+    int32 amount = 2;
+    string reason = 3;
+    string ref_type = 4;
+    int64 ref_id = 5;
+    string idempotency_key = 6;
+}
+
+message SpendStarPieceResponse {
+    int32 star_piece = 1;
+    int64 transaction_id = 2;
 }
