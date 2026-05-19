@@ -49,9 +49,9 @@ public class ShareService {
     public ShareCardResult createShareCard(Long userId, Long characterId, String uploadedImageUrl) {
         // Validate character ownership
         UserCharacter character = userCharacterRepository.findById(characterId)
-                .orElseThrow(() -> new IllegalArgumentException("Character not found: " + characterId));
+                .orElseThrow(() -> new p5laris.character.domain.exception.CharacterException(p5laris.character.domain.exception.CharacterErrorCode.CHARACTER_NOT_FOUND));
         if (!character.getUserId().equals(userId)) {
-            throw new IllegalArgumentException("User does not own this character");
+            throw new p5laris.character.domain.exception.CharacterException(p5laris.character.domain.exception.CharacterErrorCode.NOT_CHARACTER_OWNER);
         }
 
         // Idempotent: reuse existing card for same (userId, characterId) and update image if provided
@@ -96,13 +96,13 @@ public class ShareService {
     @Transactional(readOnly = true)
     public ShareCardDetailResult getShareCard(Long shareCardId, Long userId) {
         ShareCard card = shareCardRepository.findById(shareCardId)
-                .orElseThrow(() -> new IllegalArgumentException("Share card not found: " + shareCardId));
+                .orElseThrow(() -> new p5laris.character.domain.exception.CharacterException(p5laris.character.domain.exception.CharacterErrorCode.SHARE_CARD_NOT_FOUND));
         if (!card.getUserId().equals(userId)) {
-            throw new IllegalArgumentException("User does not own this share card");
+            throw new p5laris.character.domain.exception.CharacterException(p5laris.character.domain.exception.CharacterErrorCode.NOT_SHARE_CARD_OWNER);
         }
 
         UserCharacter character = userCharacterRepository.findById(card.getCharacterId())
-                .orElseThrow(() -> new IllegalArgumentException("Character not found"));
+                .orElseThrow(() -> new p5laris.character.domain.exception.CharacterException(p5laris.character.domain.exception.CharacterErrorCode.CHARACTER_NOT_FOUND));
 
         return new ShareCardDetailResult(
                 card.getId(),
@@ -126,7 +126,7 @@ public class ShareService {
                                              String platform, String shareType,
                                              String idempotencyKey) {
         ShareCard card = shareCardRepository.findById(shareCardId)
-                .orElseThrow(() -> new IllegalArgumentException("Share card not found: " + shareCardId));
+                .orElseThrow(() -> new p5laris.character.domain.exception.CharacterException(p5laris.character.domain.exception.CharacterErrorCode.SHARE_CARD_NOT_FOUND));
 
         // Check daily reward eligibility (AGENTS.md §20.5)
         LocalDate today = LocalDate.now();
@@ -167,10 +167,10 @@ public class ShareService {
     public ShareLinkResult getShareLink(String shareId) {
         String shareUrl = BASE_SHARE_URL + shareId;
         ShareCard card = shareCardRepository.findByShareUrl(shareUrl)
-                .orElseThrow(() -> new IllegalArgumentException("Share link not found: " + shareId));
+                .orElseThrow(() -> new p5laris.character.domain.exception.CharacterException(p5laris.character.domain.exception.CharacterErrorCode.SHARE_LINK_NOT_FOUND));
 
         UserCharacter character = userCharacterRepository.findById(card.getCharacterId())
-                .orElseThrow(() -> new IllegalArgumentException("Character not found"));
+                .orElseThrow(() -> new p5laris.character.domain.exception.CharacterException(p5laris.character.domain.exception.CharacterErrorCode.CHARACTER_NOT_FOUND));
 
         return new ShareLinkResult(
                 shareId,
