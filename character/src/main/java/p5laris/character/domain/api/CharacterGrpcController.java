@@ -210,5 +210,27 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
         responseObserver.onNext(response);
         responseObserver.onCompleted();
     }
+
+    /**
+     * Equip skin on character (API spec 4.8).
+     */
+    @Override
+    public void equipSkin(EquipSkinRequest request,
+                          StreamObserver<EquipSkinResponse> responseObserver) {
+        var result = characterService.equipSkin(
+                request.getCharacterId(),
+                request.getUserId(),
+                request.getItemId()
+        );
+
+        EquipSkinResponse response = EquipSkinResponse.newBuilder()
+                .setCharacterId(result.characterId())
+                .setEquippedSkinId(result.equippedSkinId())
+                .setUpdatedAt(result.updatedAt().toString())
+                .build();
+
+        responseObserver.onNext(response);
+        responseObserver.onCompleted();
+    }
 }
 

@@ -97,5 +97,17 @@ public class CharacterController {
             @org.springframework.web.bind.annotation.RequestBody p5laris.gateway.domain.character.api.dto.CareActionRequest request) {
         return ApiResponse.success(characterGatewayService.performCareAction(characterId, userId, request));
     }
+
+    /**
+     * Equip skin on character (API spec 4.8).
+     * PUT /api/character/v1/characters/{characterId}/equipped-skin
+     */
+    @org.springframework.web.bind.annotation.PutMapping("/v1/characters/{characterId}/equipped-skin")
+    public ApiResponse<p5laris.gateway.domain.character.api.dto.EquipSkinResponse> equipSkin(
+            @org.springframework.web.bind.annotation.PathVariable Long characterId,
+            @p5laris.gateway.global.security.annotation.LoginUserId Long userId,
+            @org.springframework.web.bind.annotation.RequestBody p5laris.gateway.domain.character.api.dto.EquipSkinRequest request) {
+        return ApiResponse.success(characterGatewayService.equipSkin(characterId, userId, request));
+    }
 }
 

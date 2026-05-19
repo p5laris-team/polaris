@@ -288,4 +288,40 @@ public class CharacterService {
                 .characterMessage(characterMessage)
                 .build();
     }
+
+    /**
+     * Equip a skin item on a character.
+     * API spec 4.8 PUT /api/character/v1/characters/{characterId}/equipped-skin
+     *
+     * Item ownership validation:
+     * TODO [Item Domain Integration]: verify that userId actually owns itemId before equipping.
+     * Currently skipped; the item is applied directly to the character.
+     */
+    @Transactional
+    public p5laris.character.domain.application.dto.EquipSkinResponse equipSkin(
+            Long characterId, Long userId, Long itemId) {
+
+        // 1. Load character and validate ownership
+        p5laris.character.domain.domain.entity.UserCharacter character = userCharacterRepository.findById(characterId)
+                .orElseThrow(() -> new IllegalArgumentException("Character not found: " + characterId));
+
+        if (!character.getUserId().equals(userId)) {
+            throw new IllegalArgumentException("User does not own this character");
+        }
+
+        // 2. TODO [Item Domain Integration]: verify user owns the skin item.
+        //    Example (uncomment after item domain is ready):
+        //    if (!itemService.userOwnsItem(userId, itemId)) {
+        //        throw new IllegalArgumentException("User does not own item: " + itemId);
+        //    }
+
+        // 3. Equip the skin
+        character.equipSkin(itemId);
+
+        return p5laris.character.domain.application.dto.EquipSkinResponse.builder()
+                .characterId(characterId)
+                .equippedSkinId(itemId)
+                .updatedAt(character.getUpdatedAt())
+                .build();
+    }
 }

@@ -242,5 +242,39 @@ public class CharacterGatewayService {
                 .characterMessage(response.getCharacterMessage())
                 .build();
     }
+
+    /**
+     * Equip skin on character (API spec 4.8).
+     */
+    public p5laris.gateway.domain.character.api.dto.EquipSkinResponse equipSkin(
+            Long characterId, Long userId,
+            p5laris.gateway.domain.character.api.dto.EquipSkinRequest request) {
+
+        com.p5laris.proto.character.v1.EquipSkinResponse response =
+                characterStub.equipSkin(
+                        com.p5laris.proto.character.v1.EquipSkinRequest.newBuilder()
+                                .setCharacterId(characterId)
+                                .setUserId(userId)
+                                .setItemId(request.itemId())
+                                .build()
+                );
+
+        // TODO [Item Domain Integration]: fetch skin name from item service using equippedSkinId.
+        // Example (uncomment after item domain is ready):
+        // var itemResponse = itemGatewayService.getItem(response.getEquippedSkinId());
+        // String skinName = itemResponse.getName();
+        //
+        // Temporary Mock: use placeholder name until item domain is integrated.
+        String skinName = "Skin " + response.getEquippedSkinId();
+
+        return p5laris.gateway.domain.character.api.dto.EquipSkinResponse.builder()
+                .characterId(response.getCharacterId())
+                .equippedSkin(p5laris.gateway.domain.character.api.dto.EquipSkinResponse.EquippedSkin.builder()
+                        .itemId(response.getEquippedSkinId())
+                        .name(skinName)
+                        .build())
+                .updatedAt(java.time.Instant.parse(response.getUpdatedAt()))
+                .build();
+    }
 }
 
