@@ -139,11 +139,10 @@ Base Pattern: /api/{domain}/v1/{resource}
 | GET    | `💾 /api/item/v1/items`                                         | 상점 아이템 목록 조회  | query cursor | items | 🔐 |
 | GET    | `/api/item/v1/user-items`                                       | 내 보유 아이템 조회   | query cursor | user items | 🔐 |
 | POST   | `⚠️ /api/item/v1/item-purchases`                                | 아이템 구매        | body | purchase result | 🔐 |
-| POST   | `/api/share/v1/share-cards`                                     | 공유 카드 생성      | body | share card | 🔐 |
-| GET    | `/api/share/v1/share-cards/{shareCardId}`                       | 공유 카드 상세 조회   | path | share card | 🔐 |
+| POST   | `/api/share/v1/share-cards`                                     | 공유 카드 생성 (멘트 포함) | body | share card | 🔐 |
 | POST   | `⚠️ /api/share/v1/share-events`                                 | 공유 시도 이벤트 생성 및 보상 처리 | body | share event | 🔐 |
-| GET    | `💾 /api/share/v1/share-links/{shareId}`                        | 공개 공유 링크 정보 조회 | path | shared card | Public |
-| POST   | `/api/share/v1/share-clicks`                                    | 공유 링크 클릭 로그 생성 | body | click log | Public |
+| GET    | `/api/share/v1/share-events/today`                              | 오늘 공유 보상 여부 조회 | none | share status | 🔐 |
+| GET    | `💾 /api/share/v1/share-links/{shareId}`                        | 공개 공유 링크 정보 조회 (클릭 로그 내재화) | path | shared card | Public |
 | POST   | `⚠️ /api/attendance/v1/attendance-records`                      | 오늘 출석 기록 생성 및 보상 지급 | none | attendance | 🔐 |
 | GET    | `/api/attendance/v1/attendance-records`                         | 출석 기록 조회      | query year, month | attendance list | 🔐 |
 | GET    | `/api/notification/v1/notifications`                            | 알림 목록 조회      | query cursor | notifications | 🔐 |
@@ -990,13 +989,14 @@ Refresh Token으로 Access Token을 재발급한다.
 ### 9.1 POST `/api/share/v1/share-cards` 🔐
 
 **설명**  
-내 캐릭터 공유 카드를 생성한다.
+내 캐릭터 공유 카드를 생성한다. 한 줄 다짐/메시지(`headline`)를 입력받아 카드에 기록한다.
 
 **Request**
 
 ```json
 {
-  "characterId": 10
+  "characterId": 10,
+  "headline": "오늘도 조금 반짝였음."
 }
 ```
 
@@ -1013,33 +1013,7 @@ Refresh Token으로 Access Token을 재발급한다.
 
 ---
 
-### 9.2 GET `/api/share/v1/share-cards/{shareCardId}` 🔐
-
-**설명**  
-내가 생성한 공유 카드 상세를 조회한다.
-
-**Request**
-
-```json
-{
-  "shareCardId": 800
-}
-```
-
-**Response**
-
-```json
-{
-  "shareCardId": 800,
-  "characterName": "노바별",
-  "imageUrl": "https://cdn.polaris.app/share-cards/800.png",
-  "shareUrl": "https://polaris.app/share/sh_abc123"
-}
-```
-
----
-
-### 9.3 POST `⚠️ /api/share/v1/share-events` 🔐
+### 9.2 POST `⚠️ /api/share/v1/share-events` 🔐
 
 **설명**  
 사용자가 공유 버튼을 눌렀다는 이벤트를 저장한다. 실제 외부 SNS 게시 여부는 MVP에서 검증하지 않고, 하루 1회 공유 시도 보상을 지급한다.
@@ -1070,10 +1044,33 @@ Refresh Token으로 Access Token을 재발급한다.
 
 ---
 
+### 9.3 GET `/api/share/v1/share-events/today` 🔐
+
+**설명**  
+로그인한 유저가 오늘 날짜의 공유 보상을 이미 수령했는지 여부를 조회한다. 프론트엔드 버튼 상태 및 배너 표시에 사용된다.
+
+**Request**
+
+```json
+{}
+```
+
+**Response**
+
+```json
+{
+  "rewardClaimed": true,
+  "lastSharedAt": "2026-05-19T09:22:24.400Z"
+}
+```
+
+---
+
 ### 9.4 GET `💾 /api/share/v1/share-links/{shareId}` Public
 
 **설명**  
-외부 사용자가 공유 링크로 들어왔을 때 카드 정보를 조회한다.
+외부 사용자가 공유 링크로 들어왔을 때 카드 정보를 조회한다.  
+*(성능 최적화를 위해 본 API 호출 시 외부 유저의 Referrer, UTM 정보를 활용해 내부적으로 공유 링크 클릭 로그(`share_clicks` 테이블)가 비동기 적재됩니다.)*
 
 **Request**
 
@@ -1092,34 +1089,6 @@ Refresh Token으로 Access Token을 재발급한다.
   "imageUrl": "https://cdn.polaris.app/share-cards/800.png",
   "headline": "오늘도 조금 반짝였음.",
   "signupUrl": "https://polaris.app/signup?shareId=sh_abc123"
-}
-```
-
----
-
-### 9.5 POST `/api/share/v1/share-clicks` Public
-
-**설명**  
-공유 링크 클릭 로그를 저장한다. 회원가입 전 사용자의 유입 추적용이다.
-
-**Request**
-
-```json
-{
-  "shareId": "sh_abc123",
-  "referrer": "https://x.com",
-  "utmSource": "x",
-  "utmMedium": "social",
-  "utmCampaign": "character_card"
-}
-```
-
-**Response**
-
-```json
-{
-  "shareId": "sh_abc123",
-  "recorded": true
 }
 ```
 

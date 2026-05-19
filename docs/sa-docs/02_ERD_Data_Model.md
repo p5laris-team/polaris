@@ -224,15 +224,31 @@ boredom, affection 등 추가 상태는 MVP에서 제외한다.
 
 ## `share_cards`
 
+내 캐릭터 공유 카드의 발급 이력을 저장한다.
+
 | 컬럼 | 타입 | 설명 |
 | --- | --- | --- |
 | id | bigint PK | 공유 카드 ID |
 | user_id | bigint FK | 사용자 ID |
 | character_id | bigint FK | 캐릭터 ID |
-| image_url | bigint nullable | 이미지 URL |
-| share_url | varchar | 공유 URL |
+| share_id | varchar unique | 단축 공유 고유 식별자 (예: sh_abc123) |
+| headline | varchar nullable | 카드에 삽입된 한 줄 각오/메시지 |
+| image_url | varchar nullable | 렌더링된 카드 이미지 URL |
+| share_url | varchar | 배포용 단축 공유 URL |
+| created_at | timestamp | 생성일 |
+| updated_at | timestamp | 수정일 |
 
-## `share_logs`
+### 제약 / 인덱스
+```
+unique(share_id)
+index(user_id, created_at)
+```
+
+---
+
+## `share_events`
+
+사용자의 공유 시도 이벤트 및 일일 1회 보상 수령 여부를 관리한다. (기존 `share_logs`에서 테이블명 및 설계 고도화)
 
 | 컬럼 | 타입 | 설명 |
 | --- | --- | --- |
@@ -240,13 +256,45 @@ boredom, affection 등 추가 상태는 MVP에서 제외한다.
 | user_id | bigint FK | 사용자 ID |
 | character_id | bigint FK | 캐릭터 ID |
 | share_card_id | bigint FK | 공유 카드 ID |
-| share_type | varchar | 공유 타입 |
-| platform | varchar | 공유 플랫폼 |
-| shared_at | timestamp | 공유 시각 |
-| share_date | date | 보상 제한 기준일 |
-| reward_star_piece | int | 공유 보상 |
+| share_type | varchar | 공유 타입 (WEB_SHARE_API, COPY_LINK 등) |
+| platform | varchar | 공유 플랫폼 (X, KAKAOTALK, ETC) |
+| reward_star_piece | int | 공유 보상 수량 |
 | reward_paid | boolean | 보상 수령 여부 |
-| idempotency_key | varchar unique | 공유 보상 중복 방지 |
+| idempotency_key | varchar unique | 공유 보상 중복 지급 방지 키 |
+| created_at | timestamp | 생성일 (공유 시각) |
+| updated_at | timestamp | 수정일 |
+
+### 제약 / 인덱스
+```
+unique(idempotency_key)
+index(user_id, created_at)
+index(user_id, share_card_id)
+```
+
+---
+
+## `share_clicks`
+
+외부 유저가 공유 링크를 타고 들어온 유입 분석 로그를 수집한다.
+
+| 컬럼 | 타입 | 설명 |
+| --- | --- | --- |
+| id | bigint PK | 클릭 로그 ID |
+| share_id | varchar | 대상 공유 식별자 |
+| referrer | varchar nullable | 유입 이전 페이지 경로 |
+| utm_source | varchar nullable | 마케팅 소스 (예: x, kakaotalk) |
+| utm_medium | varchar nullable | 마케팅 매체 (예: social, chat) |
+| utm_campaign | varchar nullable | 마케팅 캠페인명 (예: character_card) |
+| ip_address | varchar nullable | 클라이언트 IP (어뷰징 방지용) |
+| created_at | timestamp | 생성일 (클릭 시각) |
+
+### 제약 / 인덱스
+```
+index(share_id, created_at)
+index(utm_source, created_at)
+```
+
+---
 
 ### MVP 돌봄 액션
 
@@ -256,7 +304,7 @@ boredom, affection 등 추가 상태는 MVP에서 제외한다.
 | SLEEP | 재우기 |
 | WASH | 씻기기 |
 
-### 제약 / 인덱스
+### 제약 / 인덱스 (기타)
 
 ```
 index(user_id, created_at)
