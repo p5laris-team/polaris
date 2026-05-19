@@ -48,7 +48,7 @@ public class CharacterController {
      */
     @org.springframework.web.bind.annotation.PostMapping("/v1/characters")
     public ApiResponse<p5laris.gateway.domain.character.api.dto.UserCharacterResponse> createCharacter(
-            @p5laris.gateway.global.security.annotation.LoginUserId Long userId,
+            @p5laris.gateway.global.auth.LoginUserId Long userId,
             @org.springframework.web.bind.annotation.RequestBody p5laris.gateway.domain.character.api.dto.CreateCharacterRequest request) {
         return ApiResponse.success(characterGatewayService.createCharacter(userId, request));
     }
@@ -59,7 +59,7 @@ public class CharacterController {
      */
     @GetMapping("/v1/characters/me")
     public ApiResponse<p5laris.gateway.domain.character.api.dto.MyCharacterResponse> getMyCharacter(
-            @p5laris.gateway.global.security.annotation.LoginUserId Long userId) {
+            @p5laris.gateway.global.auth.LoginUserId Long userId) {
         return ApiResponse.success(characterGatewayService.getMyCharacter(userId));
     }
 
@@ -70,7 +70,7 @@ public class CharacterController {
     @org.springframework.web.bind.annotation.PatchMapping("/v1/characters/{characterId}")
     public ApiResponse<p5laris.gateway.domain.character.api.dto.UpdateCharacterNameResponse> updateCharacterName(
             @org.springframework.web.bind.annotation.PathVariable Long characterId,
-            @p5laris.gateway.global.security.annotation.LoginUserId Long userId,
+            @p5laris.gateway.global.auth.LoginUserId Long userId,
             @org.springframework.web.bind.annotation.RequestBody p5laris.gateway.domain.character.api.dto.UpdateCharacterNameRequest request) {
         return ApiResponse.success(characterGatewayService.updateCharacterName(characterId, userId, request));
     }
@@ -82,7 +82,7 @@ public class CharacterController {
     @GetMapping("/v1/characters/{characterId}/status")
     public ApiResponse<p5laris.gateway.domain.character.api.dto.CharacterStatusResponse> getCharacterStatus(
             @org.springframework.web.bind.annotation.PathVariable Long characterId,
-            @p5laris.gateway.global.security.annotation.LoginUserId Long userId) {
+            @p5laris.gateway.global.auth.LoginUserId Long userId) {
         return ApiResponse.success(characterGatewayService.getCharacterStatus(characterId, userId));
     }
 
@@ -93,7 +93,7 @@ public class CharacterController {
     @org.springframework.web.bind.annotation.PostMapping("/v1/characters/{characterId}/care-logs")
     public ApiResponse<p5laris.gateway.domain.character.api.dto.CareActionResponse> performCareAction(
             @org.springframework.web.bind.annotation.PathVariable Long characterId,
-            @p5laris.gateway.global.security.annotation.LoginUserId Long userId,
+            @p5laris.gateway.global.auth.LoginUserId Long userId,
             @org.springframework.web.bind.annotation.RequestBody p5laris.gateway.domain.character.api.dto.CareActionRequest request) {
         return ApiResponse.success(characterGatewayService.performCareAction(characterId, userId, request));
     }
@@ -105,7 +105,7 @@ public class CharacterController {
     @org.springframework.web.bind.annotation.PutMapping("/v1/characters/{characterId}/equipped-skin")
     public ApiResponse<p5laris.gateway.domain.character.api.dto.EquipSkinResponse> equipSkin(
             @org.springframework.web.bind.annotation.PathVariable Long characterId,
-            @p5laris.gateway.global.security.annotation.LoginUserId Long userId,
+            @p5laris.gateway.global.auth.LoginUserId Long userId,
             @org.springframework.web.bind.annotation.RequestBody p5laris.gateway.domain.character.api.dto.EquipSkinRequest request) {
         return ApiResponse.success(characterGatewayService.equipSkin(characterId, userId, request));
     }
