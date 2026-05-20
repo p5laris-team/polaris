@@ -4,16 +4,31 @@ import com.p5laris.proto.character.v1.*;
 import net.devh.boot.grpc.client.inject.GrpcClient;
 import org.springframework.stereotype.Service;
 import p5laris.gateway.domain.share.api.dto.ShareDto;
+import lombok.RequiredArgsConstructor;
 
 /**
  * gRPC client service for Share APIs.
  * Connects to the character module where Share logic lives.
  */
 @Service
+@RequiredArgsConstructor
 public class ShareGatewayService {
 
     @GrpcClient("character")
     private CharacterServiceGrpc.CharacterServiceBlockingStub characterStub;
+
+    public ShareDto.PresignedUrlResponse getSharePresignedUrl(Long userId, String extension) {
+        var response = characterStub.getSharePresignedUrl(
+                com.p5laris.proto.character.v1.GetSharePresignedUrlRequest.newBuilder()
+                        .setUserId(userId)
+                        .setExtension(extension)
+                        .build()
+        );
+        return new ShareDto.PresignedUrlResponse(
+                response.getPresignedUrl(),
+                response.getImageUrl()
+        );
+    }
 
     // §9.1
     public ShareDto.ShareCardResponse createShareCard(Long userId, ShareDto.CreateShareCardRequest request) {

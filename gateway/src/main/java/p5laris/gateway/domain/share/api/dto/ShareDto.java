@@ -2,6 +2,12 @@ package p5laris.gateway.domain.share.api.dto;
 
 public class ShareDto {
 
+    // ---------- Presigned URL ----------
+    public record PresignedUrlResponse(
+            String presignedUrl,
+            String imageUrl
+    ) {}
+
     // §9.1 CreateShareCard
     public record CreateShareCardRequest(
             Long characterId,

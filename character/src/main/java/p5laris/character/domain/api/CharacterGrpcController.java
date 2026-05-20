@@ -321,5 +321,19 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
                 .build());
         responseObserver.onCompleted();
     }
+    @Override
+    public void getSharePresignedUrl(com.p5laris.proto.character.v1.GetSharePresignedUrlRequest request,
+                                     io.grpc.stub.StreamObserver<com.p5laris.proto.character.v1.GetSharePresignedUrlResponse> responseObserver) {
+        var result = shareService.getSharePresignedUrl(
+                request.getUserId(),
+                request.getExtension()
+        );
+
+        responseObserver.onNext(com.p5laris.proto.character.v1.GetSharePresignedUrlResponse.newBuilder()
+                .setPresignedUrl(result.presignedUrl())
+                .setImageUrl(result.imageUrl())
+                .build());
+        responseObserver.onCompleted();
+    }
 }
 

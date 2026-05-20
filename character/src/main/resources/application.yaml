@@ -39,3 +39,12 @@ grpc:
     ai:
       address: static://localhost:9095
       negotiationType: plaintext
+
+cloud:
+  r2:
+    credentials:
+      access-key: ${R2_ACCESS_KEY:dummy-key}
+      secret-key: ${R2_SECRET_KEY:dummy-secret}
+    endpoint: ${R2_ENDPOINT:https://dummy.r2.cloudflarestorage.com}
+    bucket-name: ${R2_BUCKET_NAME:polaris-share-cards}
+    public-domain: ${R2_PUBLIC_DOMAIN:https://cdn.polaris.app}

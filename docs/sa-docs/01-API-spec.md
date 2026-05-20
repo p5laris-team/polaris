@@ -139,6 +139,7 @@ Base Pattern: /api/{domain}/v1/{resource}
 | GET    | `💾 /api/item/v1/items`                                         | 상점 아이템 목록 조회  | query cursor | items | 🔐 |
 | GET    | `/api/item/v1/user-items`                                       | 내 보유 아이템 조회   | query cursor | user items | 🔐 |
 | POST   | `⚠️ /api/item/v1/item-purchases`                                | 아이템 구매        | body | purchase result | 🔐 |
+| GET    | `/api/share/v1/presigned-url`                                   | 프론트엔드 R2 직접 업로드용 임시 URL 발급 | query | presigned url | 🔐 |
 | POST   | `/api/share/v1/share-cards`                                     | 공유 카드 생성 (멘트 포함) | body | share card | 🔐 |
 | POST   | `⚠️ /api/share/v1/share-events`                                 | 공유 시도 이벤트 생성 및 보상 처리 | body | share event | 🔐 |
 | GET    | `/api/share/v1/share-events/today`                              | 오늘 공유 보상 여부 조회 | none | share status | 🔐 |
@@ -986,7 +987,31 @@ Refresh Token으로 Access Token을 재발급한다.
 
 ## 9. 공유
 
-### 9.1 POST `/api/share/v1/share-cards` 🔐
+### 9.1 GET `/api/share/v1/presigned-url` 🔐
+
+**설명**  
+프론트엔드에서 렌더링된 캐릭터 이미지를 외부 스토리지(Cloudflare R2/AWS S3)에 직접 업로드하기 위해, 쓰기 권한이 포함된 1회용 임시 URL(Presigned URL)을 발급받는다. 서버 부하 없이 이미지 업로드가 가능하다.
+
+**Request (Query String)**
+
+| 파라미터 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| extension | string | X | 확장자. 기본값은 "png". "jpg", "jpeg" 등 허용 |
+
+**Response**
+
+```json
+{
+  "presignedUrl": "https://<bucket>.r2.cloudflarestorage.com/share-cards/UUID.png?X-Amz-Signature=...",
+  "imageUrl": "https://cdn.polaris.app/share-cards/UUID.png"
+}
+```
+* **`presignedUrl`**: 프론트엔드가 이미지를 쏠(HTTP PUT) URL. 약 10분 후 만료된다.
+* **`imageUrl`**: 업로드 완료 후, 최종적으로 웹상에 노출될 공개 URL. 이후 9.2 API 호출 시 이 값을 사용한다.
+
+---
+
+### 9.2 POST `/api/share/v1/share-cards` 🔐
 
 **설명**  
 내 캐릭터 공유 카드를 생성한다. 한 줄 다짐/메시지(`headline`)를 입력받아 카드에 기록한다.
@@ -1013,7 +1038,7 @@ Refresh Token으로 Access Token을 재발급한다.
 
 ---
 
-### 9.2 POST `⚠️ /api/share/v1/share-events` 🔐
+### 9.3 POST `⚠️ /api/share/v1/share-events` 🔐
 
 **설명**  
 사용자가 공유 버튼을 눌렀다는 이벤트를 저장한다. 실제 외부 SNS 게시 여부는 MVP에서 검증하지 않고, 하루 1회 공유 시도 보상을 지급한다.
@@ -1044,7 +1069,7 @@ Refresh Token으로 Access Token을 재발급한다.
 
 ---
 
-### 9.3 GET `/api/share/v1/share-events/today` 🔐
+### 9.4 GET `/api/share/v1/share-events/today` 🔐
 
 **설명**  
 로그인한 유저가 오늘 날짜의 공유 보상을 이미 수령했는지 여부를 조회한다. 프론트엔드 버튼 상태 및 배너 표시에 사용된다.
@@ -1066,11 +1091,10 @@ Refresh Token으로 Access Token을 재발급한다.
 
 ---
 
-### 9.4 GET `💾 /api/share/v1/share-links/{shareId}` Public
+### 9.5 GET `💾 /api/share/v1/share-links/{shareId}` Public
 
 **설명**  
-외부 사용자가 공유 링크로 들어왔을 때 카드 정보를 조회한다.  
-*(성능 최적화를 위해 본 API 호출 시 외부 유저의 Referrer, UTM 정보를 활용해 내부적으로 공유 링크 클릭 로그(`share_clicks` 테이블)가 비동기 적재됩니다.)*
+외부 사용자가 공유 링크로 들어왔을 때 카드 정보를 조회한다.
 
 **Request**
 
