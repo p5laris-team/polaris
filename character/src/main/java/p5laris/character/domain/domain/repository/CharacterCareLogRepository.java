@@ -9,4 +9,7 @@ public interface CharacterCareLogRepository extends JpaRepository<CharacterCareL
 
     /** 캐릭터의 돌봄 로그를 최신순으로 조회 */
     List<CharacterCareLog> findByCharacterIdOrderByCreatedAtDesc(Long characterId);
+
+    /** 멱등키로 로그 조회 */
+    java.util.Optional<CharacterCareLog> findByIdempotencyKey(String idempotencyKey);
 }

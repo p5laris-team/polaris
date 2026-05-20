@@ -62,9 +62,14 @@ public class CharacterCareLog {
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 
+    /** 멱등키 (클라이언트 제공, 재시도/중복 요청 방지용) */
+    @Column(name = "idempotency_key", unique = true, nullable = false, updatable = false, length = 100)
+    private String idempotencyKey;
+
     @Builder
     private CharacterCareLog(Long userId, Long characterId, Long itemId,
-                             ActionType actionType, String beforeStateJson, String afterStateJson) {
+                             ActionType actionType, String beforeStateJson, String afterStateJson,
+                             String idempotencyKey) {
         this.userId = userId;
         this.characterId = characterId;
         this.itemId = itemId;
@@ -72,5 +77,6 @@ public class CharacterCareLog {
         this.beforeStateJson = beforeStateJson;
         this.afterStateJson = afterStateJson;
         this.createdAt = Instant.now();
+        this.idempotencyKey = idempotencyKey;
     }
 }

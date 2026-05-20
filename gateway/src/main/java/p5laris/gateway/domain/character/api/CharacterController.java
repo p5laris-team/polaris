@@ -94,8 +94,9 @@ public class CharacterController {
     public ApiResponse<p5laris.gateway.domain.character.api.dto.CareActionResponse> performCareAction(
             @org.springframework.web.bind.annotation.PathVariable Long characterId,
             @p5laris.gateway.global.auth.LoginUserId Long userId,
+            @org.springframework.web.bind.annotation.RequestHeader("Idempotency-Key") String idempotencyKey,
             @org.springframework.web.bind.annotation.RequestBody p5laris.gateway.domain.character.api.dto.CareActionRequest request) {
-        return ApiResponse.success(characterGatewayService.performCareAction(characterId, userId, request));
+        return ApiResponse.success(characterGatewayService.performCareAction(characterId, userId, idempotencyKey, request));
     }
 
     /**

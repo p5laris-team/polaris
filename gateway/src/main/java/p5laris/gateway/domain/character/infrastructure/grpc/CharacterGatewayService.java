@@ -205,7 +205,7 @@ public class CharacterGatewayService {
      * Perform care action (API spec 4.7).
      */
     public p5laris.gateway.domain.character.api.dto.CareActionResponse performCareAction(
-            Long characterId, Long userId,
+            Long characterId, Long userId, String idempotencyKey,
             p5laris.gateway.domain.character.api.dto.CareActionRequest request) {
 
         com.p5laris.proto.character.v1.PerformCareActionResponse response =
@@ -215,6 +215,7 @@ public class CharacterGatewayService {
                                 .setUserId(userId)
                                 .setActionType(request.actionType())
                                 .setItemId(request.itemId() != null ? request.itemId() : 0L)
+                                .setIdempotencyKey(idempotencyKey != null ? idempotencyKey : "")
                                 .build()
                 );
 

@@ -146,6 +146,7 @@ message PerformCareActionRequest {
   int64 user_id = 2;       // ownership validation
   string action_type = 3;  // FEED | SLEEP | PLAY
   int64 item_id = 4;       // 0 if no item used
+  string idempotency_key = 5;
 }
 
 message PerformCareActionResponse {

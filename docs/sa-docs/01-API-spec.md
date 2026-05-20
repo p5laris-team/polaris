@@ -140,7 +140,7 @@ Base Pattern: /api/{domain}/v1/{resource}
 | GET    | `/api/item/v1/user-items`                                       | 내 보유 아이템 조회   | query cursor | user items | 🔐 |
 | POST   | `⚠️ /api/item/v1/item-purchases`                                | 아이템 구매        | body | purchase result | 🔐 |
 | GET    | `/api/share/v1/presigned-url`                                   | 프론트엔드 R2 직접 업로드용 임시 URL 발급 | query | presigned url | 🔐 |
-| POST   | `/api/share/v1/share-cards`                                     | 공유 카드 생성 (멘트 포함) | body | share card | 🔐 |
+| POST   | `/api/share/v1/share-cards`                                     | 공유 카드 생성 (업로드 이미지 URL 포함) | body | share card | 🔐 |
 | POST   | `⚠️ /api/share/v1/share-events`                                 | 공유 시도 이벤트 생성 및 보상 처리 | body | share event | 🔐 |
 | GET    | `/api/share/v1/share-events/today`                              | 오늘 공유 보상 여부 조회 | none | share status | 🔐 |
 | GET    | `💾 /api/share/v1/share-links/{shareId}`                        | 공개 공유 링크 정보 조회 (클릭 로그 내재화) | path | shared card | Public |
@@ -517,7 +517,14 @@ Refresh Token으로 Access Token을 재발급한다.
 ### 4.7 POST `⚠️ /api/character/v1/characters/{characterId}/care-logs` 🔐
 
 **설명**  
-밥 주기, 재우기, 놀아주기 같은 돌봄 액션을 수행한다. 별조각 차감 또는 소모품 수량 차감이 발생할 수 있다.
+밥 주기, 재우기, 놀아주기 같은 돌봄 액션을 수행한다. 별조각 차감 또는 소모품 수량 차감이 발생할 수 있다.  
+중복 요청 및 재시도를 방지하기 위해 반드시 `Idempotency-Key` 헤더를 함께 전송해야 합니다.
+
+**Headers**
+
+| Name | Type | Description | Required |
+|---|---|---|---|
+| `Idempotency-Key` | String | 중복 요청 및 재시도 방지용 고유 멱등키 (예: UUID 또는 고유 문자열) | Yes |
 
 **Request**
 
@@ -1109,14 +1116,14 @@ AI 생성 결과는 `ai_mission_generations`, 사용 로그는 `ai_usage_logs`�
 ### 9.2 POST `/api/share/v1/share-cards` 🔐
 
 **설명**  
-내 캐릭터 공유 카드를 생성한다. 한 줄 다짐/메시지(`headline`)를 입력받아 카드에 기록한다.
+내 캐릭터 공유 카드를 생성한다. 프론트엔드가 9.1에서 발급받은 `presignedUrl`로 이미지를 업로드한 뒤, 함께 받은 공개 URL(`imageUrl`)을 이 API에 전달한다.
 
 **Request**
 
 ```json
 {
   "characterId": 10,
-  "headline": "오늘도 조금 반짝였음."
+  "imageUrl": "https://cdn.polaris.app/share-cards/UUID.png"
 }
 ```
 
