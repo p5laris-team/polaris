@@ -121,19 +121,55 @@ class AiMissionTextServiceTest {
     }
 
     @Test
-    void 같은_requestId는_중복으로_처리하지_않는다() {
+    void 같은_requestId와_같은_요청이면_기존_생성_결과를_재사용한다() {
         MissionTextGenerationCommand command = validCommand("JJORY");
-        aiMissionTextService.generateMissionTexts(command);
+        MissionTextGenerationResult first = aiMissionTextService.generateMissionTexts(command);
 
-        assertThatThrownBy(() -> aiMissionTextService.generateMissionTexts(command))
+        MissionTextGenerationResult second = aiMissionTextService.generateMissionTexts(command);
+
+        assertThat(second.aiGenerationId()).isEqualTo(first.aiGenerationId());
+        assertThat(second.characterMessage()).isEqualTo(first.characterMessage());
+        assertThat(second.completionQuestion()).isEqualTo(first.completionQuestion());
+        assertThat(second.completionCharacterResponse()).isEqualTo(first.completionCharacterResponse());
+        assertThat(aiMissionGenerationRepository.count()).isEqualTo(1);
+        assertThat(aiUsageLogRepository.count()).isEqualTo(1);
+    }
+
+    @Test
+    void 같은_requestId인데_요청_내용이_다르면_충돌로_처리한다() {
+        String requestId = UUID.randomUUID().toString();
+        MissionTextGenerationCommand first = validCommand("JJORY", requestId);
+        MissionTextGenerationCommand differentBody = new MissionTextGenerationCommand(
+                first.userId(),
+                first.characterId(),
+                "NOVA",
+                first.missionTemplateId(),
+                first.baseTitle(),
+                first.baseDescription(),
+                first.category(),
+                first.difficulty(),
+                first.fallbackCharacterMessage(),
+                first.fallbackQuestion(),
+                first.fallbackCompletionResponse(),
+                first.onboardingContextJson(),
+                first.recentMissionContextJson(),
+                requestId
+        );
+        aiMissionTextService.generateMissionTexts(first);
+
+        assertThatThrownBy(() -> aiMissionTextService.generateMissionTexts(differentBody))
                 .isInstanceOf(AiException.class)
                 .extracting("errorCode")
-                .isEqualTo(AiErrorCode.AI_DUPLICATED_REQUEST);
+                .isEqualTo(AiErrorCode.AI_REQUEST_CONFLICT);
         assertThat(aiMissionGenerationRepository.count()).isEqualTo(1);
         assertThat(aiUsageLogRepository.count()).isEqualTo(1);
     }
 
     private MissionTextGenerationCommand validCommand(String characterType) {
+        return validCommand(characterType, UUID.randomUUID().toString());
+    }
+
+    private MissionTextGenerationCommand validCommand(String characterType, String requestId) {
         return new MissionTextGenerationCommand(
                 1001L,
                 2001L,
@@ -148,7 +184,7 @@ class AiMissionTextServiceTest {
                 "잘했어. 오늘의 작은 수분 보충을 별조각으로 기억할게.",
                 "{\"routineGoal\":\"WAKE_UP\"}",
                 "{\"recentRejected\":[]}",
-                UUID.randomUUID().toString()
+                requestId
         );
     }
 }
