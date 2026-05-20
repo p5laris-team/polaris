@@ -1,4 +1,119 @@
 package p5laris.gateway.domain.mission.api.dto;
 
-public record MissionDto(String msg) {
+/**
+ * mission REST API에서 사용하는 요청/응답 DTO 모음이다.
+ *
+ * <p>gateway 바깥의 클라이언트는 protobuf 구조를 몰라도 되므로,
+ * 이 클래스의 DTO만 보고 REST 응답 형태를 이해할 수 있게 분리한다.</p>
+ */
+public class MissionDto {
+
+    /**
+     * 현재 미션 조회와 다음 미션 생성 응답에서 공통으로 사용하는 미션 화면용 데이터다.
+     */
+    public record MissionResponse(
+            Long id,
+            String missionDate,
+            Integer stackOrder,
+            String title,
+            String description,
+            String characterMessage,
+            String category,
+            String difficulty,
+            Integer rewardStarPiece,
+            String status
+    ) {
+    }
+
+    /**
+     * 다음 미션 생성을 요청할 때 필요한 값이다.
+     *
+     * <p>characterId는 미션을 "어떤 캐릭터가 제안했는지" 기록하기 위한 값이고,
+     * 현재 미션 중복 여부나 소유권 판단은 로그인한 userId 기준으로 처리한다.</p>
+     */
+    public record CreateNextMissionRequest(
+            Long characterId,
+            Long lastMissionId
+    ) {
+    }
+
+    /**
+     * 미션을 거절했을 때 클라이언트가 화면 상태를 갱신하는 데 필요한 응답이다.
+     */
+    public record RejectMissionResponse(
+            Long missionId,
+            String status,
+            String rejectedAt,
+            String characterMessage
+    ) {
+    }
+
+    /**
+     * 완료 버튼을 눌렀을 때 생성되거나 재사용되는 완료 질문 세션 응답이다.
+     */
+    public record CompletionSessionResponse(
+            Long missionId,
+            String status,
+            CompletionQuestion question
+    ) {
+    }
+
+    /**
+     * 사용자가 미션 완료를 증명하기 위해 답해야 하는 질문 1개를 표현한다.
+     */
+    public record CompletionQuestion(
+            Long id,
+            String text,
+            String inputType,
+            Integer minLength,
+            Integer maxLength
+    ) {
+    }
+
+    /**
+     * 완료 질문 답변 제출 요청이다.
+     */
+    public record SubmitCompletionAnswerRequest(
+            String answer
+    ) {
+    }
+
+    /**
+     * 답변 저장, 미션 완료, 보상 지급까지 끝난 뒤 반환하는 결과 응답이다.
+     */
+    public record CompletionAnswerResponse(
+            Long missionId,
+            String status,
+            CompletionAnswer answer,
+            MissionReward reward,
+            WalletSnapshot wallet,
+            String characterMessage
+    ) {
+    }
+
+    /**
+     * 사용자가 제출한 답변과 저장 시각이다.
+     */
+    public record CompletionAnswer(
+            String text,
+            String answeredAt
+    ) {
+    }
+
+    /**
+     * 이번 미션 완료로 지급된 보상량이다.
+     */
+    public record MissionReward(
+            Integer starPiece,
+            Integer affection
+    ) {
+    }
+
+    /**
+     * 보상 반영 후 지갑 상태 일부를 보여주는 스냅샷이다.
+     */
+    public record WalletSnapshot(
+            Integer starPiece
+    ) {
+    }
 }
