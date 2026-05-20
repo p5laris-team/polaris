@@ -20,8 +20,7 @@ public class ItemDto {
         String name,
         String itemType,
         String effectType,
-        int quantity,
-        boolean equipped
+        int quantity
     ) {}
 
     public record PageInfo(

@@ -60,12 +60,13 @@ message GetUserItemsResponse {
 
 message UserItem {
   int64 user_item_id = 1;
-  int64 item_id = 2;
-  string name = 3;
-  string item_type = 4;
+  int64 item_id      = 2;
+  string name        = 3;
+  string item_type   = 4;
   string effect_type = 5;
-  int32 quantity = 6;
-  bool equipped = 7;
+  int32 quantity     = 6;
+  reserved 7;          // 구 equipped 필드 번호 예약 (역호환성 보호)
+  reserved "equipped";
 }
 
 message PurchaseItemRequest {

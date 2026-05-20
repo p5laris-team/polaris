@@ -701,6 +701,16 @@ MVP 정책:
 완료 답변은 1자 이상 300자 이하로 입력한다.
 ```
 
+입력 검증:
+
+```text
+missionId path variable은 1 이상의 숫자여야 한다.
+다음 미션 요청의 characterId는 필수이며 1 이상의 숫자여야 한다.
+다음 미션 요청의 lastMissionId는 선택값이며, 전달하는 경우 0 이상의 숫자여야 한다.
+완료 답변 answer는 공백만으로 구성될 수 없고 300자를 초과할 수 없다.
+입력값 형식 오류, JSON body 누락/파싱 오류, path variable 타입 오류는 INVALID_INPUT_VALUE로 응답한다.
+```
+
 ### 6.1 GET `/api/mission/v1/missions/current` 🔐
 
 **설명**
@@ -1015,9 +1025,15 @@ AI 생성 결과는 `ai_mission_generations`, 사용 로그는 `ai_usage_logs`�
 ### 8.2 GET `/api/item/v1/user-items` 🔐
 
 **설명**  
-내가 보유한 아이템과 수량, 장착 여부를 조회한다.  
+내가 보유한 아이템과 수량을 조회한다.
+
 - **소모성 아이템**: 보유 개수(`quantity`)가 표현됩니다.
-- **장착형 아이템(스킨 등)**: 대표 캐릭터의 장착 여부(`equipped`)가 표현됩니다.
+- **장착형 아이템(스킨)**: 장착 여부는 이 API에 포함되지 않습니다. 클라이언트가 보유한 캐릭터 정보(`equipped_skin_id`)와 비교하여 장착 상태를 판단합니다.
+
+> **장착 여부 판단 방식 (클라이언트 싱크)**  
+> `GET /api/character/v1/characters/me` 응답의 `equippedSkin.itemId` 와  
+> 이 API 응답의 `itemId` 를 클라이언트에서 비교합니다.  
+> `itemId === equippedSkin.itemId` → 장착된 스킨
 
 **Request (Query Parameters)**
 
@@ -1040,8 +1056,7 @@ AI 생성 결과는 `ai_mission_generations`, 사용 로그는 `ai_usage_logs`�
       "name": "별사탕밥",
       "itemType": "CONSUMABLE",
       "effectType": "FOOD",
-      "quantity": 2,     
-      "equipped": false   
+      "quantity": 2
     }
   ],
   "pageInfo": {
