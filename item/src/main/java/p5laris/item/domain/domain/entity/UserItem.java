@@ -38,6 +38,12 @@ public class UserItem extends BaseEntity {
         this.quantity += amount;
     }
 
+    public void useQuantity(int amount) {
+        if (amount <= 0) throw new IllegalArgumentException("Amount must be positive");
+        if (this.quantity < amount) throw new IllegalStateException("Not enough quantity");
+        this.quantity -= amount;
+    }
+
     public void equip() {
         this.equipped = true;
     }
