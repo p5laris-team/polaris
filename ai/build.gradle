@@ -17,6 +17,8 @@ java {
 dependencies {
     implementation project(':proto')
     implementation 'io.grpc:grpc-services'
+    implementation platform('org.springframework.ai:spring-ai-bom:2.0.0-M5')
+    implementation platform('io.grpc:grpc-bom:1.70.0')
 
     implementation 'net.devh:grpc-server-spring-boot-starter:3.1.0.RELEASE'
     implementation 'net.devh:grpc-client-spring-boot-starter:3.1.0.RELEASE'
@@ -25,6 +27,9 @@ dependencies {
     implementation 'org.flywaydb:flyway-database-postgresql'
 
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+    implementation 'org.springframework.ai:spring-ai-starter-model-google-genai'
+    implementation 'me.paulschwarz:spring-dotenv:4.0.0'
     runtimeOnly 'org.postgresql:postgresql'
 
     compileOnly 'org.projectlombok:lombok'

@@ -43,7 +43,7 @@ public class WalletGrpcController extends WalletServiceGrpc.WalletServiceImplBas
     @Override
     public void spendStarPiece(SpendStarPieceRequest request, StreamObserver<SpendStarPieceResponse> responseObserver) {
         try {
-            Long txId = walletService.spendStarPiece(
+            StarPieceTransaction tx = walletService.spendStarPiece(
                     request.getUserId(),
                     request.getAmount(),
                     request.getReason(),
@@ -56,7 +56,7 @@ public class WalletGrpcController extends WalletServiceGrpc.WalletServiceImplBas
             
             SpendStarPieceResponse response = SpendStarPieceResponse.newBuilder()
                     .setStarPiece(wallet.getStarPiece())
-                    .setTransactionId(txId)
+                    .setTransactionId(tx.getId())
                     .build();
                     
             responseObserver.onNext(response);

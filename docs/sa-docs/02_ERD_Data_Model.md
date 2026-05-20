@@ -487,7 +487,7 @@ AI가 미션을 생성/선정한 결과를 저장한다.
 | status | varchar | SUCCESS / FALLBACK / FAILED |
 | fallback_used | boolean | fallback 사용 여부 |
 | model | varchar | 사용 모델 |
-| error_type | varchar nullable | TIMEOUT / RATE_LIMIT / INVALID_OUTPUT / POLICY_VIOLATION / PROVIDER_ERROR / UNKNOWN |
+| error_type | varchar nullable | TIMEOUT / RATE_LIMIT / RATE_LIMIT_UNAVAILABLE / INVALID_OUTPUT / POLICY_VIOLATION / PROVIDER_ERROR / UNKNOWN |
 | created_at | timestamp | 생성일 |
 
 
@@ -680,7 +680,7 @@ AI 요청 비용, 지연, 실패율을 추적한다.
 | total_tokens | int | 총 토큰 |
 | latency_ms | int | 응답 지연 |
 | status | varchar | SUCCESS / FAILED / FALLBACK / RATE_LIMITED |
-| error_type | varchar nullable | TIMEOUT / RATE_LIMIT / INVALID_OUTPUT / POLICY_VIOLATION / PROVIDER_ERROR / UNKNOWN |
+| error_type | varchar nullable | TIMEOUT / RATE_LIMIT / RATE_LIMIT_UNAVAILABLE / INVALID_OUTPUT / POLICY_VIOLATION / PROVIDER_ERROR / UNKNOWN |
 | created_at | timestamp | 생성일 |
 
 ### 제약 / 인덱스

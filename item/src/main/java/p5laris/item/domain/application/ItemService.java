@@ -15,8 +15,10 @@ import org.springframework.transaction.annotation.Transactional;
 import p5laris.item.domain.application.event.ItemEventLogEvent;
 import p5laris.item.domain.domain.entity.Item;
 import p5laris.item.domain.domain.entity.UserItem;
+import p5laris.item.domain.domain.entity.UserItemUsage;
 import p5laris.item.domain.domain.repository.ItemRepository;
 import p5laris.item.domain.domain.repository.UserItemRepository;
+import p5laris.item.domain.domain.repository.UserItemUsageRepository;
 import p5laris.item.domain.exception.ItemErrorCode;
 import p5laris.item.domain.exception.ItemException;
 
@@ -30,6 +32,7 @@ public class ItemService {
 
     private final ItemRepository itemRepository;
     private final UserItemRepository userItemRepository;
+    private final UserItemUsageRepository userItemUsageRepository;
     private final ApplicationEventPublisher eventPublisher;
 
     @GrpcClient("user")
@@ -216,6 +219,69 @@ public class ItemService {
                 .setPrice(totalPrice)
                 .setStarPiece(spendResponse.getStarPiece())
                 .setTransactionId(spendResponse.getTransactionId())
+                .build();
+    }
+
+    /**
+     * 소모성(CONSUMABLE) 아이템을 1개 사용한다.
+     *
+     * - character 모듈이 돌봄 액션 시 호출한다.
+     * - UserItem.quantity 를 차감하고 item_usage_histories 에 이력을 기록한다.
+     * - idempotencyKey 로 중복 처리를 방지한다.
+     */
+    @Transactional
+    public UseItemResponse useItem(UseItemRequest request) {
+        Long userId  = request.getUserId();
+        Long itemId  = request.getItemId();
+        int  qty     = request.getQuantity() > 0 ? request.getQuantity() : 1;
+        String idempotencyKey = request.getIdempotencyKey().isEmpty() ? null : request.getIdempotencyKey();
+
+        // 멱등성 검사: 이미 처리된 요청이면 기존 결과를 그대로 반환한다.
+        if (idempotencyKey != null) {
+            Optional<UserItemUsage> existing = userItemUsageRepository.findByIdempotencyKey(idempotencyKey);
+            if (existing.isPresent()) {
+                UserItemUsage dup = existing.get();
+                UserItem dupUserItem = dup.getUserItem();
+                return UseItemResponse.newBuilder()
+                        .setUsageId(dup.getId())
+                        .setUserItemId(dupUserItem.getId())
+                        .setItemId(dup.getItemId())
+                        .setQuantityUsed(dup.getQuantity())
+                        .setRemainingQuantity(dupUserItem.getQuantity())
+                        .build();
+            }
+        }
+
+        // 보유 아이템 조회
+        UserItem userItem = userItemRepository.findByUserIdAndItemId(userId, itemId)
+                .orElseThrow(() -> new ItemException(ItemErrorCode.USER_ITEM_NOT_FOUND));
+
+        // 수량 검증
+        if (userItem.getQuantity() < qty) {
+            throw new ItemException(ItemErrorCode.ITEM_QUANTITY_NOT_ENOUGH);
+        }
+
+        // 수량 차감
+        userItem.useQuantity(qty);
+
+        // 사용 이력 기록
+        UserItemUsage usage = UserItemUsage.builder()
+                .userId(userId)
+                .userItem(userItem)
+                .itemId(itemId)
+                .quantity(qty)
+                .refType(request.getRefType().isEmpty() ? null : request.getRefType())
+                .refId(request.getRefId() == 0 ? null : request.getRefId())
+                .idempotencyKey(idempotencyKey)
+                .build();
+        userItemUsageRepository.save(usage);
+
+        return UseItemResponse.newBuilder()
+                .setUsageId(usage.getId())
+                .setUserItemId(userItem.getId())
+                .setItemId(itemId)
+                .setQuantityUsed(qty)
+                .setRemainingQuantity(userItem.getQuantity())
                 .build();
     }
 

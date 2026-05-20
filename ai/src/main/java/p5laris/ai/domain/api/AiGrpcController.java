@@ -111,6 +111,7 @@ public class AiGrpcController extends AiServiceGrpc.AiServiceImplBase {
         return switch (errorType) {
             case TIMEOUT -> AiErrorType.AI_ERROR_TYPE_TIMEOUT;
             case RATE_LIMIT -> AiErrorType.AI_ERROR_TYPE_RATE_LIMIT;
+            case RATE_LIMIT_UNAVAILABLE -> AiErrorType.AI_ERROR_TYPE_RATE_LIMIT_UNAVAILABLE;
             case INVALID_OUTPUT -> AiErrorType.AI_ERROR_TYPE_INVALID_OUTPUT;
             case POLICY_VIOLATION -> AiErrorType.AI_ERROR_TYPE_POLICY_VIOLATION;
             case PROVIDER_ERROR -> AiErrorType.AI_ERROR_TYPE_PROVIDER_ERROR;

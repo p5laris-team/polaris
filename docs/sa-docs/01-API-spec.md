@@ -746,11 +746,12 @@ MVP 정책:
 
 ```json
 {
+  "characterId": 10,
   "lastMissionId": 101
 }
 ```
 
-`lastMissionId`는 클라이언트가 마지막으로 보고 있던 미션을 함께 보내기 위한 필드다. 진행 중 미션 존재 여부는 서버 상태 기준으로 확인한다.
+`characterId`는 미션 제안 캐릭터를 기록하기 위해 전달한다. `lastMissionId`는 클라이언트가 마지막으로 보고 있던 미션을 함께 보내기 위한 필드다. 진행 중 미션 존재 여부는 서버 상태 기준으로 확인한다.
 
 **Response**
 
@@ -886,6 +887,8 @@ AI는 seed 미션의 제목, 설명, 카테고리, 난이도, 보상을 임의�
 외부 provider 오류, 응답 구조 오류, 정책 위반 등으로 생성 결과를 사용할 수 없으면 미션 템플릿의 fallback 문구를 사용한다.
 
 `requestId`는 AI 생성 요청의 멱등 기준이다. 같은 `requestId`와 같은 요청 본문이 다시 들어오면 기존 `ai_mission_generations` 결과를 반환하고, 같은 `requestId`가 다른 요청 본문과 함께 들어오면 충돌로 처리한다. mission 모듈은 매 호출마다 랜덤 UUID를 만들지 않고, 같은 미션 문구 생성 시도에 같은 `requestId`를 사용한다.
+
+외부 AI provider를 사용하는 경우 ai 모듈은 `requestId` 멱등 결과를 먼저 확인한 뒤 Redis 기반 rate limit을 확인한다. rate limit 초과 또는 Redis rate limit 저장소 장애가 발생하면 외부 provider를 호출하지 않고 fallback 문구를 반환한다.
 
 **gRPC Request**
 
@@ -1404,6 +1407,7 @@ AI 생성 결과는 `ai_mission_generations`, 사용 로그는 `ai_usage_logs`�
 |---|---|
 | `TIMEOUT` | provider 응답 지연 |
 | `RATE_LIMIT` | provider 요청 제한 |
+| `RATE_LIMIT_UNAVAILABLE` | rate limit 저장소 장애로 provider 호출 차단 |
 | `INVALID_OUTPUT` | 응답 구조 오류 |
 | `POLICY_VIOLATION` | 서비스 문구 정책 위반 |
 | `PROVIDER_ERROR` | provider 내부 오류 |
@@ -1428,6 +1432,7 @@ AI 생성 결과는 `ai_mission_generations`, 사용 로그는 `ai_usage_logs`�
 | `MISSION_DAILY_LIMIT_EXCEEDED` | 일일 미션 제안 제한 초과 |
 | `MISSION_ALREADY_COMPLETED` | 이미 완료된 미션 |
 | `MISSION_ANSWER_INVALID` | 완료 답변 길이 오류 |
+| `MISSION_SERVICE_UNAVAILABLE` | 미션 서비스 일시 장애 |
 | `STAR_PIECE_NOT_ENOUGH` | 별조각 부족 |
 | `DUPLICATED_IDEMPOTENCY_KEY` | 중복 요청 |
 | `ITEM_NOT_FOUND` | 아이템 없음 |
