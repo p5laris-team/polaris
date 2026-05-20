@@ -734,43 +734,78 @@ index(item_type)
 
 ## 1.16 `user_items`
 
-사용자가 보유한 아이템과 장착 여부를 저장한다.
+사용자가 보유한 아이템과 수량을 저장한다.
 
 | 컬럼 | 타입 | 설명 |
 | --- | --- | --- |
 | id | bigint PK | 보유 아이템 ID |
 | user_id | bigint FK | 사용자 ID |
-| item_id | bigint FK | 아이템 ID |
-| quantity | int | 보유 수량 |
-| equipped | boolean | 장착 여부 |
-| acquired_at | timestamp | 최초 획득일 |
+| item_id | bigint FK | 아이템 ID (`items.id` 참조) |
+| quantity | int | 보유 수량 (소모성 아이템), 스킨은 항상 1 |
+| created_at | timestamp | 최초 획득일 |
 | updated_at | timestamp | 수정일 |
 
-캐릭터에서 장비를 장착하는 컬럼을 보유하고 있기 때문에
-user_items에서는 어떤 캐릭터가 장착을 했는지 정의하진 않는다
-도메인이 나누어지는 상황을 상정에서 equipped를 관리 할지 판단하자
-
+> **장착 여부(`equipped`) 컬럼 미존재 — 의도된 설계**
+>
+> 스킨 장착 정보는 `user_characters.equipped_skin_id` 가 **단일 소스(source of truth)** 입니다.
+> `user_items`에 `equipped` 컬럼을 두면 두 모듈 간 이중 저장 문제와 동기화 위험이 발생하므로 제거했습니다.
+> 클라이언트는 character 정보의 `equipped_skin_id` 와 아이템 목록의 `item_id` 를 직접 비교하여 장착 상태를 판단합니다 (클라이언트 싱크 방식).
 
 ### 제약 / 인덱스
 
 ```
 unique(user_id, item_id)
-index(user_id, equipped)
-index(equipped_character_id)
+index(user_id)
 ```
 
 ### 정책
 
 ```
-장착형 아이템은 중복 구매할 수 없다.
+장착형 아이템(스킨)은 중복 구매할 수 없다.
 소모성 아이템은 같은 row의 quantity를 증가시킨다.
 별조각이 부족하면 구매할 수 없다.
 아이템 구매와 별조각 차감은 하나의 트랜잭션으로 처리한다.
-장착 슬롯당 하나만 장착하는 규칙은 application에서 검증한다.
-소모품 사용 시 quantity를 1 감소시키고 character_care_logs를 생성한다.
+소모품 사용 시 quantity를 1 감소시키고 item_usage_histories에 이력을 기록한다.
 ```
 
 ---
+
+## 1.16.1 `item_usage_histories`
+
+소모성 아이템 사용 이력을 저장한다.
+character 모듈이 돌봄 액션(FEED / SLEEP / PLAY) 수행 시 item 모듈의 gRPC `UseItem` API를 통해 기록된다.
+
+| 컬럼 | 타입 | 설명 |
+| --- | --- | --- |
+| id | bigint PK | 사용 이력 ID |
+| user_id | bigint | 사용자 ID |
+| user_item_id | bigint FK | 사용된 보유 아이템 ID (`user_items.id` 참조) |
+| item_id | bigint FK | 사용된 아이템 ID (`items.id` 참조, 편의 컬럼) |
+| quantity | int | 사용 수량 (MVP = 1) |
+| ref_type | varchar(50) | 사용 컨텍스트 (예: `CARE_ACTION`) |
+| ref_id | bigint | 컨텍스트 PK (예: `character_care_logs.id`) |
+| idempotency_key | varchar(100) UNIQUE | 중복 사용 방지 멱등키 |
+| created_at | timestamp | 사용 시각 |
+| updated_at | timestamp | 수정일 |
+
+### 제약 / 인덱스
+
+```
+unique(idempotency_key)
+index(user_id)
+index(user_item_id)
+```
+
+### 정책
+
+```
+idempotency_key가 동일한 요청은 중복 처리하지 않고 기존 결과를 반환한다.
+character 모듈이 생성하는 멱등키 형식: "care-{careLogId}-item-{itemId}"
+아이템 소모 실패 시 돌봄 결과(스탯 변화)는 유지하고 에러 로그만 남긴다.
+```
+
+---
+
 
 ## 1.17 `achievements`  → MVP 이후
 

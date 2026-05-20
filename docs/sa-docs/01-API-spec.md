@@ -1015,9 +1015,15 @@ AI 생성 결과는 `ai_mission_generations`, 사용 로그는 `ai_usage_logs`�
 ### 8.2 GET `/api/item/v1/user-items` 🔐
 
 **설명**  
-내가 보유한 아이템과 수량, 장착 여부를 조회한다.  
+내가 보유한 아이템과 수량을 조회한다.
+
 - **소모성 아이템**: 보유 개수(`quantity`)가 표현됩니다.
-- **장착형 아이템(스킨 등)**: 대표 캐릭터의 장착 여부(`equipped`)가 표현됩니다.
+- **장착형 아이템(스킨)**: 장착 여부는 이 API에 포함되지 않습니다. 클라이언트가 보유한 캐릭터 정보(`equipped_skin_id`)와 비교하여 장착 상태를 판단합니다.
+
+> **장착 여부 판단 방식 (클라이언트 싱크)**  
+> `GET /api/character/v1/characters/me` 응답의 `equippedSkin.itemId` 와  
+> 이 API 응답의 `itemId` 를 클라이언트에서 비교합니다.  
+> `itemId === equippedSkin.itemId` → 장착된 스킨
 
 **Request (Query Parameters)**
 
@@ -1040,8 +1046,7 @@ AI 생성 결과는 `ai_mission_generations`, 사용 로그는 `ai_usage_logs`�
       "name": "별사탕밥",
       "itemType": "CONSUMABLE",
       "effectType": "FOOD",
-      "quantity": 2,     
-      "equipped": false   
+      "quantity": 2
     }
   ],
   "pageInfo": {
