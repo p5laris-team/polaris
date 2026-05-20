@@ -1,24 +1,300 @@
 package p5laris.gateway.domain.mission.infrastructure.grpc;
 
+import com.p5laris.proto.mission.v1.CreateNextMissionRequest;
+import com.p5laris.proto.mission.v1.CreateNextMissionResponse;
+import com.p5laris.proto.mission.v1.GetCurrentMissionRequest;
+import com.p5laris.proto.mission.v1.GetCurrentMissionResponse;
+import com.p5laris.proto.mission.v1.Mission;
 import com.p5laris.proto.mission.v1.MissionServiceGrpc;
-import com.p5laris.proto.mission.v1.PingPongRequest;
-import com.p5laris.proto.mission.v1.PingPongResponse;
+import com.p5laris.proto.mission.v1.RejectMissionRequest;
+import com.p5laris.proto.mission.v1.RejectMissionResponse;
+import com.p5laris.proto.mission.v1.StartCompletionSessionRequest;
+import com.p5laris.proto.mission.v1.StartCompletionSessionResponse;
+import com.p5laris.proto.mission.v1.SubmitCompletionAnswerRequest;
+import com.p5laris.proto.mission.v1.SubmitCompletionAnswerResponse;
+import io.grpc.Status;
+import io.grpc.StatusRuntimeException;
 import net.devh.boot.grpc.client.inject.GrpcClient;
 import org.springframework.stereotype.Service;
+import p5laris.gateway.domain.mission.api.dto.MissionDto;
+import p5laris.gateway.domain.mission.exception.MissionGatewayErrorCode;
+import p5laris.gateway.domain.mission.exception.MissionGatewayException;
+import p5laris.gateway.global.exception.BusinessException;
+import p5laris.gateway.global.exception.CommonErrorCode;
 
+/**
+ * mission gRPC 서버를 호출하고 REST DTO로 변환하는 gateway adapter다.
+ *
+ * <p>gateway는 DB를 직접 보지 않는다. 그래서 이 클래스는 REST 요청에서 받은 값으로
+ * protobuf request를 만들고, mission 서버 응답을 다시 REST 응답 DTO로 바꾸는 역할만 한다.</p>
+ */
 @Service
 public class MissionGatewayService {
+
+    private static final long EMPTY_LAST_MISSION_ID = 0L;
+    private static final int MAX_COMPLETION_ANSWER_LENGTH = 300;
 
     @GrpcClient("mission")
     private MissionServiceGrpc.MissionServiceBlockingStub missionStub;
 
-    public String getMission(String value) {
-        PingPongResponse response = missionStub.pingPong(
-                PingPongRequest.newBuilder()
-                        .setMessage(value)
-                        .build()
-        );
+    /**
+     * 현재 미션 조회는 userId만 기준으로 한다.
+     */
+    public MissionDto.MissionResponse getCurrentMission(Long userId) {
+        try {
+            GetCurrentMissionResponse response = missionStub.getCurrentMission(
+                    GetCurrentMissionRequest.newBuilder()
+                            .setUserId(userId)
+                            .build()
+            );
 
-        return response.getMessage();
+            return toMissionResponse(response.getMission());
+        } catch (StatusRuntimeException e) {
+            throw toGatewayException(e);
+        }
+    }
+
+    /**
+     * 다음 미션 생성은 userId로 소유권을 판단하고, characterId는 제안 캐릭터 기록용으로 전달한다.
+     */
+    public MissionDto.MissionResponse createNextMission(
+            Long userId,
+            MissionDto.CreateNextMissionRequest request
+    ) {
+        validateCreateNextMissionRequest(request);
+
+        try {
+            CreateNextMissionResponse response = missionStub.createNextMission(
+                    CreateNextMissionRequest.newBuilder()
+                            .setUserId(userId)
+                            .setCharacterId(request.characterId())
+                            .setLastMissionId(toGrpcLastMissionId(request.lastMissionId()))
+                            .build()
+            );
+
+            return toMissionResponse(response.getMission());
+        } catch (StatusRuntimeException e) {
+            throw toGatewayException(e);
+        }
+    }
+
+    /**
+     * 미션 거절은 userId + missionId 기준으로 mission 서버에서 다시 검증한다.
+     */
+    public MissionDto.RejectMissionResponse rejectMission(Long userId, Long missionId) {
+        validateMissionId(missionId);
+
+        try {
+            RejectMissionResponse response = missionStub.rejectMission(
+                    RejectMissionRequest.newBuilder()
+                            .setUserId(userId)
+                            .setMissionId(missionId)
+                            .build()
+            );
+
+            return new MissionDto.RejectMissionResponse(
+                    response.getMissionId(),
+                    toRestMissionStatus(response.getStatus().name()),
+                    response.getRejectedAt(),
+                    response.getCharacterMessage()
+            );
+        } catch (StatusRuntimeException e) {
+            throw toGatewayException(e);
+        }
+    }
+
+    /**
+     * 완료 질문 세션을 시작한다. 이미 ANSWERING 상태라면 mission 서버가 기존 질문을 반환한다.
+     */
+    public MissionDto.CompletionSessionResponse startCompletionSession(Long userId, Long missionId) {
+        validateMissionId(missionId);
+
+        try {
+            StartCompletionSessionResponse response = missionStub.startCompletionSession(
+                    StartCompletionSessionRequest.newBuilder()
+                            .setUserId(userId)
+                            .setMissionId(missionId)
+                            .build()
+            );
+
+            return new MissionDto.CompletionSessionResponse(
+                    response.getMissionId(),
+                    toRestMissionStatus(response.getStatus().name()),
+                    new MissionDto.CompletionQuestion(
+                            response.getQuestion().getId(),
+                            response.getQuestion().getText(),
+                            toRestCompletionInputType(response.getQuestion().getInputType().name()),
+                            response.getQuestion().getMinLength(),
+                            response.getQuestion().getMaxLength()
+                    )
+            );
+        } catch (StatusRuntimeException e) {
+            throw toGatewayException(e);
+        }
+    }
+
+    /**
+     * 완료 답변을 제출한다. 보상 중복 방지는 mission 서버의 상태 전이와 멱등 처리에서 담당한다.
+     */
+    public MissionDto.CompletionAnswerResponse submitCompletionAnswer(
+            Long userId,
+            Long missionId,
+            MissionDto.SubmitCompletionAnswerRequest request
+    ) {
+        validateMissionId(missionId);
+        validateCompletionAnswer(request);
+
+        try {
+            SubmitCompletionAnswerResponse response = missionStub.submitCompletionAnswer(
+                    SubmitCompletionAnswerRequest.newBuilder()
+                            .setUserId(userId)
+                            .setMissionId(missionId)
+                            .setAnswer(request.answer())
+                            .build()
+            );
+
+            return new MissionDto.CompletionAnswerResponse(
+                    response.getMissionId(),
+                    toRestMissionStatus(response.getStatus().name()),
+                    new MissionDto.CompletionAnswer(
+                            response.getAnswer().getText(),
+                            response.getAnswer().getAnsweredAt()
+                    ),
+                    new MissionDto.MissionReward(
+                            response.getReward().getStarPiece(),
+                            response.getReward().getAffection()
+                    ),
+                    new MissionDto.WalletSnapshot(
+                            response.getWallet().getStarPiece()
+                    ),
+                    response.getCharacterMessage()
+            );
+        } catch (StatusRuntimeException e) {
+            throw toGatewayException(e);
+        }
+    }
+
+    private MissionDto.MissionResponse toMissionResponse(Mission mission) {
+        return new MissionDto.MissionResponse(
+                mission.getId(),
+                mission.getMissionDate(),
+                mission.getStackOrder(),
+                mission.getTitle(),
+                mission.getDescription(),
+                mission.getCharacterMessage(),
+                toRestMissionCategory(mission.getCategory().name()),
+                toRestMissionDifficulty(mission.getDifficulty().name()),
+                mission.getRewardStarPiece(),
+                toRestMissionStatus(mission.getStatus().name())
+        );
+    }
+
+    private long toGrpcLastMissionId(Long lastMissionId) {
+        if (lastMissionId == null) {
+            return EMPTY_LAST_MISSION_ID;
+        }
+
+        if (lastMissionId < 0) {
+            throw new BusinessException(CommonErrorCode.INVALID_INPUT_VALUE);
+        }
+
+        return lastMissionId;
+    }
+
+    private void validateCreateNextMissionRequest(MissionDto.CreateNextMissionRequest request) {
+        if (request == null || request.characterId() == null || request.characterId() <= 0) {
+            throw new BusinessException(CommonErrorCode.INVALID_INPUT_VALUE);
+        }
+    }
+
+    private void validateMissionId(Long missionId) {
+        if (missionId == null || missionId <= 0) {
+            throw new BusinessException(CommonErrorCode.INVALID_INPUT_VALUE);
+        }
+    }
+
+    private void validateCompletionAnswer(MissionDto.SubmitCompletionAnswerRequest request) {
+        if (request == null || request.answer() == null) {
+            throw new MissionGatewayException(MissionGatewayErrorCode.MISSION_ANSWER_INVALID);
+        }
+
+        String answer = request.answer();
+        if (answer.isBlank() || answer.length() > MAX_COMPLETION_ANSWER_LENGTH) {
+            throw new MissionGatewayException(MissionGatewayErrorCode.MISSION_ANSWER_INVALID);
+        }
+    }
+
+    private String toRestMissionStatus(String grpcStatus) {
+        return removeGrpcPrefix(grpcStatus, "MISSION_STATUS_");
+    }
+
+    private String toRestMissionCategory(String grpcCategory) {
+        return removeGrpcPrefix(grpcCategory, "MISSION_CATEGORY_");
+    }
+
+    private String toRestMissionDifficulty(String grpcDifficulty) {
+        return removeGrpcPrefix(grpcDifficulty, "MISSION_DIFFICULTY_");
+    }
+
+    private String toRestCompletionInputType(String grpcInputType) {
+        return removeGrpcPrefix(grpcInputType, "COMPLETION_INPUT_TYPE_");
+    }
+
+    private String removeGrpcPrefix(String value, String prefix) {
+        if (value == null || !value.startsWith(prefix)) {
+            return value;
+        }
+
+        return value.substring(prefix.length());
+    }
+
+    /**
+     * mission gRPC status를 gateway의 REST 실패 응답 코드로 바꾼다.
+     *
+     * <p>mission 서버는 내부 ErrorCode를 gRPC Status로 압축해서 넘긴다.
+     * 일부 Status는 여러 도메인 오류가 공유하므로 description 문구까지 확인해
+     * 클라이언트가 이해할 수 있는 REST 에러 코드로 복원한다.</p>
+     */
+    private BusinessException toGatewayException(StatusRuntimeException e) {
+        Status.Code code = e.getStatus().getCode();
+        String description = e.getStatus().getDescription();
+
+        return switch (code) {
+            case NOT_FOUND -> new MissionGatewayException(toNotFoundErrorCode(description));
+            case INVALID_ARGUMENT -> new MissionGatewayException(MissionGatewayErrorCode.MISSION_ANSWER_INVALID);
+            case ALREADY_EXISTS -> new MissionGatewayException(MissionGatewayErrorCode.MISSION_ALREADY_COMPLETED);
+            case RESOURCE_EXHAUSTED -> new MissionGatewayException(MissionGatewayErrorCode.MISSION_DAILY_LIMIT_EXCEEDED);
+            case FAILED_PRECONDITION -> new MissionGatewayException(toFailedPreconditionErrorCode(description));
+            case UNAVAILABLE -> new MissionGatewayException(toUnavailableErrorCode(description));
+            default -> new BusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
+        };
+    }
+
+    private MissionGatewayErrorCode toNotFoundErrorCode(String description) {
+        if (contains(description, "템플릿")) {
+            return MissionGatewayErrorCode.MISSION_TEMPLATE_NOT_FOUND;
+        }
+
+        return MissionGatewayErrorCode.MISSION_NOT_FOUND;
+    }
+
+    private MissionGatewayErrorCode toFailedPreconditionErrorCode(String description) {
+        if (contains(description, "진행 중")) {
+            return MissionGatewayErrorCode.MISSION_ACTIVE_ALREADY_EXISTS;
+        }
+
+        return MissionGatewayErrorCode.MISSION_INVALID_STATUS;
+    }
+
+    private MissionGatewayErrorCode toUnavailableErrorCode(String description) {
+        if (contains(description, "보상")) {
+            return MissionGatewayErrorCode.MISSION_REWARD_FAILED;
+        }
+
+        return MissionGatewayErrorCode.MISSION_SERVICE_UNAVAILABLE;
+    }
+
+    private boolean contains(String value, String keyword) {
+        return value != null && value.contains(keyword);
     }
 }
