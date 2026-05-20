@@ -2,8 +2,10 @@ package p5laris.user.domain.application;
 
 import com.p5laris.proto.user.v1.*;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import p5laris.user.domain.application.event.UserEventLogEvent;
 import p5laris.user.domain.domain.entity.OnboardingProfile;
 import p5laris.user.domain.domain.repository.OnboardingProfileRepository;
 import p5laris.user.domain.domain.enums.OnboardingQuestion;
@@ -16,6 +18,7 @@ import java.util.stream.Collectors;
 public class OnboardingService {
 
     private final OnboardingProfileRepository onboardingProfileRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     public GetQuestionsResponse getQuestions() {
         var questions = Arrays.stream(OnboardingQuestion.values())
@@ -50,6 +53,7 @@ public class OnboardingService {
     public SaveProfileResponse saveProfile(Long userId, OnboardingProfileDto dto) {
         OnboardingProfile profile = onboardingProfileRepository.findByUserId(userId)
                 .orElseGet(() -> OnboardingProfile.builder().userId(userId).build());
+        boolean wasCompleted = profile.isCompleted();
 
         profile.updateProfile(
                 dto.getLivingType(),
@@ -63,10 +67,15 @@ public class OnboardingService {
                 dto.getCompleted()
         );
         
-        onboardingProfileRepository.save(profile);
+        OnboardingProfile savedProfile = onboardingProfileRepository.save(profile);
+
+        eventPublisher.publishEvent(UserEventLogEvent.onboardingProfileSaved(savedProfile));
+        if (!wasCompleted && savedProfile.isCompleted()) {
+            eventPublisher.publishEvent(UserEventLogEvent.onboardingCompleted(savedProfile));
+        }
 
         return SaveProfileResponse.newBuilder()
-                .setProfile(toDto(profile))
+                .setProfile(toDto(savedProfile))
                 .build();
     }
 

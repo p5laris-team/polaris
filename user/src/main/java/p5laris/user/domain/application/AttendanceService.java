@@ -1,9 +1,12 @@
 package p5laris.user.domain.application;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import p5laris.user.domain.application.event.UserEventLogEvent;
 import p5laris.user.domain.domain.entity.AttendanceRecord;
+import p5laris.user.domain.domain.entity.StarPieceTransaction;
 import p5laris.user.domain.domain.repository.AttendanceRecordRepository;
 import p5laris.user.domain.exception.UserErrorCode;
 import p5laris.user.domain.exception.UserException;
@@ -19,6 +22,7 @@ public class AttendanceService {
 
     private final AttendanceRecordRepository attendanceRecordRepository;
     private final WalletService walletService;
+    private final ApplicationEventPublisher eventPublisher;
 
     // 출석 보상
     private static final int ATTENDANCE_REWARD = 10;
@@ -57,7 +61,7 @@ public class AttendanceService {
         String dateStr = today.format(DateTimeFormatter.BASIC_ISO_DATE); // yyyyMMdd
         String idempotencyKey = "ATTENDANCE:" + userId + ":" + dateStr;
         
-        walletService.earnStarPiece(
+        StarPieceTransaction transaction = walletService.earnStarPiece(
                 userId, 
                 ATTENDANCE_REWARD, 
                 "ATTENDANCE", 
@@ -65,6 +69,9 @@ public class AttendanceService {
                 record.getId(), 
                 idempotencyKey
         );
+
+        eventPublisher.publishEvent(UserEventLogEvent.attendanceChecked(record));
+        eventPublisher.publishEvent(UserEventLogEvent.starPieceEarned(record, transaction));
 
         return record;
     }

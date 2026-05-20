@@ -7,10 +7,12 @@ import com.p5laris.proto.user.v1.WalletServiceGrpc;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.client.inject.GrpcClient;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import p5laris.item.domain.application.event.ItemEventLogEvent;
 import p5laris.item.domain.domain.entity.Item;
 import p5laris.item.domain.domain.entity.UserItem;
 import p5laris.item.domain.domain.repository.ItemRepository;
@@ -28,6 +30,7 @@ public class ItemService {
 
     private final ItemRepository itemRepository;
     private final UserItemRepository userItemRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     @GrpcClient("user")
     private WalletServiceGrpc.WalletServiceBlockingStub walletStub;
@@ -185,10 +188,28 @@ public class ItemService {
                     .equipped(false)
                     .build();
         }
-        userItemRepository.save(userItem);
+        UserItem savedUserItem = userItemRepository.save(userItem);
+
+        eventPublisher.publishEvent(ItemEventLogEvent.itemPurchased(
+                userId,
+                savedUserItem,
+                item,
+                quantity,
+                totalPrice,
+                spendResponse.getTransactionId(),
+                spendResponse.getStarPiece()
+        ));
+        eventPublisher.publishEvent(ItemEventLogEvent.starPieceSpent(
+                userId,
+                item,
+                totalPrice,
+                spendResponse.getTransactionId(),
+                spendResponse.getStarPiece(),
+                request.getIdempotencyKey()
+        ));
         
         return PurchaseItemResponse.newBuilder()
-                .setPurchaseId(userItem.getId())
+                .setPurchaseId(savedUserItem.getId())
                 .setItemId(itemId)
                 .setName(item.getName())
                 .setQuantity(quantity)
