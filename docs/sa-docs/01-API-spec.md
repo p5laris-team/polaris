@@ -1366,7 +1366,30 @@ AI 생성 결과는 `ai_mission_generations`, 사용 로그는 `ai_usage_logs`�
   "updatedAt": "2026-05-15T18:45:00+09:00"
 }
 ```
+---
 
+### 11.3 POST `/api/notification/v1/subscriptions/` 🔐
+
+**설명**  
+FCM 푸쉬 알림을 허용하고 토큰을 저장해 구독을 시작한다.
+
+**Request**
+
+```json
+{
+  "token": "FCM-token"
+}
+```
+
+**Response**
+
+```json
+{
+  "id": 600,
+  "read": true,
+  "createdAt": "2026-05-15T18:45:00+09:00"
+}
+```
 ---
 
 ## 12. 주요 상태 / Enum
