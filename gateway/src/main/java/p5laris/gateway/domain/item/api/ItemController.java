@@ -84,8 +84,7 @@ public class ItemController {
                                 ui.getName(),
                                 ui.getItemType(),
                                 ui.getEffectType(),
-                                ui.getQuantity(),
-                                ui.getEquipped()
+                                ui.getQuantity()
                         ))
                         .collect(Collectors.toList()),
                 new ItemDto.PageInfo(

@@ -118,7 +118,6 @@ public class ItemService {
                     .setItemType(ui.getItem().getItemType())
                     .setEffectType(ui.getItem().getEffectType() != null ? ui.getItem().getEffectType() : "")
                     .setQuantity(ui.getQuantity())
-                    .setEquipped(ui.isEquipped())
                     .build()
             );
         }
@@ -188,7 +187,6 @@ public class ItemService {
                     .userId(userId)
                     .item(item)
                     .quantity(quantity)
-                    .equipped(false)
                     .build();
         }
         UserItem savedUserItem = userItemRepository.save(userItem);

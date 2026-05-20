@@ -4,8 +4,6 @@ import jakarta.persistence.*;
 import lombok.*;
 import p5laris.item.core.entity.BaseEntity;
 
-import java.time.LocalDateTime;
-
 @Entity
 @Table(name = "user_items")
 @Getter
@@ -29,10 +27,6 @@ public class UserItem extends BaseEntity {
     @Builder.Default
     private int quantity = 1;
 
-    @Column(nullable = false)
-    @Builder.Default
-    private boolean equipped = false;
-
     public void addQuantity(int amount) {
         if (amount < 0) throw new IllegalArgumentException("Amount must be positive");
         this.quantity += amount;
@@ -42,13 +36,5 @@ public class UserItem extends BaseEntity {
         if (amount <= 0) throw new IllegalArgumentException("Amount must be positive");
         if (this.quantity < amount) throw new IllegalStateException("Not enough quantity");
         this.quantity -= amount;
-    }
-
-    public void equip() {
-        this.equipped = true;
-    }
-
-    public void unequip() {
-        this.equipped = false;
     }
 }
