@@ -1,5 +1,6 @@
 package p5laris.gateway.domain.mission.api;
 
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -41,7 +42,7 @@ public class MissionController {
     @PostMapping("/v1/missions/today-focus/next")
     public ApiResponse<MissionDto.MissionResponse> createNextMission(
             @LoginUserId Long userId,
-            @RequestBody MissionDto.CreateNextMissionRequest request
+            @Valid @RequestBody MissionDto.CreateNextMissionRequest request
     ) {
         return ApiResponse.success(missionGatewayService.createNextMission(userId, request));
     }
@@ -75,7 +76,7 @@ public class MissionController {
     public ApiResponse<MissionDto.CompletionAnswerResponse> submitCompletionAnswer(
             @LoginUserId Long userId,
             @PathVariable Long missionId,
-            @RequestBody MissionDto.SubmitCompletionAnswerRequest request
+            @Valid @RequestBody MissionDto.SubmitCompletionAnswerRequest request
     ) {
         return ApiResponse.success(missionGatewayService.submitCompletionAnswer(userId, missionId, request));
     }

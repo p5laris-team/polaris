@@ -1,5 +1,11 @@
 package p5laris.gateway.domain.mission.api.dto;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.PositiveOrZero;
+import jakarta.validation.constraints.Size;
+
 /**
  * mission REST API에서 사용하는 요청/응답 DTO 모음이다.
  *
@@ -32,7 +38,11 @@ public class MissionDto {
      * 현재 미션 중복 여부나 소유권 판단은 로그인한 userId 기준으로 처리한다.</p>
      */
     public record CreateNextMissionRequest(
+            @NotNull
+            @Positive
             Long characterId,
+
+            @PositiveOrZero
             Long lastMissionId
     ) {
     }
@@ -74,6 +84,8 @@ public class MissionDto {
      * 완료 질문 답변 제출 요청이다.
      */
     public record SubmitCompletionAnswerRequest(
+            @NotBlank
+            @Size(max = 300)
             String answer
     ) {
     }

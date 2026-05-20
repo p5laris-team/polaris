@@ -701,6 +701,16 @@ MVP 정책:
 완료 답변은 1자 이상 300자 이하로 입력한다.
 ```
 
+입력 검증:
+
+```text
+missionId path variable은 1 이상의 숫자여야 한다.
+다음 미션 요청의 characterId는 필수이며 1 이상의 숫자여야 한다.
+다음 미션 요청의 lastMissionId는 선택값이며, 전달하는 경우 0 이상의 숫자여야 한다.
+완료 답변 answer는 공백만으로 구성될 수 없고 300자를 초과할 수 없다.
+입력값 형식 오류, JSON body 누락/파싱 오류, path variable 타입 오류는 INVALID_INPUT_VALUE로 응답한다.
+```
+
 ### 6.1 GET `/api/mission/v1/missions/current` 🔐
 
 **설명**
