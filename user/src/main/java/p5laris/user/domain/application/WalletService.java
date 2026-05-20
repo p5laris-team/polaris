@@ -10,6 +10,8 @@ import p5laris.user.domain.domain.repository.WalletRepository;
 import p5laris.user.domain.exception.UserErrorCode;
 import p5laris.user.domain.exception.UserException;
 
+import java.util.Optional;
+
 @Service
 @RequiredArgsConstructor
 public class WalletService {
@@ -26,7 +28,14 @@ public class WalletService {
     @Transactional
     public StarPieceTransaction earnStarPiece(Long userId, int amount, String reason, String refType, Long refId, String idempotencyKey) {
         if (amount < 0) throw new UserException(UserErrorCode.EARN_AMOUNT_MUST_BE_POSITIVE);
-        
+
+        // 이미 처리된 요청인지 확인
+        Optional<StarPieceTransaction> existing = transactionRepository.findByIdempotencyKey(idempotencyKey);
+
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+
         Wallet wallet = walletRepository.findByUserId(userId)
                 .orElseThrow(() -> new UserException(UserErrorCode.WALLET_NOT_FOUND));
 
@@ -49,9 +58,16 @@ public class WalletService {
     }
 
     @Transactional
-    public Long spendStarPiece(Long userId, int amount, String reason, String refType, Long refId, String idempotencyKey) {
+    public StarPieceTransaction spendStarPiece(Long userId, int amount, String reason, String refType, Long refId, String idempotencyKey) {
         if (amount < 0) throw new IllegalArgumentException("Amount must be positive");
-        
+
+        // 멱등성 체크
+        Optional<StarPieceTransaction> existing = transactionRepository.findByIdempotencyKey(idempotencyKey);
+
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+
         Wallet wallet = walletRepository.findByUserId(userId)
                 .orElseThrow(() -> new UserException(UserErrorCode.WALLET_NOT_FOUND));
 
@@ -74,7 +90,6 @@ public class WalletService {
                 .idempotencyKey(idempotencyKey)
                 .build();
                 
-        transactionRepository.save(tx);
-        return tx.getId();
+        return transactionRepository.save(tx);
     }
 }
