@@ -6,7 +6,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import p5laris.user.domain.application.event.AuthLogEvent;
+import p5laris.user.domain.application.event.UserEventLogEvent;
 import p5laris.user.domain.domain.entity.User;
 import p5laris.user.domain.domain.repository.UserRepository;
 import p5laris.user.core.auth.JwtProvider;
@@ -125,7 +125,7 @@ public class AuthService {
 
             // 신규 가입 이벤트
             if (signedUp) {
-                eventPublisher.publishEvent(AuthLogEvent.userSignedUp(
+                eventPublisher.publishEvent(UserEventLogEvent.userSignedUp(
                         user.getId(),
                         user.getProvider(),
                         user.getRole(),
@@ -133,7 +133,7 @@ public class AuthService {
                 ));
             }
             // 기존 사용자 로그인 이벤트
-            eventPublisher.publishEvent(AuthLogEvent.userLoggedIn(user.getId(), user.getProvider()));
+            eventPublisher.publishEvent(UserEventLogEvent.userLoggedIn(user.getId(), user.getProvider()));
 
             return new LoginResult(accessToken, refreshToken, user);
 

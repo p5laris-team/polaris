@@ -3,10 +3,10 @@ spring:
     name: item
 
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/item}
+    url: ${DB_URL}
     driver-class-name: org.postgresql.Driver
-    username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:12345678}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
 
   jpa:
     hibernate:
@@ -23,19 +23,22 @@ flyway:
 
 grpc:
   server:
-    port: 9093
+    port: ${GRPC_SERVER_PORT}
     reflection-service-enabled: true
 
   client:
     user:
-      address: static://localhost:9091
+      address: ${USER_GRPC_ADDRESS}
       negotiationType: plaintext
     character:
-      address: static://localhost:9092
+      address: ${CHARACTER_GRPC_ADDRESS}
       negotiationType: plaintext
     mission:
-      address: static://localhost:9094
+      address: ${MISSION_GRPC_ADDRESS}
       negotiationType: plaintext
     ai:
-      address: static://localhost:9095
+      address: ${AI_GRPC_ADDRESS}
+      negotiationType: plaintext
+    event-log:
+      address: ${EVENT_LOG_GRPC_ADDRESS}
       negotiationType: plaintext
