@@ -746,11 +746,12 @@ MVP 정책:
 
 ```json
 {
+  "characterId": 10,
   "lastMissionId": 101
 }
 ```
 
-`lastMissionId`는 클라이언트가 마지막으로 보고 있던 미션을 함께 보내기 위한 필드다. 진행 중 미션 존재 여부는 서버 상태 기준으로 확인한다.
+`characterId`는 미션 제안 캐릭터를 기록하기 위해 전달한다. `lastMissionId`는 클라이언트가 마지막으로 보고 있던 미션을 함께 보내기 위한 필드다. 진행 중 미션 존재 여부는 서버 상태 기준으로 확인한다.
 
 **Response**
 
@@ -1431,6 +1432,7 @@ AI 생성 결과는 `ai_mission_generations`, 사용 로그는 `ai_usage_logs`�
 | `MISSION_DAILY_LIMIT_EXCEEDED` | 일일 미션 제안 제한 초과 |
 | `MISSION_ALREADY_COMPLETED` | 이미 완료된 미션 |
 | `MISSION_ANSWER_INVALID` | 완료 답변 길이 오류 |
+| `MISSION_SERVICE_UNAVAILABLE` | 미션 서비스 일시 장애 |
 | `STAR_PIECE_NOT_ENOUGH` | 별조각 부족 |
 | `DUPLICATED_IDEMPOTENCY_KEY` | 중복 요청 |
 | `ITEM_NOT_FOUND` | 아이템 없음 |
