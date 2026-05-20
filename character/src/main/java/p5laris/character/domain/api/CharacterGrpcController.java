@@ -187,7 +187,8 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
                 request.getCharacterId(),
                 request.getUserId(),
                 request.getActionType(),
-                request.getItemId()
+                request.getItemId(),
+                request.getIdempotencyKey()
         );
 
         PerformCareActionResponse response = PerformCareActionResponse.newBuilder()

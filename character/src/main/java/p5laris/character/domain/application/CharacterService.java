@@ -27,6 +27,7 @@ public class CharacterService {
     private final CharacterAssetRepository characterAssetRepository;
     private final p5laris.character.domain.domain.repository.UserCharacterRepository userCharacterRepository;
     private final CharacterCareLogRepository characterCareLogRepository;
+    private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
 
     @GrpcClient("item")
     private ItemServiceGrpc.ItemServiceBlockingStub itemStub;
@@ -207,7 +208,48 @@ public class CharacterService {
      */
     @Transactional
     public p5laris.character.domain.application.dto.CareActionResponse performCareAction(
-            Long characterId, Long userId, String actionTypeStr, Long itemId) {
+            Long characterId, Long userId, String actionTypeStr, Long itemId, String idempotencyKey) {
+
+        // 0. Idempotency Check & Validation
+        if (idempotencyKey == null || idempotencyKey.trim().isEmpty()) {
+            throw new IllegalArgumentException("Idempotency key is required");
+        }
+
+        java.util.Optional<CharacterCareLog> existingLog = characterCareLogRepository.findByIdempotencyKey(idempotencyKey);
+        if (existingLog.isPresent()) {
+            CharacterCareLog log = existingLog.get();
+                try {
+                    com.fasterxml.jackson.databind.JsonNode beforeNode = objectMapper.readTree(log.getBeforeStateJson());
+                    com.fasterxml.jackson.databind.JsonNode afterNode = objectMapper.readTree(log.getAfterStateJson());
+
+                    String characterMessage = switch (log.getActionType()) {
+                        case FEED  -> "Mmm... light has a taste too.";
+                        case SLEEP -> "...zz. Thanks.";
+                        case PLAY  -> "That was fun. Let's do it again sometime.";
+                    };
+
+                    return p5laris.character.domain.application.dto.CareActionResponse.builder()
+                            .careLogId(log.getId())
+                            .characterId(log.getCharacterId())
+                            .actionType(log.getActionType().name())
+                            .consumedItemId(log.getItemId())
+                            .consumedQuantity(log.getItemId() != null ? 1 : 0)
+                            .beforeStates(p5laris.character.domain.application.dto.CareActionResponse.States.builder()
+                                    .hunger(beforeNode.get("fullness").asInt())
+                                    .energy(beforeNode.get("energy").asInt())
+                                    .affection(beforeNode.get("affection").asInt())
+                                    .build())
+                            .afterStates(p5laris.character.domain.application.dto.CareActionResponse.States.builder()
+                                    .hunger(afterNode.get("fullness").asInt())
+                                    .energy(afterNode.get("energy").asInt())
+                                    .affection(afterNode.get("affection").asInt())
+                                    .build())
+                            .characterMessage(characterMessage)
+                            .build();
+                } catch (Exception e) {
+                    throw new RuntimeException("Failed to parse cached care log state", e);
+                }
+            }
 
         // 1. Ownership validation
         p5laris.character.domain.domain.entity.UserCharacter character = userCharacterRepository.findById(characterId)
@@ -246,10 +288,6 @@ public class CharacterService {
                         .build();
 
         // 6. TODO [Item Domain Integration]: if itemId > 0, call item service to deduct quantity.
-        //    Example (uncomment after item domain is ready):
-        //    if (itemId != null && itemId > 0) {
-        //        itemService.deductUserItem(userId, itemId, 1);
-        //    }
         long resolvedItemId = (itemId != null) ? itemId : 0L;
 
         // 7. Build state snapshot JSON (simple format)
@@ -268,6 +306,7 @@ public class CharacterService {
                 .actionType(actionType)
                 .beforeStateJson(beforeJson)
                 .afterStateJson(afterJson)
+                .idempotencyKey(idempotencyKey)
                 .build();
         characterCareLogRepository.save(careLog);
 
