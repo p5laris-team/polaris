@@ -22,6 +22,7 @@ service CharacterService {
   rpc CreateShareEvent(CreateShareEventRequest) returns (CreateShareEventResponse);
   rpc GetShareLink(GetShareLinkRequest) returns (GetShareLinkResponse);
   rpc RecordShareClick(RecordShareClickRequest) returns (RecordShareClickResponse);
+  rpc GetSharePresignedUrl(GetSharePresignedUrlRequest) returns (GetSharePresignedUrlResponse);
 }
 
 // GetCharacterTypes: returns active character types ordered by sort_order
@@ -239,5 +240,16 @@ message RecordShareClickRequest {
 message RecordShareClickResponse {
   string share_id = 1;
   bool recorded = 2;
+}
+
+// GetSharePresignedUrl: R2 업로드를 위한 Presigned URL 발급
+message GetSharePresignedUrlRequest {
+  int64 user_id = 1;
+  string extension = 2; // e.g. "png", "jpg"
+}
+
+message GetSharePresignedUrlResponse {
+  string presigned_url = 1; // R2 업로드용 임시 URL
+  string image_url = 2;     // 최종적으로 접근할 수 있는 공개 URL
 }
 

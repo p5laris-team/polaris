@@ -9,10 +9,11 @@ import p5laris.gateway.global.common.ApiResponse;
 
 /**
  * Controller for Share APIs (spec §9).
+ * Client requests arrive here and are forwarded via gRPC to the Character service.
  */
 @RestController
-@RequiredArgsConstructor
 @RequestMapping("/api/share")
+@RequiredArgsConstructor
 public class ShareController {
 
     private final ShareGatewayService shareGatewayService;
@@ -21,6 +22,13 @@ public class ShareController {
      * 9.1 Create Share Card
      * POST /api/share/v1/share-cards
      */
+    @GetMapping("/v1/presigned-url")
+    public ApiResponse<ShareDto.PresignedUrlResponse> getSharePresignedUrl(
+            @LoginUserId Long userId,
+            @RequestParam(defaultValue = "png") String extension) {
+        return ApiResponse.success(shareGatewayService.getSharePresignedUrl(userId, extension));
+    }
+
     @PostMapping("/v1/share-cards")
     public ApiResponse<ShareDto.ShareCardResponse> createShareCard(
             @LoginUserId Long userId,
