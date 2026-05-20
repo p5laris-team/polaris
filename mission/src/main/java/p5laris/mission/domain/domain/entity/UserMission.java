@@ -124,6 +124,22 @@ public class UserMission extends BaseEntity {
         return mission;
     }
 
+    /**
+     * ai 모듈이 만든 캐릭터 말투 문구를 실제 유저 미션에 반영한다.
+     *
+     * 미션 제목/설명/카테고리/난이도/보상은 seed template 기준을 유지하고,
+     * 사용자에게 보이는 캐릭터 제안 문구와 완료 후 반응만 AI 결과로 교체한다.
+     */
+    public void applyGeneratedTexts(
+            Long aiGenerationId,
+            String characterMessage,
+            String completionCharacterResponse
+    ) {
+        this.aiGenerationId = aiGenerationId;
+        this.characterMessage = characterMessage;
+        this.completionCharacterResponse = completionCharacterResponse;
+    }
+
     // OFFERED 상태 미션을 REJECTED로 바꾸고 거절 시각을 기록한다.
     public void reject(LocalDateTime rejectedAt) {
         this.status = UserMissionStatus.REJECTED;

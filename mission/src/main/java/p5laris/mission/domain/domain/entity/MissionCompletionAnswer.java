@@ -55,6 +55,11 @@ public class MissionCompletionAnswer {
         return answer;
     }
 
+    // AI 문구 생성이 성공하면 미리 만들어 둔 fallback 질문을 캐릭터 말투 질문으로 교체한다.
+    public void replaceQuestion(String questionText) {
+        this.questionText = questionText;
+    }
+
     // 사용자가 답변을 제출하면 답변 본문과 답변 시각을 기록한다.
     public void submit(String answerText, LocalDateTime answeredAt) {
         this.answerText = answerText;
