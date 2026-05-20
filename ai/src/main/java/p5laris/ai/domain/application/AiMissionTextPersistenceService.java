@@ -1,9 +1,11 @@
 package p5laris.ai.domain.application;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import p5laris.ai.domain.application.dto.MissionTextGenerationCommand;
+import p5laris.ai.domain.application.event.AiEventLogEvent;
 import p5laris.ai.domain.domain.entity.AiMissionGeneration;
 import p5laris.ai.domain.domain.entity.AiUsageLog;
 import p5laris.ai.domain.domain.entity.PromptTemplate;
@@ -25,6 +27,7 @@ public class AiMissionTextPersistenceService {
 
     private final AiMissionGenerationRepository aiMissionGenerationRepository;
     private final AiUsageLogRepository aiUsageLogRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     /**
      * ai_mission_generations와 ai_usage_logs를 함께 저장한다.
@@ -40,6 +43,7 @@ public class AiMissionTextPersistenceService {
             AiGenerationStatus generationStatus,
             AiUsageStatus usageStatus,
             boolean fallbackUsed,
+            String provider,
             String model,
             int latencyMs,
             AiErrorType errorType
@@ -68,6 +72,20 @@ public class AiMissionTextPersistenceService {
                 errorType
         );
         aiUsageLogRepository.save(usageLog);
+
+        if (fallbackUsed) {
+            eventPublisher.publishEvent(AiEventLogEvent.fallbackUsed(
+                    command,
+                    promptTemplate,
+                    savedGeneration,
+                    generationStatus,
+                    usageStatus,
+                    provider,
+                    model,
+                    latencyMs,
+                    errorType
+            ));
+        }
 
         return savedGeneration;
     }
