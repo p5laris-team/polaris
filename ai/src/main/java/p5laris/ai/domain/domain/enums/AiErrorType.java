@@ -8,8 +8,13 @@ package p5laris.ai.domain.domain.enums;
 public enum AiErrorType {
     TIMEOUT,
     RATE_LIMIT,
+    RATE_LIMIT_UNAVAILABLE,
     INVALID_OUTPUT,
     POLICY_VIOLATION,
     PROVIDER_ERROR,
-    UNKNOWN
+    UNKNOWN;
+
+    public boolean isRateLimitFailure() {
+        return this == RATE_LIMIT || this == RATE_LIMIT_UNAVAILABLE;
+    }
 }

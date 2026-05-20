@@ -22,8 +22,8 @@ import java.time.LocalDateTime;
 /**
  * AI provider 사용량과 장애율을 분석하기 위한 로그 엔티티다.
  *
- * 지금은 외부 provider가 없어서 token은 0으로 저장하지만,
- * 다음 PR에서 Gemini/OpenAI adapter가 붙으면 실제 token/latency 값을 채울 수 있다.
+ * 현재는 provider 응답의 token metadata를 직접 추출하지 않으므로 token은 0으로 저장하고,
+ * latency/status/errorType을 우선 남겨 fallback 비율과 장애 원인을 분석한다.
  */
 @Entity
 @Getter
