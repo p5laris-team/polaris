@@ -2,6 +2,7 @@ package p5laris.character.domain.application;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import net.devh.boot.grpc.client.inject.GrpcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import p5laris.character.domain.application.dto.CharacterAssetResponse;
@@ -11,8 +12,11 @@ import p5laris.character.domain.domain.enums.ActionType;
 import p5laris.character.domain.domain.repository.CharacterAssetRepository;
 import p5laris.character.domain.domain.repository.CharacterCareLogRepository;
 import p5laris.character.domain.domain.repository.CharacterTypeRepository;
+import com.p5laris.proto.item.v1.ItemServiceGrpc;
+import com.p5laris.proto.item.v1.UseItemRequest;
 
 import java.util.List;
+import java.util.UUID;
 
 @Slf4j
 @Service
@@ -23,6 +27,9 @@ public class CharacterService {
     private final CharacterAssetRepository characterAssetRepository;
     private final p5laris.character.domain.domain.repository.UserCharacterRepository userCharacterRepository;
     private final CharacterCareLogRepository characterCareLogRepository;
+
+    @GrpcClient("item")
+    private ItemServiceGrpc.ItemServiceBlockingStub itemStub;
 
     /**
      * Get active character types ordered by sort_order ascending.
@@ -264,7 +271,27 @@ public class CharacterService {
                 .build();
         characterCareLogRepository.save(careLog);
 
-        // 9. Build character message (MVP fixed messages per action type)
+        // 9. [Item Domain Integration]: itemId > 0 이면 아이템 1개 소모
+        if (resolvedItemId > 0) {
+            try {
+                String idempotencyKey = "care-" + careLog.getId() + "-item-" + resolvedItemId;
+                itemStub.useItem(
+                        UseItemRequest.newBuilder()
+                                .setUserId(userId)
+                                .setItemId(resolvedItemId)
+                                .setQuantity(1)
+                                .setRefType("CARE_ACTION")
+                                .setRefId(careLog.getId())
+                                .setIdempotencyKey(idempotencyKey)
+                                .build()
+                );
+            } catch (Exception e) {
+                // 아이템 소모 실패 시 돌봄 결과는 유지하고 로그만 남긴다.
+                // (수량 부족, 미보유 등은 gRPC error description 으로 전달됨)
+                log.error("[CharacterService] UseItem gRPC failed: userId={}, itemId={}, careLogId={}, msg={}",
+                        userId, resolvedItemId, careLog.getId(), e.getMessage());
+            }
+        }
         String characterMessage = switch (actionType) {
             case FEED  -> "Mmm... light has a taste too.";
             case SLEEP -> "...zz. Thanks.";
