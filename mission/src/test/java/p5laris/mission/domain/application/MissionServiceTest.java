@@ -11,6 +11,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import p5laris.mission.domain.domain.entity.MissionCompletionAnswer;
 import p5laris.mission.domain.domain.entity.UserMission;
 import p5laris.mission.domain.domain.enums.UserMissionStatus;
@@ -19,9 +20,18 @@ import p5laris.mission.domain.domain.repository.MissionTemplateRepository;
 import p5laris.mission.domain.domain.repository.UserMissionRepository;
 import p5laris.mission.domain.exception.MissionErrorCode;
 import p5laris.mission.domain.exception.MissionException;
+import p5laris.mission.domain.infrastructure.grpc.WalletRewardClient;
+import p5laris.mission.domain.infrastructure.grpc.WalletRewardResult;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @SpringBootTest
 class MissionServiceTest {
@@ -42,10 +52,18 @@ class MissionServiceTest {
     @Autowired
     private MissionTemplateRepository missionTemplateRepository;
 
+    @MockitoBean
+    private WalletRewardClient walletRewardClient;
+
     @BeforeEach
     void setUp() {
         missionCompletionAnswerRepository.deleteAll();
         userMissionRepository.deleteAll();
+        reset(walletRewardClient);
+        when(walletRewardClient.earnMissionReward(anyLong(), anyLong(), anyInt(), anyString()))
+                .thenReturn(new WalletRewardResult(110, 9001L));
+        when(walletRewardClient.getWalletStarPiece(anyLong()))
+                .thenReturn(110);
     }
 
     @Test
@@ -197,12 +215,19 @@ class MissionServiceTest {
         assertThat(response.getAnswer().getText()).isEqualTo("물 한 컵을 마셨어");
         assertThat(response.getAnswer().getAnsweredAt()).isNotBlank();
         assertThat(response.getReward().getStarPiece()).isEqualTo(10);
-        assertThat(response.getWallet().getStarPiece()).isZero();
+        assertThat(response.getWallet().getStarPiece()).isEqualTo(110);
         assertThat(response.getCharacterMessage()).isNotBlank();
         assertThat(savedMission.getStatus()).isEqualTo(UserMissionStatus.COMPLETED);
         assertThat(savedMission.getCompletedAt()).isNotNull();
+        assertThat(savedMission.getIdempotencyKey()).isEqualTo("MISSION_REWARD:" + created.getMission().getId());
         assertThat(savedAnswer.getAnswerText()).isEqualTo("물 한 컵을 마셨어");
         assertThat(savedAnswer.getAnsweredAt()).isNotNull();
+        verify(walletRewardClient).earnMissionReward(
+                USER_ID,
+                created.getMission().getId(),
+                10,
+                "MISSION_REWARD:" + created.getMission().getId()
+        );
     }
 
     @Test
@@ -230,7 +255,31 @@ class MissionServiceTest {
     }
 
     @Test
-    void COMPLETED_미션은_답변을_다시_제출할_수_없다() {
+    void COMPLETED_미션에_같은_답변을_다시_제출하면_wallet_적립을_다시_호출하지_않는다() {
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        missionService.startCompletionSession(USER_ID, created.getMission().getId());
+        missionService.submitCompletionAnswer(USER_ID, created.getMission().getId(), "완료했어");
+
+        SubmitCompletionAnswerResponse response = missionService.submitCompletionAnswer(
+                USER_ID,
+                created.getMission().getId(),
+                " 완료했어 "
+        );
+
+        assertThat(response.getStatus()).isEqualTo(MissionStatus.MISSION_STATUS_COMPLETED);
+        assertThat(response.getAnswer().getText()).isEqualTo("완료했어");
+        assertThat(response.getWallet().getStarPiece()).isEqualTo(110);
+        verify(walletRewardClient, times(1)).earnMissionReward(
+                USER_ID,
+                created.getMission().getId(),
+                10,
+                "MISSION_REWARD:" + created.getMission().getId()
+        );
+        verify(walletRewardClient, times(1)).getWalletStarPiece(USER_ID);
+    }
+
+    @Test
+    void COMPLETED_미션에_다른_답변을_다시_제출하면_수정할_수_없다() {
         CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
         missionService.startCompletionSession(USER_ID, created.getMission().getId());
         missionService.submitCompletionAnswer(USER_ID, created.getMission().getId(), "완료했어");
@@ -243,5 +292,66 @@ class MissionServiceTest {
                 .isInstanceOf(MissionException.class)
                 .extracting("errorCode")
                 .isEqualTo(MissionErrorCode.MISSION_ALREADY_COMPLETED);
+    }
+
+    @Test
+    void wallet_보상_지급이_실패하면_미션은_COMPLETED지만_보상_marker는_남기지_않는다() {
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        missionService.startCompletionSession(USER_ID, created.getMission().getId());
+        when(walletRewardClient.earnMissionReward(anyLong(), anyLong(), anyInt(), anyString()))
+                .thenThrow(new MissionException(MissionErrorCode.MISSION_REWARD_FAILED));
+
+        assertThatThrownBy(() -> missionService.submitCompletionAnswer(
+                USER_ID,
+                created.getMission().getId(),
+                "완료했어"
+        ))
+                .isInstanceOf(MissionException.class)
+                .extracting("errorCode")
+                .isEqualTo(MissionErrorCode.MISSION_REWARD_FAILED);
+
+        UserMission savedMission = userMissionRepository.findById(created.getMission().getId()).orElseThrow();
+        MissionCompletionAnswer savedAnswer = missionCompletionAnswerRepository
+                .findByMissionId(created.getMission().getId())
+                .orElseThrow();
+
+        assertThat(savedMission.getStatus()).isEqualTo(UserMissionStatus.COMPLETED);
+        assertThat(savedMission.getIdempotencyKey()).isNull();
+        assertThat(savedAnswer.getAnswerText()).isEqualTo("완료했어");
+    }
+
+    @Test
+    void reward_marker가_없는_COMPLETED_미션은_같은_답변_재시도_시_wallet_적립을_다시_시도한다() {
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        missionService.startCompletionSession(USER_ID, created.getMission().getId());
+        when(walletRewardClient.earnMissionReward(anyLong(), anyLong(), anyInt(), anyString()))
+                .thenThrow(new MissionException(MissionErrorCode.MISSION_REWARD_FAILED))
+                .thenReturn(new WalletRewardResult(110, 9001L));
+
+        assertThatThrownBy(() -> missionService.submitCompletionAnswer(
+                USER_ID,
+                created.getMission().getId(),
+                "완료했어"
+        ))
+                .isInstanceOf(MissionException.class)
+                .extracting("errorCode")
+                .isEqualTo(MissionErrorCode.MISSION_REWARD_FAILED);
+
+        SubmitCompletionAnswerResponse retried = missionService.submitCompletionAnswer(
+                USER_ID,
+                created.getMission().getId(),
+                "완료했어"
+        );
+        UserMission savedMission = userMissionRepository.findById(created.getMission().getId()).orElseThrow();
+
+        assertThat(retried.getStatus()).isEqualTo(MissionStatus.MISSION_STATUS_COMPLETED);
+        assertThat(retried.getWallet().getStarPiece()).isEqualTo(110);
+        assertThat(savedMission.getIdempotencyKey()).isEqualTo("MISSION_REWARD:" + created.getMission().getId());
+        verify(walletRewardClient, times(2)).earnMissionReward(
+                USER_ID,
+                created.getMission().getId(),
+                10,
+                "MISSION_REWARD:" + created.getMission().getId()
+        );
     }
 }

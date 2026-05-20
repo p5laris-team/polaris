@@ -65,4 +65,9 @@ public class MissionCompletionAnswer {
     public boolean isAnswered() {
         return answerText != null && !answerText.isBlank();
     }
+
+    // 완료 API가 재시도되었을 때, 이전에 저장된 답변과 같은 요청인지 확인한다.
+    public boolean hasSameAnswer(String normalizedAnswerText) {
+        return answerText != null && answerText.equals(normalizedAnswerText);
+    }
 }

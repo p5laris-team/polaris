@@ -142,6 +142,16 @@ public class UserMission extends BaseEntity {
         this.completedAt = completedAt;
     }
 
+    // wallet 보상 지급까지 성공한 뒤, 같은 미션에 보상이 다시 지급되지 않도록 멱등키를 남긴다.
+    public void recordRewardPaid(String idempotencyKey) {
+        this.idempotencyKey = idempotencyKey;
+    }
+
+    // idempotency_key가 있으면 mission 관점에서는 보상 지급이 완료된 미션으로 본다.
+    public boolean isRewardPaid() {
+        return idempotencyKey != null && !idempotencyKey.isBlank();
+    }
+
     // 현재 미션이 거절 가능한 제안 상태인지 확인한다.
     public boolean isOffered() {
         return status == UserMissionStatus.OFFERED;

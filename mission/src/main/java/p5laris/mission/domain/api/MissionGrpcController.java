@@ -160,6 +160,7 @@ public class MissionGrpcController extends MissionServiceGrpc.MissionServiceImpl
             case MISSION_ANSWER_INVALID -> Status.INVALID_ARGUMENT;
             case MISSION_ALREADY_COMPLETED -> Status.ALREADY_EXISTS;
             case MISSION_DAILY_LIMIT_EXCEEDED -> Status.RESOURCE_EXHAUSTED;
+            case MISSION_REWARD_FAILED -> Status.UNAVAILABLE;
             case MISSION_INVALID_STATUS, MISSION_ACTIVE_ALREADY_EXISTS -> Status.FAILED_PRECONDITION;
         };
     }
