@@ -313,7 +313,6 @@ public class CharacterService {
         // 9. [Item Domain Integration]: itemId > 0 이면 아이템 1개 소모
         if (resolvedItemId > 0) {
             try {
-                String idempotencyKey = "care-" + careLog.getId() + "-item-" + resolvedItemId;
                 itemStub.useItem(
                         UseItemRequest.newBuilder()
                                 .setUserId(userId)
