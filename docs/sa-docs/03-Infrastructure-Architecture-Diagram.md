@@ -650,6 +650,13 @@ GitHub 설정:
 | `SPRING_REDIS_HOST` | Redis 호스트 | `10.x.x.x` |
 | `SPRING_REDIS_PASSWORD` | Redis 비밀번호 | (Secrets) |
 | `GEMINI_API_KEY` | Gemini API 키 | (Secrets) |
+| `AI_PROVIDER_ENABLED` | 외부 AI provider 사용 여부 | `true` |
+| `AI_PROVIDER_TYPE` | AI provider 종류 | `gemini` |
+| `AI_PROVIDER_MODEL` | AI provider 모델 | `gemini-2.5-flash` |
+| `AI_RATE_LIMIT_ENABLED` | AI provider rate limit 사용 여부 | `true` |
+| `AI_RATE_LIMIT_PROVIDER_REQUESTS_PER_MINUTE` | provider/model 기준 분당 호출 제한 | `30` |
+| `AI_RATE_LIMIT_USER_REQUESTS_PER_MINUTE` | 사용자 기준 분당 호출 제한 | `5` |
+| `AI_RATE_LIMIT_FAIL_CLOSED` | rate limit 확인 실패 시 외부 AI 호출 차단 | `true` |
 | `JWT_SECRET_KEY` | JWT 서명 키 (RS256) | (Secrets) |
 | `GOOGLE_CLIENT_ID` | Google OAuth2 Client ID | (Secrets) |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth2 Secret | (Secrets) |

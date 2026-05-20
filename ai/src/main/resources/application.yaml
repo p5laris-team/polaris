@@ -2,6 +2,26 @@ spring:
   application:
     name: ai
 
+  ai:
+    model:
+      chat: ${SPRING_AI_MODEL_CHAT:none}
+    google:
+      genai:
+        api-key: ${GEMINI_API_KEY:}
+        chat:
+          options:
+            model: ${AI_PROVIDER_MODEL:gemini-2.5-flash}
+            response-mime-type: application/json
+            temperature: ${AI_PROVIDER_TEMPERATURE:0.4}
+            max-output-tokens: ${AI_PROVIDER_MAX_OUTPUT_TOKENS:500}
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: ${REDIS_TIMEOUT:200ms}
+
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/ai}
     driver-class-name: org.postgresql.Driver
@@ -47,4 +67,12 @@ ai:
   provider:
     enabled: ${AI_PROVIDER_ENABLED:false}
     type: ${AI_PROVIDER_TYPE:local}
-    model: ${AI_PROVIDER_MODEL:local-tone-v1}
+    model: ${AI_PROVIDER_MODEL:}
+  rate-limit:
+    enabled: ${AI_RATE_LIMIT_ENABLED:true}
+    backend: ${AI_RATE_LIMIT_BACKEND:redis}
+    provider-requests-per-minute: ${AI_RATE_LIMIT_PROVIDER_REQUESTS_PER_MINUTE:30}
+    user-requests-per-minute: ${AI_RATE_LIMIT_USER_REQUESTS_PER_MINUTE:5}
+    window-seconds: ${AI_RATE_LIMIT_WINDOW_SECONDS:60}
+    key-ttl-seconds: ${AI_RATE_LIMIT_KEY_TTL_SECONDS:70}
+    fail-closed: ${AI_RATE_LIMIT_FAIL_CLOSED:true}

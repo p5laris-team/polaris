@@ -6,6 +6,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
 import org.springframework.scheduling.annotation.EnableAsync;
 import p5laris.ai.domain.infrastructure.config.AiProviderProperties;
+import p5laris.ai.domain.infrastructure.config.AiRateLimitProperties;
 
 /**
  * AI 도메인 서비스 애플리케이션이다.
@@ -14,7 +15,7 @@ import p5laris.ai.domain.infrastructure.config.AiProviderProperties;
  */
 @EnableAsync
 @EnableJpaAuditing
-@EnableConfigurationProperties(AiProviderProperties.class)
+@EnableConfigurationProperties({AiProviderProperties.class, AiRateLimitProperties.class})
 @SpringBootApplication
 public class AiApplication {
 

@@ -57,8 +57,8 @@ public class AiMissionTextService {
     /**
      * 선택된 seed 미션을 캐릭터 말투의 제안 문구/완료 질문/완료 반응으로 변환한다.
      *
-     * 이번 PR에서는 외부 AI를 호출하지 않고 LocalMissionTextGenerator를 사용한다.
-     * 다음 PR에서 Gemini/OpenAI generator가 추가되어도 이 메서드는 동일한 결과 DTO만 다루면 된다.
+     * 실제 provider 선택과 rate limit은 MissionTextGenerator 구현체가 담당한다.
+     * 이 서비스는 성공/fallback 결과를 검증하고 저장하는 흐름만 책임진다.
      */
     public MissionTextGenerationResult generateMissionTexts(MissionTextGenerationCommand command) {
         validateRequest(command);
@@ -94,7 +94,9 @@ public class AiMissionTextService {
             candidate = fallbackCandidate(command);
             validateFallbackCandidate(candidate);
             status = AiGenerationStatus.FALLBACK;
-            usageStatus = AiUsageStatus.FALLBACK;
+            usageStatus = errorType.isRateLimitFailure()
+                    ? AiUsageStatus.RATE_LIMITED
+                    : AiUsageStatus.FALLBACK;
             fallbackUsed = true;
         }
 

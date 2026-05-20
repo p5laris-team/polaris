@@ -887,6 +887,8 @@ AI는 seed 미션의 제목, 설명, 카테고리, 난이도, 보상을 임의�
 
 `requestId`는 AI 생성 요청의 멱등 기준이다. 같은 `requestId`와 같은 요청 본문이 다시 들어오면 기존 `ai_mission_generations` 결과를 반환하고, 같은 `requestId`가 다른 요청 본문과 함께 들어오면 충돌로 처리한다. mission 모듈은 매 호출마다 랜덤 UUID를 만들지 않고, 같은 미션 문구 생성 시도에 같은 `requestId`를 사용한다.
 
+외부 AI provider를 사용하는 경우 ai 모듈은 `requestId` 멱등 결과를 먼저 확인한 뒤 Redis 기반 rate limit을 확인한다. rate limit 초과 또는 Redis rate limit 저장소 장애가 발생하면 외부 provider를 호출하지 않고 fallback 문구를 반환한다.
+
 **gRPC Request**
 
 ```json
@@ -1404,6 +1406,7 @@ AI 생성 결과는 `ai_mission_generations`, 사용 로그는 `ai_usage_logs`�
 |---|---|
 | `TIMEOUT` | provider 응답 지연 |
 | `RATE_LIMIT` | provider 요청 제한 |
+| `RATE_LIMIT_UNAVAILABLE` | rate limit 저장소 장애로 provider 호출 차단 |
 | `INVALID_OUTPUT` | 응답 구조 오류 |
 | `POLICY_VIOLATION` | 서비스 문구 정책 위반 |
 | `PROVIDER_ERROR` | provider 내부 오류 |
