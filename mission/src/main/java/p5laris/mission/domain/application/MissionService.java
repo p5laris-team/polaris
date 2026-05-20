@@ -14,9 +14,11 @@ import com.p5laris.proto.mission.v1.StartCompletionSessionResponse;
 import com.p5laris.proto.mission.v1.SubmitCompletionAnswerResponse;
 import com.p5laris.proto.mission.v1.WalletSnapshot;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import p5laris.mission.domain.application.event.MissionEventLogEvent;
 import p5laris.mission.domain.domain.entity.MissionCompletionAnswer;
 import p5laris.mission.domain.domain.entity.MissionTemplate;
 import p5laris.mission.domain.domain.entity.UserMission;
@@ -30,6 +32,7 @@ import p5laris.mission.domain.exception.MissionException;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.EnumSet;
 import java.util.HashSet;
@@ -55,6 +58,7 @@ public class MissionService {
     private final MissionTemplateRepository missionTemplateRepository;
     private final UserMissionRepository userMissionRepository;
     private final MissionCompletionAnswerRepository missionCompletionAnswerRepository;
+    private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
 
     /**
@@ -100,6 +104,7 @@ public class MissionService {
             throw new MissionException(MissionErrorCode.MISSION_DAILY_LIMIT_EXCEEDED);
         }
 
+        LocalDateTime now = LocalDateTime.now(clock);
         MissionTemplate template = selectNextTemplate(userId, today);
         int nextStackOrder = userMissionRepository.findMaxStackOrder(userId, today) + 1;
         UserMission userMission = UserMission.offerFromTemplate(
@@ -108,11 +113,12 @@ public class MissionService {
                 today,
                 nextStackOrder,
                 template,
-                LocalDateTime.now(clock)
+                now
         );
 
         try {
             UserMission savedMission = userMissionRepository.saveAndFlush(userMission);
+            eventPublisher.publishEvent(MissionEventLogEvent.missionOffered(savedMission, toOccurredAt(now)));
             return CreateNextMissionResponse.newBuilder()
                     .setMission(toProtoMission(savedMission))
                     .build();
@@ -138,7 +144,9 @@ public class MissionService {
             throw new MissionException(MissionErrorCode.MISSION_INVALID_STATUS);
         }
 
-        mission.reject(LocalDateTime.now(clock));
+        LocalDateTime now = LocalDateTime.now(clock);
+        mission.reject(now);
+        eventPublisher.publishEvent(MissionEventLogEvent.missionRejected(mission, toOccurredAt(now)));
 
         return RejectMissionResponse.newBuilder()
                 .setMissionId(mission.getId())
@@ -165,11 +173,20 @@ public class MissionService {
             throw new MissionException(MissionErrorCode.MISSION_INVALID_STATUS);
         }
 
-        if (mission.isOffered()) {
-            mission.startAnswering(LocalDateTime.now(clock));
+        boolean shouldPublishSessionStarted = mission.isOffered();
+        LocalDateTime now = LocalDateTime.now(clock);
+        if (shouldPublishSessionStarted) {
+            mission.startAnswering(now);
         }
 
         MissionCompletionAnswer answer = findOrCreateCompletionAnswer(mission);
+        if (shouldPublishSessionStarted) {
+            eventPublisher.publishEvent(MissionEventLogEvent.completionSessionStarted(
+                    mission,
+                    answer,
+                    toOccurredAt(now)
+            ));
+        }
 
         return StartCompletionSessionResponse.newBuilder()
                 .setMissionId(mission.getId())
@@ -207,6 +224,7 @@ public class MissionService {
         LocalDateTime now = LocalDateTime.now(clock);
         answer.submit(normalizedAnswer, now);
         mission.complete(now);
+        eventPublisher.publishEvent(MissionEventLogEvent.missionCompleted(mission, answer, toOccurredAt(now)));
 
         return SubmitCompletionAnswerResponse.newBuilder()
                 .setMissionId(mission.getId())
@@ -335,5 +353,9 @@ public class MissionService {
             return "";
         }
         return DATE_TIME_FORMATTER.format(dateTime);
+    }
+
+    private OffsetDateTime toOccurredAt(LocalDateTime dateTime) {
+        return dateTime.atZone(clock.getZone()).toOffsetDateTime();
     }
 }

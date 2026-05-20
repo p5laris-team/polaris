@@ -163,6 +163,7 @@ public class AiMissionTextService {
                     status,
                     usageStatus,
                     fallbackUsed,
+                    aiProviderProperties.getType(),
                     aiProviderProperties.resolvedModel(),
                     elapsedMillis(startedAt),
                     errorType

@@ -683,10 +683,23 @@ Refresh Token으로 Access Token을 재발급한다.
 
 미션은 사용자가 직접 목록에서 고르는 구조가 아니라, 서버가 현재 미션 1개를 제안하는 구조다. 오늘 제안된 미션은 stack으로 저장된다.
 
+미션 조회와 상태 변경의 소유권 기준은 `characterId`가 아니라 로그인한 `userId`다. `characterId`는 "어떤 캐릭터가 이 미션을 제안했는지"를 남기는 기록용 값으로 사용한다.
+
+MVP 정책:
+
+```text
+한 유저는 하루에 OFFERED/ANSWERING 상태 미션을 동시에 1개만 가진다.
+하루 미션 제안은 최대 15개까지 가능하다.
+미션 완료는 완료 버튼 클릭 후 완료 질문 1개에 텍스트 답변을 제출해야 처리된다.
+완료 답변은 1자 이상 300자 이하로 입력한다.
+```
+
 ### 6.1 GET `/api/mission/v1/missions/current` 🔐
 
-**설명**  
-오늘 기준 현재 제안 중인 미션을 조회한다.
+**설명**
+오늘 기준 로그인한 유저의 현재 미션을 조회한다. `OFFERED` 또는 `ANSWERING` 상태의 미션이 현재 미션이다.
+
+`characterId`는 조회 조건으로 사용하지 않는다.
 
 **Request**
 
@@ -699,24 +712,28 @@ Refresh Token으로 Access Token을 재발급한다.
 ```json
 {
   "id": 100,
-  "missionDate": "2026-05-15",
+  "missionDate": "2026-05-20",
   "stackOrder": 2,
   "title": "물 한 컵 마시기",
   "description": "지금 자리에서 물 한 컵을 천천히 마셔보세요.",
-  "characterMessage": "물 한 컵 마셔볼래? 나도 빛 좀 마셔볼게.",
+  "characterMessage": "물 한 컵 마셔볼래? 작은 시작도 별조각이 될 수 있어.",
   "category": "BASIC_ROUTINE",
   "difficulty": "EASY",
-  "rewardStarPiece": 5,
+  "rewardStarPiece": 10,
   "status": "OFFERED"
 }
 ```
 
 ---
 
-### 6.3 POST `⚠️ /api/mission/v1/missions/today-focus/next` 🔐
+### 6.2 POST `⚠️ /api/mission/v1/missions/today-focus/next` 🔐
 
-**설명**  
-현재 미션을 처리(완료/거절)한 후, 다음 미션을 활성화해달라고 요청한다.
+**설명**
+다음 미션을 생성해 현재 미션으로 제안한다.
+
+진행 중인 미션(`OFFERED`, `ANSWERING`)이 이미 있으면 새 미션을 만들 수 없다. 현재 미션을 거절하거나 완료한 뒤 다시 호출해야 한다.
+
+`characterId`는 제안 캐릭터 기록용이며, 현재 미션 중복 판단은 `userId` 기준으로 수행한다.
 
 **Request**
 
@@ -726,29 +743,35 @@ Refresh Token으로 Access Token을 재발급한다.
 }
 ```
 
+`lastMissionId`는 클라이언트가 마지막으로 보고 있던 미션을 함께 보내기 위한 필드다. 진행 중 미션 존재 여부는 서버 상태 기준으로 확인한다.
+
 **Response**
 
 ```json
 {
   "id": 101,
-  "missionDate": "2026-05-15",
+  "missionDate": "2026-05-20",
   "stackOrder": 3,
   "title": "책상 위 물건 하나 치우기",
   "description": "책상 위에서 물건 하나만 제자리로 옮겨보세요.",
-  "characterMessage": "작은 정리도 별조각이 될 수 있어.",
+  "characterMessage": "물건 하나만 치워도 공간이 조금 숨을 쉴 수 있어.",
   "category": "SPACE_RESET",
   "difficulty": "EASY",
-  "rewardStarPiece": 7,
+  "rewardStarPiece": 10,
   "status": "OFFERED"
 }
 ```
 
 ---
 
-### 6.4 POST `/api/mission/v1/missions/{missionId}/rejections` 🔐
+### 6.3 POST `/api/mission/v1/missions/{missionId}/rejections` 🔐
 
-**설명**  
+**설명**
 현재 제안된 미션을 거절한다. 거절은 실패가 아니며, 별조각 차감도 없다.
+
+거절 권한 확인은 `userId + missionId` 기준으로 수행한다. `characterId`는 소유권 조건으로 사용하지 않는다.
+
+거절 후 다음 미션은 이 API에서 자동 생성하지 않는다. 클라이언트는 필요하면 `POST /api/mission/v1/missions/today-focus/next`를 다시 호출한다.
 
 **Request**
 
@@ -762,22 +785,19 @@ Refresh Token으로 Access Token을 재발급한다.
 {
   "missionId": 101,
   "status": "REJECTED",
-  "rejectedAt": "2026-05-15T18:30:00+09:00",
-  "characterMessage": "괜찮아. 그럼 다른 별 찾아볼게.",
-  "nextMission": {
-    "id": 102,
-    "title": "책상 위 물건 치우기",
-    "stackOrder": 2
-  }
+  "rejectedAt": "2026-05-20T18:30:00+09:00",
+  "characterMessage": "괜찮아요. 다른 별을 찾아볼게요."
 }
 ```
 
 ---
 
-### 6.5 POST `/api/mission/v1/missions/{missionId}/completion-sessions` 🔐
+### 6.4 POST `/api/mission/v1/missions/{missionId}/completion-sessions` 🔐
 
-**설명**  
+**설명**
 사용자가 완료 버튼을 눌렀을 때 완료 질문 1개를 시작한다. 이 시점에는 아직 보상을 지급하지 않는다.
+
+`OFFERED` 상태 미션은 `ANSWERING` 상태로 전환된다. 이미 `ANSWERING` 상태이면 기존 질문을 다시 반환하므로, 모바일 중복 클릭이나 네트워크 재시도에도 같은 질문 세션을 유지한다.
 
 **Request**
 
@@ -803,10 +823,14 @@ Refresh Token으로 Access Token을 재발급한다.
 
 ---
 
-### 6.6 POST `⚠️ /api/mission/v1/missions/{missionId}/completion-answers` 🔐
+### 6.5 POST `⚠️ /api/mission/v1/missions/{missionId}/completion-answers` 🔐
 
-**설명**  
-완료 질문에 답변한다. 답변 저장 후 미션을 `COMPLETED`로 전환하고 별조각 보상을 1회 지급한다.
+**설명**
+완료 질문에 답변한다. 답변 저장 후 미션을 `COMPLETED`로 전환한다.
+
+완료 답변은 1자 이상 300자 이하로 입력한다. 답변 전문은 `mission_completion_answers`에 저장하고, event-log에는 답변 전문을 남기지 않는다.
+
+미션 완료 보상은 1회만 지급된다. 응답의 `reward`는 지급된 보상량을, `wallet`은 보상 반영 후 지갑 스냅샷을 의미한다.
 
 **Request**
 
@@ -824,18 +848,87 @@ Refresh Token으로 Access Token을 재발급한다.
   "status": "COMPLETED",
   "answer": {
     "text": "책상 위에 있던 컵을 싱크대에 가져다 놨어.",
-    "answeredAt": "2026-05-15T18:35:00+09:00"
+    "answeredAt": "2026-05-20T18:35:00+09:00"
   },
   "reward": {
-    "starPiece": 7,
+    "starPiece": 10,
     "affection": 5
   },
   "wallet": {
     "starPiece": 127
   },
-  "characterMessage": "작은 일이지만, 나한텐 꽤 컸어."
+  "characterMessage": "작은 정리도 오늘의 별조각으로 남겨둘게."
 }
 ```
+
+---
+
+### 6.6 내부 gRPC `AiService.GenerateMissionTexts`
+
+**설명**
+선택된 미션 템플릿을 캐릭터 말투 기반 문구로 변환한다. 외부 클라이언트가 직접 호출하는 REST API가 아니라, mission 또는 gateway 내부에서 사용하는 AI gRPC API다.
+
+AI는 seed 미션의 제목, 설명, 카테고리, 난이도, 보상을 임의로 바꾸지 않는다. 아래 3개 문구만 생성하거나 fallback 문구를 반환한다.
+
+```text
+제안 문구 characterMessage
+완료 질문 completionQuestion
+완료 후 캐릭터 반응 completionCharacterResponse
+```
+
+외부 provider 오류, 응답 구조 오류, 정책 위반 등으로 생성 결과를 사용할 수 없으면 미션 템플릿의 fallback 문구를 사용한다.
+
+**gRPC Request**
+
+```json
+{
+  "userId": 1,
+  "characterId": 10,
+  "characterType": "NOVA",
+  "missionTemplateId": 12,
+  "baseTitle": "물 한 컵 마시기",
+  "baseDescription": "지금 자리에서 물 한 컵을 천천히 마셔보세요.",
+  "category": "BASIC_ROUTINE",
+  "difficulty": "EASY",
+  "fallbackCharacterMessage": "물 한 컵 마셔볼래? 작은 시작도 별조각이 될 수 있어.",
+  "fallbackQuestion": "물 마시고 나서 기분이 조금 달라졌어?",
+  "fallbackCompletionResponse": "잘했어. 오늘의 작은 수분 보충을 별조각으로 기억할게.",
+  "onboardingContextJson": "{\"routineGoal\":\"SELF_CARE\"}",
+  "recentMissionContextJson": "{\"recentRejected\":[]}",
+  "requestId": "mission-text-1-12-20260520"
+}
+```
+
+**gRPC Response**
+
+```json
+{
+  "aiGenerationId": 55,
+  "status": "SUCCESS",
+  "characterMessage": "천천히 물 한 컵 마셔볼래? 작은 시작도 별조각이 될 수 있어.",
+  "completionQuestion": "물 마시고 나서 기분이 조금 달라졌어?",
+  "completionCharacterResponse": "잘했어. 오늘의 작은 수분 보충을 별조각으로 기억할게.",
+  "fallbackUsed": false,
+  "requestId": "mission-text-1-12-20260520"
+}
+```
+
+fallback 응답 예시:
+
+```json
+{
+  "aiGenerationId": 56,
+  "status": "FALLBACK",
+  "characterMessage": "물 한 컵 마셔볼래? 작은 시작도 별조각이 될 수 있어.",
+  "completionQuestion": "물 마시고 나서 기분이 조금 달라졌어?",
+  "completionCharacterResponse": "잘했어. 오늘의 작은 수분 보충을 별조각으로 기억할게.",
+  "fallbackUsed": true,
+  "errorType": "INVALID_OUTPUT",
+  "requestId": "mission-text-1-12-20260520"
+}
+```
+
+AI 생성 결과는 `ai_mission_generations`, 사용 로그는 `ai_usage_logs`에 저장한다. fallback이 사용되면 event-log에 `AI_FALLBACK_USED`를 남긴다.
 
 ---
 
@@ -1288,6 +1381,25 @@ Refresh Token으로 Access Token을 재발급한다.
 | `SHARE_REWARD` | 공유 시도 보상 |
 | `CARE_ACTION` | 돌봄 액션 비용 |
 
+### 12.5 AI 문구 생성 상태
+
+| 상태 | 의미 |
+|---|---|
+| `SUCCESS` | AI 또는 local generator 문구를 사용 |
+| `FALLBACK` | 생성 결과를 사용할 수 없어 미션 템플릿 fallback 문구 사용 |
+| `FAILED` | 문구 생성 실패 |
+
+### 12.6 AI 에러 타입
+
+| 타입 | 의미 |
+|---|---|
+| `TIMEOUT` | provider 응답 지연 |
+| `RATE_LIMIT` | provider 요청 제한 |
+| `INVALID_OUTPUT` | 응답 구조 오류 |
+| `POLICY_VIOLATION` | 서비스 문구 정책 위반 |
+| `PROVIDER_ERROR` | provider 내부 오류 |
+| `UNKNOWN` | 분류되지 않은 오류 |
+
 ---
 
 ## 13. 주요 에러 코드
@@ -1301,10 +1413,12 @@ Refresh Token으로 Access Token을 재발급한다.
 | `CHARACTER_NAME_INVALID` | 캐릭터 이름 형식 오류 |
 | `ONBOARDING_REQUIRED` | 온보딩 미완료로 미션 사용 불가 |
 | `MISSION_NOT_FOUND` | 미션 없음 |
+| `MISSION_TEMPLATE_NOT_FOUND` | 사용할 수 있는 미션 템플릿 없음 |
 | `MISSION_INVALID_STATUS` | 상태 전이 불가 |
+| `MISSION_ACTIVE_ALREADY_EXISTS` | 이미 진행 중인 미션 존재 |
 | `MISSION_DAILY_LIMIT_EXCEEDED` | 일일 미션 제안 제한 초과 |
 | `MISSION_ALREADY_COMPLETED` | 이미 완료된 미션 |
-| `ANSWER_INVALID` | 완료 답변 길이/금칙어 오류 |
+| `MISSION_ANSWER_INVALID` | 완료 답변 길이 오류 |
 | `STAR_PIECE_NOT_ENOUGH` | 별조각 부족 |
 | `DUPLICATED_IDEMPOTENCY_KEY` | 중복 요청 |
 | `ITEM_NOT_FOUND` | 아이템 없음 |
@@ -1313,8 +1427,10 @@ Refresh Token으로 Access Token을 재발급한다.
 | `ITEM_QUANTITY_NOT_ENOUGH` | 소모품 수량 부족 |
 | `ATTENDANCE_ALREADY_CHECKED` | 오늘 출석 완료 |
 | `SHARE_REWARD_ALREADY_PAID` | 오늘 공유 보상 지급 완료 |
-| `AI_PROVIDER_TIMEOUT` | AI 응답 지연/타임아웃 |
-| `AI_INVALID_OUTPUT` | AI 응답 구조 검증 실패 |
+| `AI_INVALID_REQUEST` | AI 문구 생성 요청 값 오류 |
+| `AI_FALLBACK_INVALID` | fallback 문구 정책 검증 실패 |
+| `AI_GENERATION_FAILED` | AI 문구 생성 실패 |
+| `AI_DUPLICATED_REQUEST` | 이미 처리된 AI 요청 ID |
 
 ---
 
