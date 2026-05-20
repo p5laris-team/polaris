@@ -39,3 +39,6 @@ grpc:
     ai:
       address: static://localhost:9095
       negotiationType: plaintext
+    event-log:
+      address: ${EVENT_LOG_GRPC_ADDRESS:static://localhost:9099}
+      negotiationType: plaintext
