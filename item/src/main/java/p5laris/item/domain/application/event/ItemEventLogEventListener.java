@@ -19,17 +19,13 @@ import java.util.UUID;
 @Component
 public class ItemEventLogEventListener {
 
-    private final ObjectMapper objectMapper;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("${spring.application.name:item}")
     private String sourceService;
 
     @GrpcClient("event-log")
     private EventLogServiceGrpc.EventLogServiceBlockingStub eventLogStub;
-
-    public ItemEventLogEventListener(ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper;
-    }
 
     @Async
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
