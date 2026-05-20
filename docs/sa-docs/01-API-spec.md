@@ -878,6 +878,8 @@ AI는 seed 미션의 제목, 설명, 카테고리, 난이도, 보상을 임의�
 
 외부 provider 오류, 응답 구조 오류, 정책 위반 등으로 생성 결과를 사용할 수 없으면 미션 템플릿의 fallback 문구를 사용한다.
 
+`requestId`는 AI 생성 요청의 멱등 기준이다. 같은 `requestId`와 같은 요청 본문이 다시 들어오면 기존 `ai_mission_generations` 결과를 반환하고, 같은 `requestId`가 다른 요청 본문과 함께 들어오면 충돌로 처리한다. mission 모듈은 매 호출마다 랜덤 UUID를 만들지 않고, 같은 미션 문구 생성 시도에 같은 `requestId`를 사용한다.
+
 **gRPC Request**
 
 ```json
@@ -895,7 +897,7 @@ AI는 seed 미션의 제목, 설명, 카테고리, 난이도, 보상을 임의�
   "fallbackCompletionResponse": "잘했어. 오늘의 작은 수분 보충을 별조각으로 기억할게.",
   "onboardingContextJson": "{\"routineGoal\":\"SELF_CARE\"}",
   "recentMissionContextJson": "{\"recentRejected\":[]}",
-  "requestId": "mission-text-1-12-20260520"
+  "requestId": "MISSION_TEXT:2f3a4b..."
 }
 ```
 
@@ -909,7 +911,7 @@ AI는 seed 미션의 제목, 설명, 카테고리, 난이도, 보상을 임의�
   "completionQuestion": "물 마시고 나서 기분이 조금 달라졌어?",
   "completionCharacterResponse": "잘했어. 오늘의 작은 수분 보충을 별조각으로 기억할게.",
   "fallbackUsed": false,
-  "requestId": "mission-text-1-12-20260520"
+  "requestId": "MISSION_TEXT:2f3a4b..."
 }
 ```
 
@@ -924,11 +926,11 @@ fallback 응답 예시:
   "completionCharacterResponse": "잘했어. 오늘의 작은 수분 보충을 별조각으로 기억할게.",
   "fallbackUsed": true,
   "errorType": "INVALID_OUTPUT",
-  "requestId": "mission-text-1-12-20260520"
+  "requestId": "MISSION_TEXT:2f3a4b..."
 }
 ```
 
-AI 생성 결과는 `ai_mission_generations`, 사용 로그는 `ai_usage_logs`에 저장한다. fallback이 사용되면 event-log에 `AI_FALLBACK_USED`를 남긴다.
+AI 생성 결과는 `ai_mission_generations`, 사용 로그는 `ai_usage_logs`에 저장한다. `ai_mission_generations.request_id`는 생성 결과 재사용 기준이고, `ai_usage_logs.request_id`는 해당 생성 시도의 사용량/지연 추적 기준이다. fallback이 사용되면 event-log에 `AI_FALLBACK_USED`를 남긴다.
 
 ---
 
