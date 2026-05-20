@@ -47,6 +47,12 @@ public class AiMissionGeneration {
     @Column(name = "prompt_template_id")
     private Long promptTemplateId;
 
+    @Column(name = "request_id", nullable = false, length = 120)
+    private String requestId;
+
+    @Column(name = "request_hash", nullable = false, length = 64)
+    private String requestHash;
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "request_context_json", nullable = false, columnDefinition = "jsonb")
     private String requestContextJson;
@@ -81,6 +87,8 @@ public class AiMissionGeneration {
             Long userId,
             Long characterId,
             Long promptTemplateId,
+            String requestId,
+            String requestHash,
             String requestContextJson,
             String responseJson,
             Long selectedTemplateId,
@@ -93,6 +101,8 @@ public class AiMissionGeneration {
         generation.userId = userId;
         generation.characterId = characterId;
         generation.promptTemplateId = promptTemplateId;
+        generation.requestId = requestId;
+        generation.requestHash = requestHash;
         generation.requestContextJson = requestContextJson;
         generation.responseJson = responseJson;
         generation.selectedTemplateId = selectedTemplateId;

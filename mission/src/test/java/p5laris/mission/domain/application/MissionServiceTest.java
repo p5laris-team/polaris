@@ -20,11 +20,17 @@ import p5laris.mission.domain.domain.repository.MissionTemplateRepository;
 import p5laris.mission.domain.domain.repository.UserMissionRepository;
 import p5laris.mission.domain.exception.MissionErrorCode;
 import p5laris.mission.domain.exception.MissionException;
+import p5laris.mission.domain.infrastructure.grpc.AiMissionTextClient;
+import p5laris.mission.domain.infrastructure.grpc.AiMissionTextResult;
+import p5laris.mission.domain.infrastructure.grpc.CharacterProfileClient;
 import p5laris.mission.domain.infrastructure.grpc.WalletRewardClient;
 import p5laris.mission.domain.infrastructure.grpc.WalletRewardResult;
 
+import java.util.Optional;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -55,15 +61,31 @@ class MissionServiceTest {
     @MockitoBean
     private WalletRewardClient walletRewardClient;
 
+    @MockitoBean
+    private AiMissionTextClient aiMissionTextClient;
+
+    @MockitoBean
+    private CharacterProfileClient characterProfileClient;
+
     @BeforeEach
     void setUp() {
         missionCompletionAnswerRepository.deleteAll();
         userMissionRepository.deleteAll();
-        reset(walletRewardClient);
+        reset(walletRewardClient, aiMissionTextClient, characterProfileClient);
         when(walletRewardClient.earnMissionReward(anyLong(), anyLong(), anyInt(), anyString()))
                 .thenReturn(new WalletRewardResult(110, 9001L));
         when(walletRewardClient.getWalletStarPiece(anyLong()))
                 .thenReturn(110);
+        when(characterProfileClient.findActiveCharacterTypeCode(anyLong(), anyLong()))
+                .thenReturn(Optional.of("NOVA"));
+        when(aiMissionTextClient.generateMissionTexts(any()))
+                .thenReturn(Optional.of(new AiMissionTextResult(
+                        501L,
+                        "AI가 바꾼 제안 문구",
+                        "AI가 만든 완료 질문",
+                        "AI가 만든 완료 반응",
+                        false
+                )));
     }
 
     @Test
@@ -83,8 +105,35 @@ class MissionServiceTest {
         assertThat(created.hasMission()).isTrue();
         assertThat(created.getMission().getStatus()).isEqualTo(MissionStatus.MISSION_STATUS_OFFERED);
         assertThat(created.getMission().getRewardStarPiece()).isEqualTo(10);
+        assertThat(created.getMission().getCharacterMessage()).isEqualTo("AI가 바꾼 제안 문구");
         assertThat(current.hasMission()).isTrue();
         assertThat(current.getMission().getId()).isEqualTo(created.getMission().getId());
+
+        UserMission savedMission = userMissionRepository.findById(created.getMission().getId()).orElseThrow();
+        MissionCompletionAnswer savedAnswer = missionCompletionAnswerRepository
+                .findByMissionId(created.getMission().getId())
+                .orElseThrow();
+        assertThat(savedMission.getAiGenerationId()).isEqualTo(501L);
+        assertThat(savedMission.getCompletionCharacterResponse()).isEqualTo("AI가 만든 완료 반응");
+        assertThat(savedAnswer.getQuestionText()).isEqualTo("AI가 만든 완료 질문");
+    }
+
+    @Test
+    void AI_문구_생성에_실패하면_template_fallback_문구로_미션을_생성한다() {
+        when(aiMissionTextClient.generateMissionTexts(any()))
+                .thenReturn(Optional.empty());
+
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        UserMission savedMission = userMissionRepository.findById(created.getMission().getId()).orElseThrow();
+        MissionCompletionAnswer savedAnswer = missionCompletionAnswerRepository
+                .findByMissionId(created.getMission().getId())
+                .orElseThrow();
+        var template = missionTemplateRepository.findById(savedMission.getMissionTemplateId()).orElseThrow();
+
+        assertThat(savedMission.getAiGenerationId()).isNull();
+        assertThat(savedMission.getCharacterMessage()).isEqualTo(template.getFallbackCharacterMessage());
+        assertThat(savedMission.getCompletionCharacterResponse()).isEqualTo(template.getFallbackCompletionResponse());
+        assertThat(savedAnswer.getQuestionText()).isEqualTo(template.getFallbackQuestion());
     }
 
     @Test
@@ -95,6 +144,7 @@ class MissionServiceTest {
                 .isInstanceOf(MissionException.class)
                 .extracting("errorCode")
                 .isEqualTo(MissionErrorCode.MISSION_ACTIVE_ALREADY_EXISTS);
+        verify(aiMissionTextClient, times(1)).generateMissionTexts(any());
     }
 
     @Test
@@ -156,7 +206,7 @@ class MissionServiceTest {
         assertThat(response.getMissionId()).isEqualTo(created.getMission().getId());
         assertThat(response.getStatus()).isEqualTo(MissionStatus.MISSION_STATUS_ANSWERING);
         assertThat(response.getQuestion().getId()).isEqualTo(savedAnswer.getId());
-        assertThat(response.getQuestion().getText()).isNotBlank();
+        assertThat(response.getQuestion().getText()).isEqualTo("AI가 만든 완료 질문");
         assertThat(response.getQuestion().getInputType()).isEqualTo(CompletionInputType.COMPLETION_INPUT_TYPE_TEXT);
         assertThat(response.getQuestion().getMinLength()).isEqualTo(1);
         assertThat(response.getQuestion().getMaxLength()).isEqualTo(300);

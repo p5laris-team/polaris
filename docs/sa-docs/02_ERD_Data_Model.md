@@ -413,20 +413,15 @@ AI가 완전 자유 생성하는 것이 아니라 템플릿 기반으로 미션�
 | id | bigint PK | 미션 템플릿 ID |
 | base_title | varchar | 기본 미션 제목 |
 | base_description | text | 기본 설명 |
-| category | varchar | BASIC_ROUTINE / SPACE_RESET / BODY_CARE / OUTDOOR_LIGHT / MIND_RECORD / REST_RECOVERY |
+| category | varchar | BASIC_ROUTINE / SPACE_RESET / BODY_CARE / OUTDOOR_LIGHT / MIND_RECORD / REST_RECOVERY / SOCIAL_LIGHT |
 | difficulty | varchar | EASY / NORMAL |
 | reward_star_piece | int | 기본 별조각 보상 |
-| reward_exp | int | 기본 EXP 보상 |
 | active | boolean | 활성 여부 |
+| fallback_character_message | text | AI 실패 시 사용할 기본 캐릭터 제안 문구 |
+| fallback_question | text | AI 실패 시 사용할 기본 완료 질문 |
+| fallback_completion_response | text | AI 실패 시 사용할 기본 완료 반응 |
 | created_at | timestamp | 생성일 |
 | updated_at | timestamp | 수정일 |
-
-<aside>
-
-base_message, base_question, base_response 필요? 어딘가에는 있어야함 관리하는 다른 테이블이 있는지 확인 하기
-폴백을 어떻게 처리 할지 협의가 필요 할 것 같다 
-
-</aside>
 
 ### 제약 / 인덱스
 
@@ -438,12 +433,12 @@ index(active, category, difficulty)
 
 | category | base_title | reward_star_piece |
 | --- | --- | --- |
-| BASIC_ROUTINE | 물 한 컵 마시기 | 5 |
-| BASIC_ROUTINE | 양치하기 | 5 |
-| SPACE_RESET | 창문 3분 열기 | 7 |
-| SPACE_RESET | 책상 위 물건 하나 치우기 | 7 |
+| BASIC_ROUTINE | 물 한 컵 마시기 | 10 |
+| BASIC_ROUTINE | 양치하기 | 10 |
+| SPACE_RESET | 창문 3분 열기 | 10 |
+| SPACE_RESET | 책상 위 물건 하나 치우기 | 10 |
 | OUTDOOR_LIGHT | 하늘 한 번 보고 오기 | 10 |
-| MIND_RECORD | 오늘 기분 한 단어 적기 | 6 |
+| MIND_RECORD | 오늘 기분 한 단어 적기 | 10 |
 
 ---
 
@@ -484,21 +479,26 @@ AI가 미션을 생성/선정한 결과를 저장한다.
 | user_id | bigint FK | 사용자 ID |
 | character_id | bigint FK | 제안한 캐릭터 ID |
 | prompt_template_id | bigint FK | 사용한 프롬프트 ID |
+| request_id | varchar unique | AI 생성 요청 멱등/추적 ID |
+| request_hash | varchar | request_id를 제외한 요청 본문 SHA-256 |
 | request_context_json | jsonb | 온보딩, 최근 미션, 거절, 날씨, 캐릭터 상태 등 입력 요약 |
 | response_json | jsonb | AI 구조화 응답 |
 | selected_template_id | bigint nullable | 선택된 seed 미션 템플릿 |
 | status | varchar | SUCCESS / FALLBACK / FAILED |
 | fallback_used | boolean | fallback 사용 여부 |
 | model | varchar | 사용 모델 |
+| error_type | varchar nullable | TIMEOUT / RATE_LIMIT / INVALID_OUTPUT / POLICY_VIOLATION / PROVIDER_ERROR / UNKNOWN |
 | created_at | timestamp | 생성일 |
 
 
-prompt_template_id는 prompt_template을 테이블로 관리하지 않고 파일로 관리 한다면은 파일명이 들어간다
-AI가 미션을 발행하다 실패한 원인(SQL 문법 에러등)에 대해 기록이 필요할지 생각해 봐야한다 
+prompt_template_id는 현재 prompt_templates 테이블의 활성 CHARACTER_TONE 템플릿을 참조한다.
+외부 provider가 붙기 전에는 local generator 결과도 같은 테이블에 저장한다.
 
 ### 제약 / 인덱스
 
 ```
+unique(request_id)
+check(length(request_hash) = 64)
 index(user_id, created_at)
 index(status, created_at)
 index(model, created_at)
@@ -509,6 +509,8 @@ index(model, created_at)
 ```
 AI 응답은 저장 전에 구조화 출력 검증을 통과해야 한다.
 AI가 없는 미션 템플릿이나 잘못된 보상을 생성하면 fallback으로 대체한다.
+같은 request_id와 같은 request_hash가 다시 들어오면 기존 생성 결과를 반환한다.
+같은 request_id가 다른 request_hash와 함께 들어오면 멱등키 오사용으로 보고 충돌 처리한다.
 ```
 
 ---
@@ -531,17 +533,17 @@ AI가 없는 미션 템플릿이나 잘못된 보상을 생성하면 fallback으
 | title | varchar | 미션 제목 |
 | description | text | 미션 설명 |
 | character_message | text | 캐릭터 말투 제안 문구 |
+| completion_character_response | text nullable | 완료 후 캐릭터 반응 문구 |
 | category | varchar | 미션 카테고리 |
 | difficulty | varchar | 난이도 |
 | reward_star_piece | int | 보상 별조각 |
-| reward_exp | int | 보상 EXP |
-| status | varchar | GENERATED / OFFERED / COMPLETION_QA / COMPLETED / REJECTED / EXPIRED |
+| status | varchar | GENERATED / OFFERED / ANSWERING / COMPLETED / REJECTED / EXPIRED |
 | offered_at | timestamp nullable | 제안 시각 |
-| completion_started_at | timestamp nullable | 완료 Q&A 시작 시각 |
+| completion_started_at | timestamp nullable | 완료 질문 답변 시작 시각 |
 | completed_at | timestamp nullable | 완료 시각 |
 | rejected_at | timestamp nullable | 거절 시각 |
 | expired_at | timestamp nullable | 만료 시각 |
-| idempotency_key | varchar unique nullable | 완료 보상 중복 방지 |
+| idempotency_key | varchar unique nullable | 완료 보상 중복 지급 방지 marker |
 | created_at | timestamp | 생성일 |
 | updated_at | timestamp | 수정일 |
 
@@ -551,8 +553,8 @@ AI가 없는 미션 템플릿이나 잘못된 보상을 생성하면 fallback으
 | --- | --- |
 | GENERATED | 생성되었지만 아직 사용자에게 표시 전 |
 | OFFERED | 현재 또는 과거에 사용자에게 제안됨 |
-| COMPLETION_QA | 사용자가 완료를 눌렀고 2문항 Q&A 진행 중 |
-| COMPLETED | Q&A 완료 후 보상 지급 완료 |
+| ANSWERING | 사용자가 완료를 눌렀고 1문항 답변 중 |
+| COMPLETED | 답변 제출 후 미션 완료 |
 | REJECTED | 사용자가 거절 |
 | EXPIRED | 날짜 변경 등으로 만료 |
 
@@ -561,17 +563,18 @@ AI가 없는 미션 템플릿이나 잘못된 보상을 생성하면 fallback으
 ```
 unique(user_id, mission_date, stack_order)
 unique(idempotency_key)
+partial unique(user_id, mission_date) where status in ('OFFERED', 'ANSWERING')
 index(user_id, mission_date, status)
-index(user_id, created_at)
-index(ai_generation_id)
 ```
 
 ### 정책
 
 ```
-하루 최대 미션 제안 수는 application에서 10~15개로 제한한다.
-현재 미션은 해당 날짜의 최신 OFFERED 또는 COMPLETION_QA 상태 미션으로 조회한다.
-미션 완료 보상은 COMPLETED 전환 시 1회만 지급한다.
+하루 최대 미션 제안 수는 application에서 15개로 제한한다.
+현재 미션은 해당 날짜의 최신 OFFERED 또는 ANSWERING 상태 미션으로 조회한다.
+미션 완료 보상은 missionId 기준 1회만 지급한다.
+idempotency_key가 있으면 mission 관점에서는 wallet 보상 지급 완료로 본다.
+AI 문구 생성이 성공하면 ai_generation_id와 캐릭터 말투 문구를 저장하고, 실패하면 mission_templates fallback 문구를 유지한다.
 ```
 
 ---
@@ -596,32 +599,28 @@ index(ai_generation_id)
 
 ```
 산책 미션:
-1. 오늘 하늘 색깔은 어땠어?
-2. 밖에 나갔을 때 가장 먼저 본 건 뭐였어?
+오늘 하늘 색깔은 어땠어?
 
 물 마시기 미션:
-1. 물 마시고 나서 기분이 조금 달라졌어?
-2. 다음에도 이 미션이면 할 수 있을 것 같아?
+물 마시고 나서 기분이 조금 달라졌어?
 
 정리 미션:
-1. 어떤 물건을 치웠어?
-2. 치우고 나서 공간이 조금 달라 보였어?
+어떤 물건을 치웠어?
 ```
 
 ### 제약 / 인덱스
 
 ```
-unique(mission_id, question_order)
-index(user_id, created_at)
-check(question_order in 1, 2)
+unique(mission_id)
 ```
 
 ### 보상 지급 조건
 
 ```
-mission_completion_answers에 question_order 1, 2가 모두 answer_text를 가진다.
-missions.status를 COMPLETED로 변경한다.
-별조각/EXP 지급 트랜잭션을 실행한다.
+mission_completion_answers.answer_text가 저장된다.
+user_missions.status를 COMPLETED로 변경한다.
+wallet 모듈에 미션 완료 별조각 보상을 요청한다.
+보상 지급 성공 후 user_missions.idempotency_key에 MISSION_REWARD:{missionId} marker를 저장한다.
 ```
 
 ---
@@ -681,7 +680,7 @@ AI 요청 비용, 지연, 실패율을 추적한다.
 | total_tokens | int | 총 토큰 |
 | latency_ms | int | 응답 지연 |
 | status | varchar | SUCCESS / FAILED / FALLBACK / RATE_LIMITED |
-| error_type | varchar nullable | TIMEOUT / RATE_LIMIT / SERVER_ERROR / INVALID_OUTPUT |
+| error_type | varchar nullable | TIMEOUT / RATE_LIMIT / INVALID_OUTPUT / POLICY_VIOLATION / PROVIDER_ERROR / UNKNOWN |
 | created_at | timestamp | 생성일 |
 
 ### 제약 / 인덱스
@@ -931,7 +930,7 @@ CHARACTER_CREATED
 MISSION_GENERATED
 MISSION_OFFERED
 MISSION_REJECTED
-MISSION_COMPLETION_QA_STARTED
+MISSION_COMPLETION_SESSION_STARTED
 MISSION_COMPLETED
 STAR_PIECE_EARNED
 STAR_PIECE_SPENT

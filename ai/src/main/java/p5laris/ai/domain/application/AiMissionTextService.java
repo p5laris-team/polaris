@@ -17,16 +17,24 @@ import p5laris.ai.domain.domain.enums.AiGenerationStatus;
 import p5laris.ai.domain.domain.enums.AiUsageStatus;
 import p5laris.ai.domain.domain.enums.PromptCategory;
 import p5laris.ai.domain.domain.policy.MissionTextValidationPolicy;
-import p5laris.ai.domain.domain.repository.AiUsageLogRepository;
+import p5laris.ai.domain.domain.repository.AiMissionGenerationRepository;
 import p5laris.ai.domain.domain.repository.PromptTemplateRepository;
 import p5laris.ai.domain.exception.AiErrorCode;
 import p5laris.ai.domain.exception.AiException;
 import p5laris.ai.domain.exception.FallbackRequiredException;
 import p5laris.ai.domain.infrastructure.config.AiProviderProperties;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.HexFormat;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 
 /**
  * AI 미션 문구 생성 유스케이스의 중심 서비스다.
@@ -42,7 +50,7 @@ public class AiMissionTextService {
     private final MissionTextValidationPolicy missionTextValidationPolicy;
     private final AiMissionTextPersistenceService aiMissionTextPersistenceService;
     private final PromptTemplateRepository promptTemplateRepository;
-    private final AiUsageLogRepository aiUsageLogRepository;
+    private final AiMissionGenerationRepository aiMissionGenerationRepository;
     private final AiProviderProperties aiProviderProperties;
     private final ObjectMapper objectMapper;
 
@@ -54,8 +62,19 @@ public class AiMissionTextService {
      */
     public MissionTextGenerationResult generateMissionTexts(MissionTextGenerationCommand command) {
         validateRequest(command);
-        validateDuplicatedRequest(command.requestId());
+        String requestHash = requestHash(command);
 
+        return aiMissionGenerationRepository.findByRequestId(command.requestId())
+                .map(existingGeneration -> toResult(validateReusableGeneration(existingGeneration, requestHash)))
+                .orElseGet(() -> generateAndSave(command, requestHash));
+    }
+
+    /**
+     * 아직 처리되지 않은 요청이면 실제 generator를 실행하고 결과를 저장한다.
+     *
+     * 같은 requestId가 동시에 들어와 DB unique 제약에 걸리면 이미 저장된 결과를 다시 조회해 재사용한다.
+     */
+    private MissionTextGenerationResult generateAndSave(MissionTextGenerationCommand command, String requestHash) {
         long startedAt = System.nanoTime();
         PromptTemplate promptTemplate = findCharacterTonePromptTemplate();
         MissionTextCandidate candidate;
@@ -79,17 +98,33 @@ public class AiMissionTextService {
             fallbackUsed = true;
         }
 
-        AiMissionGeneration generation = saveResult(command, promptTemplate, candidate, status, usageStatus, fallbackUsed, startedAt, errorType);
+        AiMissionGeneration generation = saveResult(
+                command,
+                promptTemplate,
+                requestHash,
+                candidate,
+                status,
+                usageStatus,
+                fallbackUsed,
+                startedAt,
+                errorType
+        );
 
+        return toResult(generation);
+    }
+
+    // 저장된 AI 생성 결과를 application result로 되돌린다. 재시도 요청도 이 경로로 기존 결과를 그대로 받는다.
+    private MissionTextGenerationResult toResult(AiMissionGeneration generation) {
+        JsonNode response = parseRequiredJson(generation.getResponseJson());
         return new MissionTextGenerationResult(
                 generation.getId(),
-                status,
-                candidate.characterMessage(),
-                candidate.completionQuestion(),
-                candidate.completionCharacterResponse(),
-                fallbackUsed,
-                errorType,
-                command.requestId()
+                generation.getStatus(),
+                requiredText(response, "characterMessage"),
+                requiredText(response, "completionQuestion"),
+                requiredText(response, "completionCharacterResponse"),
+                generation.isFallbackUsed(),
+                generation.getErrorType(),
+                generation.getRequestId()
         );
     }
 
@@ -112,11 +147,13 @@ public class AiMissionTextService {
         }
     }
 
-    // request_id는 ai_usage_logs에서 unique로 관리한다. 같은 요청을 두 번 저장하지 않기 위한 사전 검사다.
-    private void validateDuplicatedRequest(String requestId) {
-        if (aiUsageLogRepository.findByRequestId(requestId).isPresent()) {
-            throw new AiException(AiErrorCode.AI_DUPLICATED_REQUEST);
+    // 같은 request_id가 같은 요청 본문으로 다시 들어오면 기존 결과를 재사용한다.
+    // 같은 request_id인데 내용이 달라졌다면 호출자가 멱등키를 잘못 재사용한 것이므로 충돌로 처리한다.
+    private AiMissionGeneration validateReusableGeneration(AiMissionGeneration generation, String requestHash) {
+        if (!generation.getRequestHash().equals(requestHash)) {
+            throw new AiException(AiErrorCode.AI_REQUEST_CONFLICT);
         }
+        return generation;
     }
 
     // 현재 활성화된 캐릭터 말투 프롬프트 템플릿을 가져온다. 없으면 null로 저장해도 생성 자체는 가능하다.
@@ -147,6 +184,7 @@ public class AiMissionTextService {
     private AiMissionGeneration saveResult(
             MissionTextGenerationCommand command,
             PromptTemplate promptTemplate,
+            String requestHash,
             MissionTextCandidate candidate,
             AiGenerationStatus status,
             AiUsageStatus usageStatus,
@@ -158,6 +196,7 @@ public class AiMissionTextService {
             return aiMissionTextPersistenceService.saveGenerationAndUsageLog(
                     command,
                     promptTemplate,
+                    requestHash,
                     toRequestContextJson(command),
                     toResponseJson(candidate),
                     status,
@@ -169,8 +208,31 @@ public class AiMissionTextService {
                     errorType
             );
         } catch (DataIntegrityViolationException e) {
-            throw new AiException(AiErrorCode.AI_DUPLICATED_REQUEST);
+            return aiMissionGenerationRepository.findByRequestId(command.requestId())
+                    .map(existingGeneration -> validateReusableGeneration(existingGeneration, requestHash))
+                    .orElseThrow(() -> new AiException(AiErrorCode.AI_DUPLICATED_REQUEST));
         }
+    }
+
+    // request_id를 제외한 요청 본문을 안정적인 JSON으로 만든 뒤 SHA-256 해시를 계산한다.
+    // 같은 request_id가 정말 같은 요청을 의미하는지 비교하기 위한 운영 안전장치다.
+    private String requestHash(MissionTextGenerationCommand command) {
+        Map<String, Object> source = new LinkedHashMap<>();
+        source.put("userId", command.userId());
+        source.put("characterId", command.characterId());
+        source.put("characterType", command.characterType());
+        source.put("missionTemplateId", command.missionTemplateId());
+        source.put("baseTitle", command.baseTitle());
+        source.put("baseDescription", command.baseDescription());
+        source.put("category", command.category());
+        source.put("difficulty", command.difficulty());
+        source.put("fallbackCharacterMessage", command.fallbackCharacterMessage());
+        source.put("fallbackQuestion", command.fallbackQuestion());
+        source.put("fallbackCompletionResponse", command.fallbackCompletionResponse());
+        source.put("onboardingContext", canonicalJsonValue(parseJsonOrEmptyObject(command.onboardingContextJson())));
+        source.put("recentMissionContext", canonicalJsonValue(parseJsonOrEmptyObject(command.recentMissionContextJson())));
+
+        return sha256(toJson(source));
     }
 
     // AI 입력 context를 JSONB에 저장하기 위한 snapshot으로 만든다.
@@ -208,6 +270,14 @@ public class AiMissionTextService {
         }
     }
 
+    private JsonNode parseRequiredJson(String value) {
+        try {
+            return objectMapper.readTree(value);
+        } catch (JsonProcessingException e) {
+            throw new AiException(AiErrorCode.AI_GENERATION_FAILED);
+        }
+    }
+
     // context 문자열이 JSON이면 구조를 살려 저장하고, 비어 있으면 빈 객체로 저장한다.
     private JsonNode parseJsonOrEmptyObject(String value) {
         if (value == null || value.isBlank()) {
@@ -218,6 +288,52 @@ public class AiMissionTextService {
             return objectMapper.readTree(value);
         } catch (JsonProcessingException e) {
             return objectMapper.createObjectNode();
+        }
+    }
+
+    private String requiredText(JsonNode node, String fieldName) {
+        JsonNode field = node.get(fieldName);
+        if (field == null || field.asText().isBlank()) {
+            throw new AiException(AiErrorCode.AI_GENERATION_FAILED);
+        }
+        return field.asText();
+    }
+
+    // JSON object의 field 순서를 정렬해 같은 의미의 context가 같은 해시를 갖도록 만든다.
+    private Object canonicalJsonValue(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return null;
+        }
+        if (node.isObject()) {
+            Map<String, Object> sorted = new TreeMap<>();
+            Iterator<Map.Entry<String, JsonNode>> fields = node.fields();
+            while (fields.hasNext()) {
+                Map.Entry<String, JsonNode> field = fields.next();
+                sorted.put(field.getKey(), canonicalJsonValue(field.getValue()));
+            }
+            return sorted;
+        }
+        if (node.isArray()) {
+            List<Object> values = new ArrayList<>();
+            node.forEach(value -> values.add(canonicalJsonValue(value)));
+            return values;
+        }
+        if (node.isNumber()) {
+            return node.numberValue();
+        }
+        if (node.isBoolean()) {
+            return node.booleanValue();
+        }
+        return node.asText();
+    }
+
+    private String sha256(String value) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException e) {
+            throw new AiException(AiErrorCode.AI_GENERATION_FAILED);
         }
     }
 

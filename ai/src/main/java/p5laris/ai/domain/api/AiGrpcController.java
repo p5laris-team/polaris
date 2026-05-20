@@ -124,7 +124,7 @@ public class AiGrpcController extends AiServiceGrpc.AiServiceImplBase {
 
         return switch (errorCode) {
             case AI_INVALID_REQUEST -> Status.INVALID_ARGUMENT;
-            case AI_DUPLICATED_REQUEST -> Status.ALREADY_EXISTS;
+            case AI_DUPLICATED_REQUEST, AI_REQUEST_CONFLICT -> Status.ALREADY_EXISTS;
             case AI_FALLBACK_INVALID -> Status.FAILED_PRECONDITION;
             case AI_GENERATION_FAILED -> Status.INTERNAL;
         };

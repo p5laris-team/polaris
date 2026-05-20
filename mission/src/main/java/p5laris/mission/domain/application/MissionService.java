@@ -29,9 +29,16 @@ import p5laris.mission.domain.domain.repository.MissionTemplateRepository;
 import p5laris.mission.domain.domain.repository.UserMissionRepository;
 import p5laris.mission.domain.exception.MissionErrorCode;
 import p5laris.mission.domain.exception.MissionException;
+import p5laris.mission.domain.infrastructure.grpc.AiMissionTextClient;
+import p5laris.mission.domain.infrastructure.grpc.AiMissionTextRequest;
+import p5laris.mission.domain.infrastructure.grpc.AiMissionTextResult;
+import p5laris.mission.domain.infrastructure.grpc.CharacterProfileClient;
 import p5laris.mission.domain.infrastructure.grpc.WalletRewardClient;
 import p5laris.mission.domain.infrastructure.grpc.WalletRewardResult;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -39,8 +46,10 @@ import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.EnumSet;
 import java.util.HashSet;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 @Service
@@ -51,8 +60,10 @@ public class MissionService {
     private static final int COMPLETION_ANSWER_MIN_LENGTH = 1;
     private static final int COMPLETION_ANSWER_MAX_LENGTH = 300;
     private static final String MISSION_REWARD_IDEMPOTENCY_KEY_PREFIX = "MISSION_REWARD:";
+    private static final String MISSION_TEXT_REQUEST_ID_PREFIX = "MISSION_TEXT:";
     private static final String DEFAULT_COMPLETION_QUESTION = "해보고 나서 어땠어?";
     private static final String REJECTION_CHARACTER_MESSAGE = "괜찮아요. 다른 별을 찾아볼게요.";
+    private static final String EMPTY_JSON_OBJECT = "{}";
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
     private static final Set<UserMissionStatus> ACTIVE_STATUSES = EnumSet.of(
             UserMissionStatus.OFFERED,
@@ -63,6 +74,8 @@ public class MissionService {
     private final UserMissionRepository userMissionRepository;
     private final MissionCompletionAnswerRepository missionCompletionAnswerRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final AiMissionTextClient aiMissionTextClient;
+    private final CharacterProfileClient characterProfileClient;
     private final WalletRewardClient walletRewardClient;
     private final TransactionTemplate transactionTemplate;
     private final Clock clock;
@@ -96,11 +109,34 @@ public class MissionService {
      *
      * 진행 중인 미션이 이미 있으면 새 미션을 만들지 않는다.
      * 이 검사는 유저 기준으로 수행하고, characterId는 새 미션 row에 제안 캐릭터로 저장한다.
+     *
+     * 미션 row는 먼저 template fallback 문구로 짧게 저장하고, 그 뒤 트랜잭션 밖에서 ai 모듈을 호출한다.
+     * AI 호출이 성공하면 다시 짧은 트랜잭션을 열어 캐릭터 말투 문구와 aiGenerationId를 반영한다.
      */
-    @Transactional
     public CreateNextMissionResponse createNextMission(Long userId, Long characterId, Long lastMissionId) {
         LocalDate today = LocalDate.now(clock);
+        validateMissionCreatable(userId, today);
 
+        MissionCreationContext context = Objects.requireNonNull(transactionTemplate.execute(
+                status -> createMissionWithFallback(userId, characterId, today)
+        ));
+        Optional<AiMissionTextResult> generatedText = generateMissionText(context);
+        UserMission mission = Objects.requireNonNull(transactionTemplate.execute(
+                status -> finalizeMissionCreation(userId, context.missionId(), generatedText)
+        ));
+
+        return CreateNextMissionResponse.newBuilder()
+                .setMission(toProtoMission(mission))
+                .build();
+    }
+
+    /**
+     * 미션 생성 전 빠르게 막을 수 있는 조건을 확인한다.
+     *
+     * 이 검사는 외부 gRPC 호출 전에 실패를 반환하기 위한 1차 방어이고,
+     * 실제 저장 트랜잭션 안에서 같은 검사를 한 번 더 수행한다.
+     */
+    private void validateMissionCreatable(Long userId, LocalDate today) {
         if (userMissionRepository.existsByUserIdAndMissionDateAndStatusIn(userId, today, ACTIVE_STATUSES)) {
             throw new MissionException(MissionErrorCode.MISSION_ACTIVE_ALREADY_EXISTS);
         }
@@ -109,6 +145,16 @@ public class MissionService {
         if (todayOfferCount >= DAILY_MISSION_OFFER_LIMIT) {
             throw new MissionException(MissionErrorCode.MISSION_DAILY_LIMIT_EXCEEDED);
         }
+    }
+
+    /**
+     * seed template 기준의 fallback 미션을 먼저 저장한다.
+     *
+     * 여기서 missionId가 생기므로, 이후 AI requestId를 안정적으로 만들 수 있다.
+     * 완료 질문 row도 fallback 질문으로 먼저 만들어 두고, AI 성공 시 질문 텍스트만 교체한다.
+     */
+    private MissionCreationContext createMissionWithFallback(Long userId, Long characterId, LocalDate today) {
+        validateMissionCreatable(userId, today);
 
         LocalDateTime now = LocalDateTime.now(clock);
         MissionTemplate template = selectNextTemplate(userId, today);
@@ -124,15 +170,76 @@ public class MissionService {
 
         try {
             UserMission savedMission = userMissionRepository.saveAndFlush(userMission);
-            eventPublisher.publishEvent(MissionEventLogEvent.missionOffered(savedMission, toOccurredAt(now)));
-            return CreateNextMissionResponse.newBuilder()
-                    .setMission(toProtoMission(savedMission))
-                    .build();
+            missionCompletionAnswerRepository.save(MissionCompletionAnswer.start(
+                    savedMission.getId(),
+                    savedMission.getUserId(),
+                    template.getFallbackQuestion()
+            ));
+            return MissionCreationContext.from(savedMission, template, missionTextRequestId(savedMission));
         } catch (DataIntegrityViolationException e) {
             // 동시에 미션 생성 요청이 들어오면 애플리케이션의 exists 검사만으로는 중복 생성이 가능하다.
             // DB partial unique index가 마지막으로 막아주고, 여기서는 도메인 예외로 변환한다.
             throw new MissionException(MissionErrorCode.MISSION_ACTIVE_ALREADY_EXISTS);
         }
+    }
+
+    /**
+     * character/ai 모듈을 트랜잭션 밖에서 호출한다.
+     *
+     * character나 ai 모듈 호출이 실패하면 Optional.empty()를 반환해 fallback 문구로 미션 생성을 마무리한다.
+     */
+    private Optional<AiMissionTextResult> generateMissionText(MissionCreationContext context) {
+        return characterProfileClient.findActiveCharacterTypeCode(context.userId(), context.characterId())
+                .flatMap(characterType -> aiMissionTextClient.generateMissionTexts(new AiMissionTextRequest(
+                        context.userId(),
+                        context.characterId(),
+                        characterType,
+                        context.missionTemplateId(),
+                        context.baseTitle(),
+                        context.baseDescription(),
+                        context.category(),
+                        context.difficulty(),
+                        context.fallbackCharacterMessage(),
+                        context.fallbackQuestion(),
+                        context.fallbackCompletionResponse(),
+                        EMPTY_JSON_OBJECT,
+                        EMPTY_JSON_OBJECT,
+                        context.aiRequestId()
+                )));
+    }
+
+    /**
+     * AI 결과가 있으면 미션 문구와 완료 질문을 교체하고, 없으면 fallback 상태 그대로 확정한다.
+     *
+     * MISSION_OFFERED 이벤트는 최종 문구가 정해진 뒤 발행해 event-log metadata에 aiGenerationId를 담을 수 있게 한다.
+     */
+    private UserMission finalizeMissionCreation(
+            Long userId,
+            Long missionId,
+            Optional<AiMissionTextResult> generatedText
+    ) {
+        UserMission mission = findOwnedMissionForUpdate(userId, missionId);
+        MissionCompletionAnswer answer = missionCompletionAnswerRepository.findByMissionId(mission.getId())
+                .orElseGet(() -> missionCompletionAnswerRepository.save(MissionCompletionAnswer.start(
+                        mission.getId(),
+                        mission.getUserId(),
+                        resolveCompletionQuestion(mission)
+                )));
+
+        generatedText.ifPresent(text -> {
+            mission.applyGeneratedTexts(
+                    text.aiGenerationId(),
+                    text.characterMessage(),
+                    text.completionCharacterResponse()
+            );
+            answer.replaceQuestion(text.completionQuestion());
+        });
+
+        eventPublisher.publishEvent(MissionEventLogEvent.missionOffered(
+                mission,
+                toOccurredAt(mission.getOfferedAt())
+        ));
+        return mission;
     }
 
     /**
@@ -354,6 +461,25 @@ public class MissionService {
         return MISSION_REWARD_IDEMPOTENCY_KEY_PREFIX + missionId;
     }
 
+    private String missionTextRequestId(UserMission mission) {
+        return MISSION_TEXT_REQUEST_ID_PREFIX + sha256(String.join(
+                "|",
+                String.valueOf(mission.getUserId()),
+                String.valueOf(mission.getId()),
+                String.valueOf(mission.getMissionTemplateId())
+        ));
+    }
+
+    private String sha256(String value) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException e) {
+            throw new MissionException(MissionErrorCode.MISSION_INVALID_STATUS);
+        }
+    }
+
     private SubmitCompletionAnswerResponse toCompletionResponse(
             UserMission mission,
             MissionCompletionAnswer answer,
@@ -449,5 +575,47 @@ public class MissionService {
             boolean rewardAlreadyPaid,
             String rewardIdempotencyKey
     ) {
+    }
+
+    /**
+     * fallback 미션 저장 후 AI 문구 생성을 요청하는 데 필요한 값만 담은 스냅샷이다.
+     *
+     * 이 record는 트랜잭션 밖에서 사용되므로 JPA Entity 대신 문자열/ID 값만 들고 간다.
+     */
+    private record MissionCreationContext(
+            Long missionId,
+            Long userId,
+            Long characterId,
+            Long missionTemplateId,
+            String baseTitle,
+            String baseDescription,
+            String category,
+            String difficulty,
+            String fallbackCharacterMessage,
+            String fallbackQuestion,
+            String fallbackCompletionResponse,
+            String aiRequestId
+    ) {
+
+        private static MissionCreationContext from(
+                UserMission mission,
+                MissionTemplate template,
+                String aiRequestId
+        ) {
+            return new MissionCreationContext(
+                    mission.getId(),
+                    mission.getUserId(),
+                    mission.getCharacterId(),
+                    template.getId(),
+                    template.getBaseTitle(),
+                    template.getBaseDescription(),
+                    template.getCategory().name(),
+                    template.getDifficulty().name(),
+                    template.getFallbackCharacterMessage(),
+                    template.getFallbackQuestion(),
+                    template.getFallbackCompletionResponse(),
+                    aiRequestId
+            );
+        }
     }
 }

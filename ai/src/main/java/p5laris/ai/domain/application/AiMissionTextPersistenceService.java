@@ -38,6 +38,7 @@ public class AiMissionTextPersistenceService {
     public AiMissionGeneration saveGenerationAndUsageLog(
             MissionTextGenerationCommand command,
             PromptTemplate promptTemplate,
+            String requestHash,
             String requestContextJson,
             String responseJson,
             AiGenerationStatus generationStatus,
@@ -52,6 +53,8 @@ public class AiMissionTextPersistenceService {
                 command.userId(),
                 command.characterId(),
                 promptTemplate != null ? promptTemplate.getId() : null,
+                command.requestId(),
+                requestHash,
                 requestContextJson,
                 responseJson,
                 command.missionTemplateId(),
