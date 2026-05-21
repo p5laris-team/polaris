@@ -15,11 +15,11 @@ on:
           - mission
           - event-log
           - ai
-          - notification
+          - all
       ref:
         description: "배포할 브랜치 또는 커밋 SHA"
         required: true
-        default: "feat/FIVE-40"
+        default: "main"
 
 permissions:
   contents: read
@@ -46,88 +46,9 @@ jobs:
           java-version: 21
           cache: gradle
 
-      - name: Set service variables
-        id: vars
-        shell: bash
-        run: |
-          SERVICE="${{ inputs.service }}"
-
-          case "$SERVICE" in
-            gateway)
-              echo "module_dir=gateway" >> "$GITHUB_OUTPUT"
-              echo "gradle_task=:gateway:bootJar" >> "$GITHUB_OUTPUT"
-              echo "image_repo=p5laris-gateway" >> "$GITHUB_OUTPUT"
-              ;;
-            user)
-              echo "module_dir=user" >> "$GITHUB_OUTPUT"
-              echo "gradle_task=:user:bootJar" >> "$GITHUB_OUTPUT"
-              echo "image_repo=p5laris-user" >> "$GITHUB_OUTPUT"
-              ;;
-            character)
-              echo "module_dir=character" >> "$GITHUB_OUTPUT"
-              echo "gradle_task=:character:bootJar" >> "$GITHUB_OUTPUT"
-              echo "image_repo=p5laris-character" >> "$GITHUB_OUTPUT"
-              ;;
-            item)
-              echo "module_dir=item" >> "$GITHUB_OUTPUT"
-              echo "gradle_task=:item:bootJar" >> "$GITHUB_OUTPUT"
-              echo "image_repo=p5laris-item" >> "$GITHUB_OUTPUT"
-              ;;
-            mission)
-              echo "module_dir=mission" >> "$GITHUB_OUTPUT"
-              echo "gradle_task=:mission:bootJar" >> "$GITHUB_OUTPUT"
-              echo "image_repo=p5laris-mission" >> "$GITHUB_OUTPUT"
-              ;;
-            event-log)
-              echo "module_dir=event-log" >> "$GITHUB_OUTPUT"
-              echo "gradle_task=:event-log:bootJar" >> "$GITHUB_OUTPUT"
-              echo "image_repo=p5laris-event-log" >> "$GITHUB_OUTPUT"
-              ;;
-            ai)
-              echo "module_dir=ai" >> "$GITHUB_OUTPUT"
-              echo "gradle_task=:ai:bootJar" >> "$GITHUB_OUTPUT"
-              echo "image_repo=p5laris-ai" >> "$GITHUB_OUTPUT"
-              ;;
-            notification)
-              echo "module_dir=notification" >> "$GITHUB_OUTPUT"
-              echo "gradle_task=:notification:bootJar" >> "$GITHUB_OUTPUT"
-              echo "image_repo=p5laris-notification" >> "$GITHUB_OUTPUT"
-              ;;
-            *)
-              echo "Unknown service: $SERVICE"
-              exit 1
-              ;;
-          esac
-
       - name: Grant execute permission for Gradle wrapper
         shell: bash
         run: chmod +x ./gradlew
-
-      - name: Build selected module
-        shell: bash
-        run: |
-          ./gradlew ${{ steps.vars.outputs.gradle_task }}
-
-      - name: Find boot jar
-        id: jar
-        shell: bash
-        run: |
-          MODULE_DIR="${{ steps.vars.outputs.module_dir }}"
-
-          JAR_FILE="$(find "$MODULE_DIR/build/libs" \
-            -maxdepth 1 \
-            -type f \
-            -name "*.jar" \
-            ! -name "*plain.jar" \
-            | head -n 1)"
-
-          if [ -z "$JAR_FILE" ]; then
-            echo "Boot jar not found in $MODULE_DIR/build/libs"
-            exit 1
-          fi
-
-          echo "jar_file=$JAR_FILE" >> "$GITHUB_OUTPUT"
-          echo "Found boot jar: $JAR_FILE"
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -139,33 +60,154 @@ jobs:
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build and push Docker image
-        id: image
+      - name: Prepare SSH key
         shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
         run: |
-          IMAGE_TAG="$(git rev-parse --short HEAD)"
-          IMAGE_URI="${ECR_REGISTRY}/${{ steps.vars.outputs.image_repo }}:${IMAGE_TAG}"
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/p5laris_deploy_key
+          chmod 600 ~/.ssh/p5laris_deploy_key
+          ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
 
-          echo "Image URI: $IMAGE_URI"
+      - name: Build, push, and deploy selected services
+        shell: bash
+        env:
+          SELECTED_SERVICE: ${{ inputs.service }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          set -euo pipefail
 
-          docker build \
-            --build-arg JAR_FILE="${{ steps.jar.outputs.jar_file }}" \
-            -t "$IMAGE_URI" \
-            .
+          resolve_service() {
+            local service="$1"
 
-          docker push "$IMAGE_URI"
+            case "$service" in
+              gateway)
+                MODULE_DIR="gateway"
+                GRADLE_TASK=":gateway:bootJar"
+                IMAGE_REPO="p5laris-gateway"
+                ;;
+              user)
+                MODULE_DIR="user"
+                GRADLE_TASK=":user:bootJar"
+                IMAGE_REPO="p5laris-user"
+                ;;
+              character)
+                MODULE_DIR="character"
+                GRADLE_TASK=":character:bootJar"
+                IMAGE_REPO="p5laris-character"
+                ;;
+              item)
+                MODULE_DIR="item"
+                GRADLE_TASK=":item:bootJar"
+                IMAGE_REPO="p5laris-item"
+                ;;
+              mission)
+                MODULE_DIR="mission"
+                GRADLE_TASK=":mission:bootJar"
+                IMAGE_REPO="p5laris-mission"
+                ;;
+              event-log)
+                MODULE_DIR="event-log"
+                GRADLE_TASK=":event-log:bootJar"
+                IMAGE_REPO="p5laris-event-log"
+                ;;
+              ai)
+                MODULE_DIR="ai"
+                GRADLE_TASK=":ai:bootJar"
+                IMAGE_REPO="p5laris-ai"
+                ;;
+              *)
+                echo "ERROR: unknown service: $service"
+                exit 1
+                ;;
+            esac
+          }
 
-          echo "image_uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
+          deploy_one() {
+            local service="$1"
 
-      - name: Deploy to server
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: ${{ secrets.DEPLOY_PORT }}
-          script_stop: true
-          script: |
-            /opt/p5laris/scripts/deploy-service.sh \
-              "${{ inputs.service }}" \
-              "${{ steps.image.outputs.image_uri }}"
+            echo ""
+            echo "============================================================"
+            echo "Deploy service: $service"
+            echo "============================================================"
+
+            resolve_service "$service"
+
+            echo "Module dir  : $MODULE_DIR"
+            echo "Gradle task : $GRADLE_TASK"
+            echo "Image repo  : $IMAGE_REPO"
+            echo ""
+
+            echo "== Gradle bootJar =="
+            ./gradlew "$GRADLE_TASK"
+
+            echo ""
+            echo "== Find boot jar =="
+            JAR_FILE="$(find "$MODULE_DIR/build/libs" \
+              -maxdepth 1 \
+              -type f \
+              -name "*.jar" \
+              ! -name "*plain.jar" \
+              | head -n 1)"
+
+            if [ -z "$JAR_FILE" ]; then
+              echo "ERROR: boot jar not found in $MODULE_DIR/build/libs"
+              exit 1
+            fi
+
+            echo "Jar file: $JAR_FILE"
+
+            IMAGE_TAG="$(git rev-parse --short HEAD)-${GITHUB_RUN_NUMBER}"
+            IMAGE_URI="${ECR_REGISTRY}/${IMAGE_REPO}:${IMAGE_TAG}"
+
+            echo ""
+            echo "== Docker build =="
+            echo "Image URI: $IMAGE_URI"
+
+            docker build \
+              --build-arg JAR_FILE="$JAR_FILE" \
+              -t "$IMAGE_URI" \
+              .
+
+            echo ""
+            echo "== Docker push =="
+            docker push "$IMAGE_URI"
+
+            echo ""
+            echo "== Deploy to server =="
+            ssh \
+              -i ~/.ssh/p5laris_deploy_key \
+              -p "$DEPLOY_PORT" \
+              "$DEPLOY_USER@$DEPLOY_HOST" \
+              "/opt/p5laris/scripts/deploy-service.sh '$service' '$IMAGE_URI'"
+
+            echo ""
+            echo "Deploy completed: $service"
+          }
+
+          if [ "$SELECTED_SERVICE" = "all" ]; then
+            SERVICES=(
+              user
+              character
+              item
+              mission
+              event-log
+              ai
+              gateway
+            )
+          else
+            SERVICES=("$SELECTED_SERVICE")
+          fi
+
+          echo "Selected service: $SELECTED_SERVICE"
+          echo "Deploy order:"
+          printf ' - %s\n' "${SERVICES[@]}"
+
+          for service in "${SERVICES[@]}"; do
+            deploy_one "$service"
+          done
