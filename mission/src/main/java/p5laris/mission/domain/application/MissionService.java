@@ -5,6 +5,7 @@ import com.p5laris.proto.mission.v1.CompletionAnswer;
 import com.p5laris.proto.mission.v1.CompletionInputType;
 import com.p5laris.proto.mission.v1.CompletionQuestion;
 import com.p5laris.proto.mission.v1.GetCurrentMissionResponse;
+import com.p5laris.proto.mission.v1.GetTodayMissionsResponse;
 import com.p5laris.proto.mission.v1.MissionCategory;
 import com.p5laris.proto.mission.v1.MissionDifficulty;
 import com.p5laris.proto.mission.v1.MissionReward;
@@ -12,6 +13,7 @@ import com.p5laris.proto.mission.v1.MissionStatus;
 import com.p5laris.proto.mission.v1.RejectMissionResponse;
 import com.p5laris.proto.mission.v1.StartCompletionSessionResponse;
 import com.p5laris.proto.mission.v1.SubmitCompletionAnswerResponse;
+import com.p5laris.proto.mission.v1.TodayMission;
 import com.p5laris.proto.mission.v1.WalletSnapshot;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -102,6 +104,33 @@ public class MissionService {
                         .setMission(mission)
                         .build())
                 .orElseGet(() -> GetCurrentMissionResponse.newBuilder().build());
+    }
+
+    /**
+     * 오늘 유저에게 제안된 미션 stack 전체를 조회한다.
+     *
+     * 이 메서드는 홈/미션 히스토리 화면용 읽기 API라 상태를 바꾸지 않는다.
+     * 하루 최대 15개 정책이 있으므로 pagination 없이 stackOrder 오름차순으로 반환한다.
+     */
+    @Transactional(readOnly = true)
+    public GetTodayMissionsResponse getTodayMissions(Long userId) {
+        LocalDate today = LocalDate.now(clock);
+        List<UserMission> missions = userMissionRepository.findByUserIdAndMissionDateOrderByStackOrderAsc(userId, today);
+
+        GetTodayMissionsResponse.Builder builder = GetTodayMissionsResponse.newBuilder()
+                .setMissionDate(today.toString())
+                .setMaxDailyOffers(DAILY_MISSION_OFFER_LIMIT)
+                .setOfferedCount(missions.size())
+                .setCompletedCount(countByStatus(missions, UserMissionStatus.COMPLETED))
+                .setRejectedCount(countByStatus(missions, UserMissionStatus.REJECTED))
+                .setRemainingOfferCount(Math.max(0, DAILY_MISSION_OFFER_LIMIT - missions.size()));
+
+        findCurrentMissionId(missions).ifPresent(builder::setCurrentMissionId);
+        missions.stream()
+                .map(this::toProtoTodayMission)
+                .forEach(builder::addMissions);
+
+        return builder.build();
     }
 
     /**
@@ -518,6 +547,40 @@ public class MissionService {
                 .setRewardStarPiece(mission.getRewardStarPiece())
                 .setStatus(toProtoStatus(mission.getStatus()))
                 .build();
+    }
+
+    /**
+     * 오늘 미션 히스토리 목록에 필요한 최소 필드만 proto로 변환한다.
+     *
+     * 완료 답변 전문은 민감할 수 있어 히스토리 응답에 포함하지 않는다.
+     */
+    private TodayMission toProtoTodayMission(UserMission mission) {
+        return TodayMission.newBuilder()
+                .setId(mission.getId())
+                .setStackOrder(mission.getStackOrder())
+                .setTitle(mission.getTitle())
+                .setCategory(toProtoCategory(mission))
+                .setDifficulty(toProtoDifficulty(mission))
+                .setRewardStarPiece(mission.getRewardStarPiece())
+                .setStatus(toProtoStatus(mission.getStatus()))
+                .setCharacterMessage(mission.getCharacterMessage())
+                .setCreatedAt(formatDateTime(mission.getCreatedAt()))
+                .setCompletedAt(formatDateTime(mission.getCompletedAt()))
+                .setRejectedAt(formatDateTime(mission.getRejectedAt()))
+                .build();
+    }
+
+    private int countByStatus(List<UserMission> missions, UserMissionStatus status) {
+        return (int) missions.stream()
+                .filter(mission -> mission.getStatus() == status)
+                .count();
+    }
+
+    private Optional<Long> findCurrentMissionId(List<UserMission> missions) {
+        return missions.stream()
+                .filter(mission -> ACTIVE_STATUSES.contains(mission.getStatus()))
+                .map(UserMission::getId)
+                .findFirst();
     }
 
     private CompletionQuestion toProtoQuestion(MissionCompletionAnswer answer) {

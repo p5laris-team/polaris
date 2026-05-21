@@ -6,6 +6,8 @@ import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 
+import java.util.List;
+
 /**
  * mission REST API에서 사용하는 요청/응답 DTO 모음이다.
  *
@@ -28,6 +30,41 @@ public class MissionDto {
             String difficulty,
             Integer rewardStarPiece,
             String status
+    ) {
+    }
+
+    /**
+     * 오늘 제안된 미션 stack과 화면 표시용 집계 정보를 함께 반환한다.
+     */
+    public record TodayMissionsResponse(
+            String missionDate,
+            Integer maxDailyOffers,
+            Integer offeredCount,
+            Integer completedCount,
+            Integer rejectedCount,
+            Integer remainingOfferCount,
+            Long currentMissionId,
+            List<TodayMissionItem> missions
+    ) {
+    }
+
+    /**
+     * 오늘 미션 히스토리 목록의 단일 항목이다.
+     *
+     * <p>답변 전문은 민감할 수 있어 목록 응답에는 포함하지 않는다.</p>
+     */
+    public record TodayMissionItem(
+            Long id,
+            Integer stackOrder,
+            String title,
+            String category,
+            String difficulty,
+            Integer rewardStarPiece,
+            String status,
+            String characterMessage,
+            String createdAt,
+            String completedAt,
+            String rejectedAt
     ) {
     }
 
