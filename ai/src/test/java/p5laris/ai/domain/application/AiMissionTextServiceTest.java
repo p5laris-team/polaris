@@ -76,8 +76,15 @@ class AiMissionTextServiceTest {
         assertThat(result.completionQuestion()).isEqualTo(command.fallbackQuestion());
         assertThat(result.completionCharacterResponse()).isEqualTo(command.fallbackCompletionResponse());
         assertThat(aiMissionGenerationRepository.count()).isEqualTo(1);
-        assertThat(aiUsageLogRepository.findByRequestId(command.requestId()).orElseThrow().getStatus())
-                .isEqualTo(AiUsageStatus.FALLBACK);
+        var savedGeneration = aiMissionGenerationRepository.findByRequestId(command.requestId()).orElseThrow();
+        var usageLog = aiUsageLogRepository.findByRequestId(command.requestId()).orElseThrow();
+        assertThat(savedGeneration.isFallbackUsed()).isTrue();
+        assertThat(savedGeneration.getStatus()).isEqualTo(AiGenerationStatus.FALLBACK);
+        assertThat(savedGeneration.getErrorType()).isEqualTo(AiErrorType.INVALID_OUTPUT);
+        assertThat(savedGeneration.getRequestContextJson()).doesNotContain("rawPrompt");
+        assertThat(savedGeneration.getResponseJson()).doesNotContain("rawResponse");
+        assertThat(usageLog.getStatus()).isEqualTo(AiUsageStatus.FALLBACK);
+        assertThat(usageLog.getErrorType()).isEqualTo(AiErrorType.INVALID_OUTPUT);
     }
 
     @Test
