@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       service:
-        description: "배포할 서비스"
+        description: "배포할 서비스다!!"
         required: true
         type: choice
         options:
