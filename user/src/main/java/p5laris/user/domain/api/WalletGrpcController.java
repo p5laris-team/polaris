@@ -97,4 +97,18 @@ public class WalletGrpcController extends WalletServiceGrpc.WalletServiceImplBas
             responseObserver.onError(io.grpc.Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
         }
     }
+
+    @Override
+    public void getTransactions(com.p5laris.proto.user.v1.GetTransactionsRequest request, io.grpc.stub.StreamObserver<com.p5laris.proto.user.v1.GetTransactionsResponse> responseObserver) {
+        try {
+            com.p5laris.proto.user.v1.GetTransactionsResponse response = walletService.getTransactions(request);
+            responseObserver.onNext(response);
+            responseObserver.onCompleted();
+        } catch (UserException e) {
+            String errorCodeName = e.getErrorCode() instanceof Enum ? ((Enum<?>) e.getErrorCode()).name() : e.getErrorCode().getCode();
+            responseObserver.onError(io.grpc.Status.INTERNAL.withDescription(errorCodeName).asRuntimeException());
+        } catch (Exception e) {
+            responseObserver.onError(io.grpc.Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+        }
+    }
 }
