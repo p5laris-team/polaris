@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       service:
-        description: "배포할 서비스다!!"
+        description: "배포할 서비스다"
         required: true
         type: choice
         options:
@@ -20,10 +20,6 @@ on:
         description: "배포할 브랜치 또는 커밋 SHA"
         required: true
         default: "feat/FIVE-40"
-
-  push:
-    branches:
-      - feat/FIVE-40
 
 permissions:
   contents: read
