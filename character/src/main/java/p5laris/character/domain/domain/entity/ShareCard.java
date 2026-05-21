@@ -43,4 +43,8 @@ public class ShareCard {
         this.imageUrl = imageUrl;
         this.shareUrl = shareUrl;
     }
+
+    public void updateImageUrl(String imageUrl) {
+        this.imageUrl = imageUrl;
+    }
 }

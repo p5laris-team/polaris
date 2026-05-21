@@ -68,4 +68,9 @@ public class ShareDto {
             String shareId,
             boolean recorded
     ) {}
+
+    public record TodayShareEventStatusResponse(
+            boolean rewardClaimed,
+            String lastSharedAt
+    ) {}
 }

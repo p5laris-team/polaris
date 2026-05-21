@@ -80,6 +80,10 @@ public class CharacterService {
         p5laris.character.domain.domain.entity.CharacterType characterType = characterTypeRepository.findById(characterTypeId)
                 .orElseThrow(() -> new p5laris.character.domain.exception.CharacterException(p5laris.character.domain.exception.CharacterErrorCode.CHARACTER_TYPE_NOT_FOUND));
 
+        if (name == null || name.trim().isEmpty() || name.length() > 10) {
+            throw new p5laris.character.domain.exception.CharacterException(p5laris.character.domain.exception.CharacterErrorCode.INVALID_CHARACTER_NAME);
+        }
+
         // Deactivate existing active character if any
         userCharacterRepository.findByUserIdAndActiveTrue(userId)
                 .ifPresent(p5laris.character.domain.domain.entity.UserCharacter::deactivate);
@@ -223,9 +227,9 @@ public class CharacterService {
                     com.fasterxml.jackson.databind.JsonNode afterNode = objectMapper.readTree(log.getAfterStateJson());
 
                     String characterMessage = switch (log.getActionType()) {
-                        case FEED  -> "Mmm... light has a taste too.";
-                        case SLEEP -> "...zz. Thanks.";
-                        case PLAY  -> "That was fun. Let's do it again sometime.";
+                        case FEED  -> "음… 오늘의 빛은 좀 달콤하네요.";
+                        case SLEEP -> "…쿨… 고마워요.";
+                        case PLAY  -> "재밌었어요. 다음에 또 놀아요.";
                     };
 
                     return p5laris.character.domain.application.dto.CareActionResponse.builder()
@@ -331,9 +335,9 @@ public class CharacterService {
             }
         }
         String characterMessage = switch (actionType) {
-            case FEED  -> "Mmm... light has a taste too.";
-            case SLEEP -> "...zz. Thanks.";
-            case PLAY  -> "That was fun. Let's do it again sometime.";
+            case FEED  -> "음… 오늘의 빛은 좀 달콤하네요.";
+            case SLEEP -> "…쿨… 고마워요.";
+            case PLAY  -> "재밌었어요. 다음에 또 놀아요.";
         };
 
         return p5laris.character.domain.application.dto.CareActionResponse.builder()
