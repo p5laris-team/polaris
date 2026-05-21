@@ -73,6 +73,8 @@ public class ItemService {
                     .setPrice(item.getPrice())
                     .setImageUrl(item.getImageUrl() != null ? item.getImageUrl() : "")
                     .setOwned(ownedItemIds.contains(item.getId()))
+                    .setEffectType(item.getEffectType() != null ? item.getEffectType() : "")
+                    .setCharacterTypeId(item.getCharacterTypeId() != null ? item.getCharacterTypeId() : 0L)
                     .build()
             );
         }
@@ -118,6 +120,8 @@ public class ItemService {
                     .setItemType(ui.getItem().getItemType())
                     .setEffectType(ui.getItem().getEffectType() != null ? ui.getItem().getEffectType() : "")
                     .setQuantity(ui.getQuantity())
+                    .setCharacterTypeId(ui.getItem().getCharacterTypeId() != null ? ui.getItem().getCharacterTypeId() : 0L)
+                    .setImageUrl(ui.getItem().getImageUrl() != null ? ui.getItem().getImageUrl() : "")
                     .build()
             );
         }

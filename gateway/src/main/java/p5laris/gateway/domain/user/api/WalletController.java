@@ -25,4 +25,20 @@ public class WalletController {
     public ApiResponse<WalletDto.Response> getMyWallet(@LoginUserId Long userId) {
         return ApiResponse.success(walletGatewayService.getMyWallet(userId));
     }
+
+    /**
+     * 별조각 거래내역 조회
+     * @param userId
+     * @param cursor
+     * @param size
+     * @return
+     */
+    @GetMapping("/v1/wallets/me/transactions")
+    public ApiResponse<WalletDto.TransactionListResponse> getTransactions(
+            @LoginUserId Long userId,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) String cursor,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "20") int size
+    ) {
+        return ApiResponse.success(walletGatewayService.getTransactions(userId, cursor, size));
+    }
 }
