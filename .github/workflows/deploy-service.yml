@@ -1,0 +1,171 @@
+name: Deploy Service
+
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        description: "배포할 서비스"
+        required: true
+        type: choice
+        options:
+          - gateway
+          - user
+          - character
+          - item
+          - mission
+          - event-log
+          - ai
+          - notification
+      ref:
+        description: "배포할 브랜치 또는 커밋 SHA"
+        required: true
+        default: "feat/FIVE-40"
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: ap-northeast-2
+  AWS_ACCOUNT_ID: "416170614910"
+  ECR_REGISTRY: 416170614910.dkr.ecr.ap-northeast-2.amazonaws.com
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Set service variables
+        id: vars
+        shell: bash
+        run: |
+          SERVICE="${{ inputs.service }}"
+
+          case "$SERVICE" in
+            gateway)
+              echo "module_dir=gateway" >> "$GITHUB_OUTPUT"
+              echo "gradle_task=:gateway:bootJar" >> "$GITHUB_OUTPUT"
+              echo "image_repo=p5laris-gateway" >> "$GITHUB_OUTPUT"
+              ;;
+            user)
+              echo "module_dir=user" >> "$GITHUB_OUTPUT"
+              echo "gradle_task=:user:bootJar" >> "$GITHUB_OUTPUT"
+              echo "image_repo=p5laris-user" >> "$GITHUB_OUTPUT"
+              ;;
+            character)
+              echo "module_dir=character" >> "$GITHUB_OUTPUT"
+              echo "gradle_task=:character:bootJar" >> "$GITHUB_OUTPUT"
+              echo "image_repo=p5laris-character" >> "$GITHUB_OUTPUT"
+              ;;
+            item)
+              echo "module_dir=item" >> "$GITHUB_OUTPUT"
+              echo "gradle_task=:item:bootJar" >> "$GITHUB_OUTPUT"
+              echo "image_repo=p5laris-item" >> "$GITHUB_OUTPUT"
+              ;;
+            mission)
+              echo "module_dir=mission" >> "$GITHUB_OUTPUT"
+              echo "gradle_task=:mission:bootJar" >> "$GITHUB_OUTPUT"
+              echo "image_repo=p5laris-mission" >> "$GITHUB_OUTPUT"
+              ;;
+            event-log)
+              echo "module_dir=event-log" >> "$GITHUB_OUTPUT"
+              echo "gradle_task=:event-log:bootJar" >> "$GITHUB_OUTPUT"
+              echo "image_repo=p5laris-event-log" >> "$GITHUB_OUTPUT"
+              ;;
+            ai)
+              echo "module_dir=ai" >> "$GITHUB_OUTPUT"
+              echo "gradle_task=:ai:bootJar" >> "$GITHUB_OUTPUT"
+              echo "image_repo=p5laris-ai" >> "$GITHUB_OUTPUT"
+              ;;
+            notification)
+              echo "module_dir=notification" >> "$GITHUB_OUTPUT"
+              echo "gradle_task=:notification:bootJar" >> "$GITHUB_OUTPUT"
+              echo "image_repo=p5laris-notification" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "Unknown service: $SERVICE"
+              exit 1
+              ;;
+          esac
+
+      - name: Grant execute permission for Gradle wrapper
+        shell: bash
+        run: chmod +x ./gradlew
+
+      - name: Build selected module
+        shell: bash
+        run: |
+          ./gradlew ${{ steps.vars.outputs.gradle_task }}
+
+      - name: Find boot jar
+        id: jar
+        shell: bash
+        run: |
+          MODULE_DIR="${{ steps.vars.outputs.module_dir }}"
+
+          JAR_FILE="$(find "$MODULE_DIR/build/libs" \
+            -maxdepth 1 \
+            -type f \
+            -name "*.jar" \
+            ! -name "*plain.jar" \
+            | head -n 1)"
+
+          if [ -z "$JAR_FILE" ]; then
+            echo "Boot jar not found in $MODULE_DIR/build/libs"
+            exit 1
+          fi
+
+          echo "jar_file=$JAR_FILE" >> "$GITHUB_OUTPUT"
+          echo "Found boot jar: $JAR_FILE"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push Docker image
+        id: image
+        shell: bash
+        run: |
+          IMAGE_TAG="$(git rev-parse --short HEAD)"
+          IMAGE_URI="${ECR_REGISTRY}/${{ steps.vars.outputs.image_repo }}:${IMAGE_TAG}"
+
+          echo "Image URI: $IMAGE_URI"
+
+          docker build \
+            --build-arg JAR_FILE="${{ steps.jar.outputs.jar_file }}" \
+            -t "$IMAGE_URI" \
+            .
+
+          docker push "$IMAGE_URI"
+
+          echo "image_uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          script_stop: true
+          script: |
+            /opt/p5laris/scripts/deploy-service.sh \
+              "${{ inputs.service }}" \
+              "${{ steps.image.outputs.image_uri }}"
