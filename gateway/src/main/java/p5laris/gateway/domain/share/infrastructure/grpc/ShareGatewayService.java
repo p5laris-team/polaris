@@ -36,7 +36,7 @@ public class ShareGatewayService {
                 CreateShareCardRequest.newBuilder()
                         .setUserId(userId)
                         .setCharacterId(request.characterId())
-                        .setImageUrl(request.imageUrl() != null ? request.imageUrl() : "")
+                        .setHeadline(request.headline() != null ? request.headline() : "")
                         .build()
         );
         return new ShareDto.ShareCardResponse(

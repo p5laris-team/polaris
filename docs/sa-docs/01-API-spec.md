@@ -159,8 +159,8 @@ Base Pattern: /api/{domain}/v1/{resource}
 | GET    | `💾🧩 /api/item/v1/items`                                       | 상점 아이템 목록 조회  | query cursor | items | 🔐 |
 | GET    | `🧩 /api/item/v1/user-items`                                     | 내 보유 아이템 조회   | query cursor | user items | 🔐 |
 | POST   | `⚠️ /api/item/v1/item-purchases`                                | 아이템 구매        | body | purchase result | 🔐 |
-| GET    | `/api/share/v1/presigned-url`                                   | 프론트엔드 S3 직접 업로드용 임시 URL 발급 | query | presigned url | 🔐 |
-| POST   | `/api/share/v1/share-cards`                                     | 공유 카드 생성 (업로드 이미지 URL 포함) | body | share card | 🔐 |
+| GET    | `Deprecated /api/share/v1/presigned-url`                        | 구 프론트엔드 직접 업로드용 임시 URL 발급 | query | presigned url | 🔐 |
+| POST   | `/api/share/v1/share-cards`                                     | 공유 카드 생성 (백엔드 이미지 생성 및 S3 업로드) | body | share card | 🔐 |
 | POST   | `⚠️ /api/share/v1/share-events`                                 | 공유 시도 이벤트 생성 및 보상 처리 | body | share event | 🔐 |
 | GET    | `🧩 /api/share/v1/share-events/today`                            | 오늘 공유 보상 여부 조회 | none | share status | 🔐 |
 | GET    | `💾 /api/share/v1/share-links/{shareId}`                        | 공개 공유 링크 정보 조회 (클릭 로그 내재화) | path | shared card | Public |
@@ -1298,7 +1298,8 @@ AI 생성 결과는 `ai_mission_generations`, 사용 로그는 `ai_usage_logs`�
 ### 9.1 GET `/api/share/v1/presigned-url` 🔐
 
 **설명**  
-프론트엔드에서 렌더링된 캐릭터 이미지를 AWS S3에 직접 업로드하기 위해, 쓰기 권한이 포함된 1회용 임시 URL(Presigned URL)을 발급받는다. 서버 부하 없이 이미지 업로드가 가능하다.
+Deprecated. 과거 프론트엔드가 이미지를 직접 생성해 S3에 업로드하던 플로우에서 사용하던 임시 URL 발급 API다.
+현재 공유 카드 생성은 백엔드가 이미지를 생성하고 S3에 직접 업로드하므로 신규 클라이언트는 이 API를 호출하지 않는다.
 
 **Request (Query String)**
 
@@ -1314,22 +1315,22 @@ AI 생성 결과는 `ai_mission_generations`, 사용 로그는 `ai_usage_logs`�
   "imageUrl": "https://cdn.polaris.app/share-cards/UUID.png"
 }
 ```
-* **`presignedUrl`**: 프론트엔드가 이미지를 쏠(HTTP PUT) URL. 약 10분 후 만료된다.
-* **`imageUrl`**: 업로드 완료 후, 최종적으로 웹상에 노출될 공개 URL. 이후 9.2 API 호출 시 이 값을 사용한다.
+* **`presignedUrl`**: 프론트엔드 직접 업로드용 HTTP PUT URL. 신규 플로우에서는 사용하지 않는다.
+* **`imageUrl`**: 구 플로우에서 업로드 후 저장하던 공개 URL. 신규 플로우에서는 9.2 응답의 `imageUrl`을 사용한다.
 
 ---
 
 ### 9.2 POST `/api/share/v1/share-cards` 🔐
 
 **설명**  
-내 캐릭터 공유 카드를 생성한다. 프론트엔드가 9.1에서 발급받은 `presignedUrl`로 이미지를 업로드한 뒤, 함께 받은 공개 URL(`imageUrl`)을 이 API에 전달한다.
+내 캐릭터 공유 카드를 생성한다. 프론트엔드는 카드에 넣을 한 줄 문구(`headline`)만 전달하고, 백엔드는 캐릭터/오늘 미션 정보를 조회해 공유 카드 이미지를 생성한 뒤 S3에 업로드하고 공개 URL(`imageUrl`)을 저장한다.
 
 **Request**
 
 ```json
 {
   "characterId": 10,
-  "imageUrl": "https://cdn.polaris.app/share-cards/UUID.png"
+  "headline": "오늘도 조금 반짝였어"
 }
 ```
 

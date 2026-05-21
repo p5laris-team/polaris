@@ -10,6 +10,10 @@ import p5laris.character.domain.domain.entity.UserCharacter;
 import p5laris.character.domain.domain.repository.ShareCardRepository;
 import p5laris.character.domain.domain.repository.ShareLogRepository;
 import p5laris.character.domain.domain.repository.UserCharacterRepository;
+import p5laris.character.domain.exception.CharacterErrorCode;
+import p5laris.character.domain.exception.CharacterException;
+import p5laris.character.domain.infrastructure.grpc.MissionShareStatsClient;
+import software.amazon.awssdk.core.exception.SdkException;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -33,39 +37,34 @@ public class ShareService {
     private static final String BASE_SHARE_URL = "https://polaris.app/share/";
     private static final String BASE_SIGNUP_URL = "https://polaris.app/signup?shareId=";
     private static final String PLACEHOLDER_HEADLINE = "Today, I shone a little.";
+    private static final int HEADLINE_MAX_LENGTH = 100;
     private static final ZoneId SHARE_DATE_ZONE = ZoneId.of("Asia/Seoul");
     private static final DateTimeFormatter SHARE_DATE_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE;
 
     private final ShareCardRepository shareCardRepository;
     private final ShareLogRepository shareLogRepository;
     private final S3StorageService s3StorageService;
+    private final ShareCardImageGenerator shareCardImageGenerator;
+    private final MissionShareStatsClient missionShareStatsClient;
     private final UserCharacterRepository userCharacterRepository;
 
     // ---------- §9.1 CreateShareCard ----------
 
-    /**
-     * Creates (or returns existing) share card for a user's character.
-     * API spec 9.1 POST /api/share/v1/share-cards
-     *
-     * Option C: Frontend uploads image and passes imageUrl.
-     * Idempotent: if a card already exists for (userId, characterId), update imageUrl and return it.
-     */
     @Transactional
-    public ShareCardResult createShareCard(Long userId, Long characterId, String uploadedImageUrl) {
-        // Validate character ownership
+    public ShareCardResult createShareCard(Long userId, Long characterId, String headline) {
+        String safeHeadline = normalizeAndValidateHeadline(headline);
+
         UserCharacter character = userCharacterRepository.findById(characterId)
-                .orElseThrow(() -> new p5laris.character.domain.exception.CharacterException(p5laris.character.domain.exception.CharacterErrorCode.CHARACTER_NOT_FOUND));
+                .orElseThrow(() -> new CharacterException(CharacterErrorCode.CHARACTER_NOT_FOUND));
         if (!character.getUserId().equals(userId)) {
-            throw new p5laris.character.domain.exception.CharacterException(p5laris.character.domain.exception.CharacterErrorCode.NOT_CHARACTER_OWNER);
+            throw new CharacterException(CharacterErrorCode.NOT_CHARACTER_OWNER);
         }
 
-        // Idempotent: reuse existing card for same (userId, characterId) and update image if provided
+        String imageUrl = generateAndUploadShareCardImage(userId, character, safeHeadline);
+
         return shareCardRepository.findByUserIdAndCharacterId(userId, characterId)
                 .map(card -> {
-                    if (uploadedImageUrl != null && !uploadedImageUrl.isBlank()
-                            && (card.getImageUrl() == null || !uploadedImageUrl.equals(card.getImageUrl()))) {
-                        card.updateImageUrl(uploadedImageUrl);
-                    }
+                    card.updateGeneratedCard(imageUrl, safeHeadline);
                     return new ShareCardResult(
                         card.getId(),
                         extractShareId(card.getShareUrl()),
@@ -77,19 +76,17 @@ public class ShareService {
                     String shareUrl = BASE_SHARE_URL + shareId;
                     
                     // C 방식: 프론트가 전달한 URL 사용
-                    String finalImageUrl = (uploadedImageUrl != null && !uploadedImageUrl.isEmpty()) 
-                                            ? uploadedImageUrl 
-                                            : "https://cdn.polaris.app/share-cards/placeholder.png";
 
                     ShareCard card = ShareCard.builder()
                             .userId(userId)
                             .characterId(characterId)
-                            .imageUrl(finalImageUrl)
+                            .imageUrl(imageUrl)
+                            .headline(safeHeadline)
                             .shareUrl(shareUrl)
                             .build();
                     shareCardRepository.save(card);
 
-                    return new ShareCardResult(card.getId(), shareId, finalImageUrl, shareUrl);
+                    return new ShareCardResult(card.getId(), shareId, imageUrl, shareUrl);
                 });
     }
 
@@ -102,13 +99,13 @@ public class ShareService {
     @Transactional(readOnly = true)
     public ShareCardDetailResult getShareCard(Long shareCardId, Long userId) {
         ShareCard card = shareCardRepository.findById(shareCardId)
-                .orElseThrow(() -> new p5laris.character.domain.exception.CharacterException(p5laris.character.domain.exception.CharacterErrorCode.SHARE_CARD_NOT_FOUND));
+                .orElseThrow(() -> new CharacterException(CharacterErrorCode.SHARE_CARD_NOT_FOUND));
         if (!card.getUserId().equals(userId)) {
-            throw new p5laris.character.domain.exception.CharacterException(p5laris.character.domain.exception.CharacterErrorCode.NOT_SHARE_CARD_OWNER);
+            throw new CharacterException(CharacterErrorCode.NOT_SHARE_CARD_OWNER);
         }
 
         UserCharacter character = userCharacterRepository.findById(card.getCharacterId())
-                .orElseThrow(() -> new p5laris.character.domain.exception.CharacterException(p5laris.character.domain.exception.CharacterErrorCode.CHARACTER_NOT_FOUND));
+                .orElseThrow(() -> new CharacterException(CharacterErrorCode.CHARACTER_NOT_FOUND));
 
         return new ShareCardDetailResult(
                 card.getId(),
@@ -132,9 +129,9 @@ public class ShareService {
                                              String platform, String shareType,
                                              String idempotencyKey) {
         ShareCard card = shareCardRepository.findById(shareCardId)
-                .orElseThrow(() -> new p5laris.character.domain.exception.CharacterException(p5laris.character.domain.exception.CharacterErrorCode.SHARE_CARD_NOT_FOUND));
+                .orElseThrow(() -> new CharacterException(CharacterErrorCode.SHARE_CARD_NOT_FOUND));
         if (!card.getUserId().equals(userId)) {
-            throw new p5laris.character.domain.exception.CharacterException(p5laris.character.domain.exception.CharacterErrorCode.NOT_SHARE_CARD_OWNER);
+            throw new CharacterException(CharacterErrorCode.NOT_SHARE_CARD_OWNER);
         }
 
         // Check daily reward eligibility (AGENTS.md §20.5)
@@ -191,16 +188,16 @@ public class ShareService {
     public ShareLinkResult getShareLink(String shareId) {
         String shareUrl = BASE_SHARE_URL + shareId;
         ShareCard card = shareCardRepository.findByShareUrl(shareUrl)
-                .orElseThrow(() -> new p5laris.character.domain.exception.CharacterException(p5laris.character.domain.exception.CharacterErrorCode.SHARE_LINK_NOT_FOUND));
+                .orElseThrow(() -> new CharacterException(CharacterErrorCode.SHARE_LINK_NOT_FOUND));
 
         UserCharacter character = userCharacterRepository.findById(card.getCharacterId())
-                .orElseThrow(() -> new p5laris.character.domain.exception.CharacterException(p5laris.character.domain.exception.CharacterErrorCode.CHARACTER_NOT_FOUND));
+                .orElseThrow(() -> new CharacterException(CharacterErrorCode.CHARACTER_NOT_FOUND));
 
         return new ShareLinkResult(
                 shareId,
                 character.getName(),
                 card.getImageUrl(),
-                PLACEHOLDER_HEADLINE,
+                card.getHeadline() != null ? card.getHeadline() : PLACEHOLDER_HEADLINE,
                 BASE_SIGNUP_URL + shareId);
     }
 
@@ -228,6 +225,35 @@ public class ShareService {
     }
 
     // ---------- Internal helper ----------
+
+    private String normalizeAndValidateHeadline(String headline) {
+        String normalized = headline == null ? PLACEHOLDER_HEADLINE : headline.trim();
+        if (normalized.isBlank()) {
+            normalized = PLACEHOLDER_HEADLINE;
+        }
+        if (normalized.length() > HEADLINE_MAX_LENGTH) {
+            throw new CharacterException(CharacterErrorCode.INVALID_SHARE_HEADLINE);
+        }
+        return normalized;
+    }
+
+    private String generateAndUploadShareCardImage(Long userId, UserCharacter character, String headline) {
+        var missionStats = missionShareStatsClient.getTodayStatsOrDefault(userId);
+        byte[] imageBytes = shareCardImageGenerator.generate(new ShareCardImageGenerator.ShareCardImageCommand(
+                character.getName(),
+                character.getCharacterType().getCode(),
+                headline,
+                missionStats.completedCount(),
+                missionStats.earnedStarPiece()
+        ));
+
+        try {
+            return s3StorageService.uploadShareCardImage(imageBytes, "image/png").imageUrl();
+        } catch (SdkException | IllegalStateException e) {
+            log.warn("Failed to upload generated share card image. userId={}, characterId={}", userId, character.getId(), e);
+            throw new CharacterException(CharacterErrorCode.SHARE_CARD_IMAGE_UPLOAD_FAILED);
+        }
+    }
 
     private String extractShareId(String shareUrl) {
         int lastSlash = shareUrl.lastIndexOf('/');
