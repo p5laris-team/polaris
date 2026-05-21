@@ -43,6 +43,8 @@ public class ItemController {
                                 item.getName(),
                                 item.getDescription(),
                                 item.getItemType(),
+                                item.getCharacterTypeId(),
+                                item.getEffectType(),
                                 item.getPrice(),
                                 item.getImageUrl(),
                                 item.getOwned()
@@ -83,8 +85,10 @@ public class ItemController {
                                 ui.getItemId(),
                                 ui.getName(),
                                 ui.getItemType(),
+                                ui.getCharacterTypeId(),
                                 ui.getEffectType(),
-                                ui.getQuantity()
+                                ui.getQuantity(),
+                                ui.getImageUrl()
                         ))
                         .collect(Collectors.toList()),
                 new ItemDto.PageInfo(
@@ -108,8 +112,11 @@ public class ItemController {
             @LoginUserId Long userId,
             @RequestBody ItemDto.PurchaseRequest request
     ) {
-        // 중복 방지를 위한 구매 멱등키 생성
-        String idempotencyKey = "purchase-" + userId + "-" + request.itemId() + "-" + System.currentTimeMillis();
+        // 클라이언트에서 멱등키를 제공하지 않은 경우에만 시간 기반 멱등키 생성
+        String idempotencyKey = request.idempotencyKey();
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            idempotencyKey = "purchase-" + userId + "-" + request.itemId() + "-" + System.currentTimeMillis();
+        }
 
         PurchaseItemResponse protoResponse =
                 itemGatewayService.purchaseItem(userId, request.itemId(), request.quantity(), idempotencyKey);

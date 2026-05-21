@@ -37,6 +37,16 @@ public class MissionController {
     }
 
     /**
+     * 로그인한 사용자의 오늘 미션 stack 전체와 진행 현황을 조회한다.
+     */
+    @GetMapping("/v1/missions/today")
+    public ApiResponse<MissionDto.TodayMissionsResponse> getTodayMissions(
+            @LoginUserId Long userId
+    ) {
+        return ApiResponse.success(missionGatewayService.getTodayMissions(userId));
+    }
+
+    /**
      * 현재 진행 중인 미션이 없을 때 다음 미션 1개를 생성해 제안한다.
      */
     @PostMapping("/v1/missions/today-focus/next")

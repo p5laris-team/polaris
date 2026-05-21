@@ -9,6 +9,7 @@ option java_outer_classname = "MissionProto";
 service MissionService {
   rpc PingPong(PingPongRequest) returns (PingPongResponse);
   rpc GetCurrentMission(GetCurrentMissionRequest) returns (GetCurrentMissionResponse);
+  rpc GetTodayMissions(GetTodayMissionsRequest) returns (GetTodayMissionsResponse);
   rpc CreateNextMission(CreateNextMissionRequest) returns (CreateNextMissionResponse);
   rpc RejectMission(RejectMissionRequest) returns (RejectMissionResponse);
   rpc StartCompletionSession(StartCompletionSessionRequest) returns (StartCompletionSessionResponse);
@@ -38,6 +39,21 @@ message GetCurrentMissionRequest {
 
 message GetCurrentMissionResponse {
   Mission mission = 1;
+}
+
+message GetTodayMissionsRequest {
+  int64 user_id = 1;
+}
+
+message GetTodayMissionsResponse {
+  string mission_date = 1;
+  int32 max_daily_offers = 2;
+  int32 offered_count = 3;
+  int32 completed_count = 4;
+  int32 rejected_count = 5;
+  int32 remaining_offer_count = 6;
+  optional int64 current_mission_id = 7;
+  repeated TodayMission missions = 8;
 }
 
 message CreateNextMissionRequest {
@@ -103,6 +119,20 @@ message Mission {
   MissionDifficulty difficulty = 8;
   int32 reward_star_piece = 9;
   MissionStatus status = 10;
+}
+
+message TodayMission {
+  int64 id = 1;
+  int32 stack_order = 2;
+  string title = 3;
+  MissionCategory category = 4;
+  MissionDifficulty difficulty = 5;
+  int32 reward_star_piece = 6;
+  MissionStatus status = 7;
+  string character_message = 8;
+  string created_at = 9;
+  string completed_at = 10;
+  string rejected_at = 11;
 }
 
 message MissionSummary {

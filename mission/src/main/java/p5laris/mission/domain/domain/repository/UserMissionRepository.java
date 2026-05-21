@@ -34,6 +34,10 @@ public interface UserMissionRepository extends JpaRepository<UserMission, Long> 
     // 하루 최대 제안 수 15개를 계산하기 위해 오늘 생성된 전체 미션 수를 센다.
     long countByUserIdAndMissionDate(Long userId, LocalDate missionDate);
 
+    // 오늘 미션 히스토리 화면에 보여줄 stack 전체를 순서대로 조회한다.
+    // 하루 최대 15개라 별도 pagination 없이 stackOrder 오름차순으로 반환한다.
+    List<UserMission> findByUserIdAndMissionDateOrderByStackOrderAsc(Long userId, LocalDate missionDate);
+
     // missionId만으로 찾지 않고 userId를 함께 확인해 다른 유저의 미션 처리를 막는다.
     Optional<UserMission> findByIdAndUserId(Long id, Long userId);
 

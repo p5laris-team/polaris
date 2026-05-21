@@ -4,6 +4,8 @@ import com.p5laris.proto.mission.v1.CreateNextMissionRequest;
 import com.p5laris.proto.mission.v1.CreateNextMissionResponse;
 import com.p5laris.proto.mission.v1.GetCurrentMissionRequest;
 import com.p5laris.proto.mission.v1.GetCurrentMissionResponse;
+import com.p5laris.proto.mission.v1.GetTodayMissionsRequest;
+import com.p5laris.proto.mission.v1.GetTodayMissionsResponse;
 import com.p5laris.proto.mission.v1.Mission;
 import com.p5laris.proto.mission.v1.MissionServiceGrpc;
 import com.p5laris.proto.mission.v1.RejectMissionRequest;
@@ -12,6 +14,7 @@ import com.p5laris.proto.mission.v1.StartCompletionSessionRequest;
 import com.p5laris.proto.mission.v1.StartCompletionSessionResponse;
 import com.p5laris.proto.mission.v1.SubmitCompletionAnswerRequest;
 import com.p5laris.proto.mission.v1.SubmitCompletionAnswerResponse;
+import com.p5laris.proto.mission.v1.TodayMission;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import net.devh.boot.grpc.client.inject.GrpcClient;
@@ -49,6 +52,34 @@ public class MissionGatewayService {
             );
 
             return toMissionResponse(response.getMission());
+        } catch (StatusRuntimeException e) {
+            throw toGatewayException(e);
+        }
+    }
+
+    /**
+     * 오늘 미션 히스토리 화면에 필요한 stack 목록과 집계 정보를 조회한다.
+     */
+    public MissionDto.TodayMissionsResponse getTodayMissions(Long userId) {
+        try {
+            GetTodayMissionsResponse response = missionStub.getTodayMissions(
+                    GetTodayMissionsRequest.newBuilder()
+                            .setUserId(userId)
+                            .build()
+            );
+
+            return new MissionDto.TodayMissionsResponse(
+                    response.getMissionDate(),
+                    response.getMaxDailyOffers(),
+                    response.getOfferedCount(),
+                    response.getCompletedCount(),
+                    response.getRejectedCount(),
+                    response.getRemainingOfferCount(),
+                    response.hasCurrentMissionId() ? response.getCurrentMissionId() : null,
+                    response.getMissionsList().stream()
+                            .map(this::toTodayMissionItem)
+                            .toList()
+            );
         } catch (StatusRuntimeException e) {
             throw toGatewayException(e);
         }
@@ -189,6 +220,22 @@ public class MissionGatewayService {
         );
     }
 
+    private MissionDto.TodayMissionItem toTodayMissionItem(TodayMission mission) {
+        return new MissionDto.TodayMissionItem(
+                mission.getId(),
+                mission.getStackOrder(),
+                mission.getTitle(),
+                toRestMissionCategory(mission.getCategory().name()),
+                toRestMissionDifficulty(mission.getDifficulty().name()),
+                mission.getRewardStarPiece(),
+                toRestMissionStatus(mission.getStatus().name()),
+                mission.getCharacterMessage(),
+                emptyToNull(mission.getCreatedAt()),
+                emptyToNull(mission.getCompletedAt()),
+                emptyToNull(mission.getRejectedAt())
+        );
+    }
+
     private long toGrpcLastMissionId(Long lastMissionId) {
         if (lastMissionId == null) {
             return EMPTY_LAST_MISSION_ID;
@@ -246,6 +293,14 @@ public class MissionGatewayService {
         }
 
         return value.substring(prefix.length());
+    }
+
+    private String emptyToNull(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+
+        return value;
     }
 
     /**

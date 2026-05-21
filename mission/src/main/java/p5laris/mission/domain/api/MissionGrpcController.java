@@ -4,6 +4,8 @@ import com.p5laris.proto.mission.v1.CreateNextMissionRequest;
 import com.p5laris.proto.mission.v1.CreateNextMissionResponse;
 import com.p5laris.proto.mission.v1.GetCurrentMissionRequest;
 import com.p5laris.proto.mission.v1.GetCurrentMissionResponse;
+import com.p5laris.proto.mission.v1.GetTodayMissionsRequest;
+import com.p5laris.proto.mission.v1.GetTodayMissionsResponse;
 import com.p5laris.proto.mission.v1.HealthStatus;
 import com.p5laris.proto.mission.v1.MissionServiceGrpc;
 import com.p5laris.proto.mission.v1.PingPongRequest;
@@ -49,6 +51,27 @@ public class MissionGrpcController extends MissionServiceGrpc.MissionServiceImpl
     ) {
         try {
             GetCurrentMissionResponse response = missionService.getCurrentMission(
+                    request.getUserId()
+            );
+
+            responseObserver.onNext(response);
+            responseObserver.onCompleted();
+        } catch (MissionException e) {
+            responseObserver.onError(toStatus(e).withDescription(e.getMessage()).asRuntimeException());
+        } catch (Exception e) {
+            responseObserver.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+        }
+    }
+
+    // 오늘 미션 히스토리 조회 gRPC 엔드포인트다.
+    // 오늘 stack 전체를 userId 기준으로 조회하고, 현재 진행 중 미션 id도 함께 내려준다.
+    @Override
+    public void getTodayMissions(
+            GetTodayMissionsRequest request,
+            StreamObserver<GetTodayMissionsResponse> responseObserver
+    ) {
+        try {
+            GetTodayMissionsResponse response = missionService.getTodayMissions(
                     request.getUserId()
             );
 

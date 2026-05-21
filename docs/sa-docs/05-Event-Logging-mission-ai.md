@@ -172,9 +172,13 @@ idempotencyKey 원문
 | gRPC/API | 이벤트 타입 | 수집 목적 | 발생 시점 |
 | --- | --- | --- | --- |
 | `GenerateMissionTexts` | `AI_FALLBACK_USED` | fallback 비율, 문구 생성 품질, 정책 위반 유형 분석 | fallback 결과와 AI 사용 로그 저장 커밋 후 |
-| `GenerateMissionTexts` | `AI_MISSION_GENERATION_FAILED` | provider 장애율, timeout, invalid output 분석 | AI 생성 실패 로그 저장 커밋 후 |
+| `GenerateMissionTexts` | `AI_MISSION_GENERATION_FAILED` | fallback도 불가능한 실패 분석 | 후속 ADR에서 실패 저장 정책 결정 후 |
 
-현재 MVP 구현에서는 외부 provider 실패가 사용자 흐름을 중단시키지 않도록 fallback을 우선 사용한다. 따라서 우선 구현 대상은 `AI_FALLBACK_USED`이며, `AI_MISSION_GENERATION_FAILED`는 provider 연동과 실패 저장 정책이 확정된 뒤 연결한다.
+현재 MVP 구현에서는 외부 provider 실패, rate limit 초과, Redis rate limit 저장소 장애가 발생해도 사용자 흐름을 중단하지 않고 fallback 문구를 사용한다. 따라서 운영 모니터링의 1차 기준은 `AI_FALLBACK_USED` 이벤트와 `errorType`이다.
+
+예를 들어 Redis rate limit 저장소 장애로 외부 provider 호출을 차단한 경우에는 문구 생성 결과를 fallback으로 저장하고, `AI_FALLBACK_USED`의 `errorType=RATE_LIMIT_UNAVAILABLE`, `usageStatus=RATE_LIMITED`로 추적한다. provider timeout이나 invalid output도 사용자에게 실패로 노출하기보다 fallback으로 흡수하고, 동일한 이벤트에서 원인을 구분한다.
+
+`AI_MISSION_GENERATION_FAILED`는 fallback도 불가능한 실패를 별도로 저장하기로 결정했을 때 연결한다. 운영 알림 임계치, fail-open/fail-closed 정책, Redis 장애 시 알림 경로는 별도 ADR에서 결정한다.
 
 ---
 
@@ -232,6 +236,8 @@ idempotencyKey 원문
 
 AI 이벤트 로그에는 raw prompt와 raw response를 넣지 않는다. 상세 입력/출력은 `ai_mission_generations.request_context_json`, `ai_mission_generations.response_json`에서 추적하고, event-log에는 분석에 필요한 요약값만 저장한다.
 
+`AI_FALLBACK_USED` 전송 실패는 AI 문구 생성 응답에 영향을 주지 않는다. event-log 모듈 장애는 애플리케이션 로그에 warn으로 남기고, 사용자는 mission template fallback 문구를 그대로 받는다.
+
 ---
 
 ## 6. 이벤트 타입 목록
@@ -242,7 +248,7 @@ MISSION_REJECTED
 MISSION_COMPLETION_SESSION_STARTED
 MISSION_COMPLETED
 AI_FALLBACK_USED
-AI_MISSION_GENERATION_FAILED
+AI_MISSION_GENERATION_FAILED (reserved)
 ```
 
 ---
@@ -259,4 +265,13 @@ EventLogServiceGrpc.EventLogServiceBlockingStub.recordEventLog(...)
 ```
 
 `properties` 객체는 gRPC 요청의 `propertiesJson` 문자열로 직렬화해 전달한다. 서버 내부 이벤트에서는 `contextJson`을 생략할 수 있다.
+
+AI 이벤트 로그 테스트 기준은 다음과 같다.
+
+```text
+fallback 결과 저장 시 AI_FALLBACK_USED 이벤트를 발행한다.
+성공 결과 저장 시 AI_FALLBACK_USED 이벤트를 발행하지 않는다.
+event-log gRPC 전송 실패는 AI 문구 생성 흐름으로 전파하지 않는다.
+propertiesJson에는 raw prompt, raw response, requestContextJson, responseJson을 넣지 않는다.
+```
 

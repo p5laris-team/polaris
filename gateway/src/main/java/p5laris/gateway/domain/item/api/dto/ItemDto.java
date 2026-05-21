@@ -9,6 +9,8 @@ public class ItemDto {
         String name,
         String description,
         String itemType,
+        Long characterTypeId,
+        String effectType,
         int price,
         String imageUrl,
         boolean owned
@@ -19,8 +21,10 @@ public class ItemDto {
         Long itemId,
         String name,
         String itemType,
+        Long characterTypeId,
         String effectType,
-        int quantity
+        int quantity,
+        String imageUrl
     ) {}
 
     public record PageInfo(
@@ -41,7 +45,8 @@ public class ItemDto {
 
     public record PurchaseRequest(
         Long itemId,
-        int quantity
+        int quantity,
+        String idempotencyKey
     ) {}
 
     public record PurchaseResponse(
