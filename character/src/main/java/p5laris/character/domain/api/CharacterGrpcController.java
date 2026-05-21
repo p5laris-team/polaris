@@ -244,7 +244,7 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
         var result = shareService.createShareCard(
                 request.getUserId(), 
                 request.getCharacterId(), 
-                request.getImageUrl()
+                request.getHeadline()
         );
 
         responseObserver.onNext(CreateShareCardResponse.newBuilder()

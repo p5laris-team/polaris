@@ -178,7 +178,7 @@ message EquipSkinResponse {
 message CreateShareCardRequest {
   int64 user_id = 1;
   int64 character_id = 2;
-  string image_url = 3; // Frontend uploads image and provides URL
+  string headline = 3; // User-provided message rendered into the card image
 }
 
 message CreateShareCardResponse {
@@ -254,7 +254,7 @@ message GetTodayShareEventStatusResponse {
   string last_shared_at = 2; // ISO-8601 instant; empty when never shared
 }
 
-// GetSharePresignedUrl: issues presigned URL for R2 upload
+// GetSharePresignedUrl: issues presigned URL for S3 upload
 message GetSharePresignedUrlRequest {
   int64 user_id = 1;
   string extension = 2; // e.g. "png", "jpg"
