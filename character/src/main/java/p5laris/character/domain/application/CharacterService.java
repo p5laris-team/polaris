@@ -382,12 +382,17 @@ public class CharacterService {
         //        throw new IllegalArgumentException("User does not own item: " + itemId);
         //    }
 
-        // 3. Equip the skin
-        character.equipSkin(itemId);
+        Long equippedSkinId = itemId;
+        if (itemId == null || itemId <= 0) {
+            character.unequipSkin();
+            equippedSkinId = null;
+        } else {
+            character.equipSkin(itemId);
+        }
 
         return p5laris.character.domain.application.dto.EquipSkinResponse.builder()
                 .characterId(characterId)
-                .equippedSkinId(itemId)
+                .equippedSkinId(equippedSkinId)
                 .updatedAt(character.getUpdatedAt())
                 .build();
     }

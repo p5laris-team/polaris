@@ -11,7 +11,7 @@ public class ShareDto {
     // §9.1 CreateShareCard
     public record CreateShareCardRequest(
             Long characterId,
-            String imageUrl // C 방식: 프론트에서 먼저 업로드 후 전달받은 URL
+            String headline
     ) {}
 
     public record ShareCardResponse(

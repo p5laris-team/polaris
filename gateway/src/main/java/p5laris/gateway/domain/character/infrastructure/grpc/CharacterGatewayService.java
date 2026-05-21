@@ -1,19 +1,24 @@
 package p5laris.gateway.domain.character.infrastructure.grpc;
 
 import com.p5laris.proto.character.v1.*;
+import com.p5laris.proto.item.v1.UserItem;
+import lombok.RequiredArgsConstructor;
 import net.devh.boot.grpc.client.inject.GrpcClient;
 import org.springframework.stereotype.Service;
 import p5laris.gateway.domain.character.api.dto.CharacterTypesResponse;
+import p5laris.gateway.domain.item.infrastructure.grpc.ItemGatewayService;
 
 import java.util.List;
 
 @Service
+@RequiredArgsConstructor
 public class CharacterGatewayService {
 
     @GrpcClient("character")
     private CharacterServiceGrpc.CharacterServiceBlockingStub characterStub;
 
-    // 기존 스캐폴딩 (핑퐁)
+    private final ItemGatewayService itemGatewayService;
+
     public String getCharacter(String value) {
         PingPongResponse response = characterStub.pingPong(
                 PingPongRequest.newBuilder()
@@ -23,9 +28,6 @@ public class CharacterGatewayService {
         return response.getMessage();
     }
 
-    /**
-     * Get character types (API spec 4.1).
-     */
     public CharacterTypesResponse getCharacterTypes() {
         GetCharacterTypesResponse response = characterStub.getCharacterTypes(
                 GetCharacterTypesRequest.newBuilder().build()
@@ -48,9 +50,6 @@ public class CharacterGatewayService {
                 .build();
     }
 
-    /**
-     * Get character assets (API spec 4.2).
-     */
     public p5laris.gateway.domain.character.api.dto.CharacterAssetsResponse getCharacterAssets(Long characterTypeId) {
         GetCharacterAssetsResponse response = characterStub.getCharacterAssets(
                 GetCharacterAssetsRequest.newBuilder()
@@ -72,14 +71,10 @@ public class CharacterGatewayService {
                 .build();
     }
 
-    /**
-     * Create a user character (API spec 4.3).
-     */
     public p5laris.gateway.domain.character.api.dto.UserCharacterResponse createCharacter(
             Long userId, p5laris.gateway.domain.character.api.dto.CreateCharacterRequest request) {
-        
-        com.p5laris.proto.character.v1.CreateCharacterResponse response = characterStub.createCharacter(
-                com.p5laris.proto.character.v1.CreateCharacterRequest.newBuilder()
+        CreateCharacterResponse response = characterStub.createCharacter(
+                CreateCharacterRequest.newBuilder()
                         .setUserId(userId)
                         .setCharacterTypeId(request.characterTypeId())
                         .setName(request.name())
@@ -100,41 +95,18 @@ public class CharacterGatewayService {
                 .build();
     }
 
-    // TODO [Item Domain Integration]: ItemGatewayService 주입 필요 (현재 주석 처리)
-    // private final p5laris.gateway.domain.item.infrastructure.grpc.ItemGatewayService itemGatewayService;
-
-    // public CharacterGatewayService(ItemGatewayService itemGatewayService) {
-    //     this.itemGatewayService = itemGatewayService;
-    // }
-    // 위 주입은 Lombok의 @RequiredArgsConstructor를 사용하려면 필드에 선언하면 됩니다.
-
-    /**
-     * Get my character (API spec 4.4).
-     */
     public p5laris.gateway.domain.character.api.dto.MyCharacterResponse getMyCharacter(Long userId) {
-        com.p5laris.proto.character.v1.GetMyCharacterResponse response = characterStub.getMyCharacter(
-                com.p5laris.proto.character.v1.GetMyCharacterRequest.newBuilder()
+        GetMyCharacterResponse response = characterStub.getMyCharacter(
+                GetMyCharacterRequest.newBuilder()
                         .setUserId(userId)
                         .build()
         );
 
         p5laris.gateway.domain.character.api.dto.MyCharacterResponse.EquippedSkin skin = null;
         if (response.getEquippedSkinId() > 0) {
-            
-            // TODO [Item Domain Integration]: 아이템 모듈에서 스킨 이름 조회. 
-            // 구현 후 아래 주석을 해제하고, 하단의 임시(Mock) 코드를 삭제할 것.
-            /*
-            var itemResponse = itemGatewayService.getItem(response.getEquippedSkinId());
-            skin = p5laris.gateway.domain.character.api.dto.MyCharacterResponse.EquippedSkin.builder()
-                    .itemId(itemResponse.getId())
-                    .name(itemResponse.getName())
-                    .build();
-            */
-
-            // 임시(Mock) 코드: Item 도메인 연동 전까지 컴파일 에러 방지용
             skin = p5laris.gateway.domain.character.api.dto.MyCharacterResponse.EquippedSkin.builder()
                     .itemId(response.getEquippedSkinId())
-                    .name("스킨 " + response.getEquippedSkinId())
+                    .name(resolveSkinName(userId, response.getEquippedSkinId()))
                     .build();
         }
 
@@ -147,14 +119,10 @@ public class CharacterGatewayService {
                 .build();
     }
 
-    /**
-     * Update character name (API spec 4.5).
-     */
     public p5laris.gateway.domain.character.api.dto.UpdateCharacterNameResponse updateCharacterName(
             Long characterId, Long userId, p5laris.gateway.domain.character.api.dto.UpdateCharacterNameRequest request) {
-        
-        com.p5laris.proto.character.v1.UpdateCharacterNameResponse response = characterStub.updateCharacterName(
-                com.p5laris.proto.character.v1.UpdateCharacterNameRequest.newBuilder()
+        UpdateCharacterNameResponse response = characterStub.updateCharacterName(
+                UpdateCharacterNameRequest.newBuilder()
                         .setCharacterId(characterId)
                         .setUserId(userId)
                         .setName(request.name())
@@ -168,12 +136,9 @@ public class CharacterGatewayService {
                 .build();
     }
 
-    /**
-     * Get character status (API spec 4.6).
-     */
     public p5laris.gateway.domain.character.api.dto.CharacterStatusResponse getCharacterStatus(Long characterId, Long userId) {
-        com.p5laris.proto.character.v1.GetCharacterStatusResponse response = characterStub.getCharacterStatus(
-                com.p5laris.proto.character.v1.GetCharacterStatusRequest.newBuilder()
+        GetCharacterStatusResponse response = characterStub.getCharacterStatus(
+                GetCharacterStatusRequest.newBuilder()
                         .setCharacterId(characterId)
                         .setUserId(userId)
                         .build()
@@ -182,44 +147,26 @@ public class CharacterGatewayService {
         return p5laris.gateway.domain.character.api.dto.CharacterStatusResponse.builder()
                 .characterId(response.getCharacterId())
                 .states(p5laris.gateway.domain.character.api.dto.CharacterStatusResponse.States.builder()
-                        .hunger(p5laris.gateway.domain.character.api.dto.CharacterStatusResponse.StateDetail.builder()
-                                .value(response.getHunger().getValue())
-                                .label(response.getHunger().getLabel())
-                                .grade(response.getHunger().getGrade())
-                                .build())
-                        .energy(p5laris.gateway.domain.character.api.dto.CharacterStatusResponse.StateDetail.builder()
-                                .value(response.getEnergy().getValue())
-                                .label(response.getEnergy().getLabel())
-                                .grade(response.getEnergy().getGrade())
-                                .build())
-                        .affection(p5laris.gateway.domain.character.api.dto.CharacterStatusResponse.StateDetail.builder()
-                                .value(response.getAffection().getValue())
-                                .label(response.getAffection().getLabel())
-                                .grade(response.getAffection().getGrade())
-                                .build())
+                        .hunger(toStateDetail(response.getHunger()))
+                        .energy(toStateDetail(response.getEnergy()))
+                        .affection(toStateDetail(response.getAffection()))
                         .build())
                 .build();
     }
 
-    /**
-     * Perform care action (API spec 4.7).
-     */
     public p5laris.gateway.domain.character.api.dto.CareActionResponse performCareAction(
             Long characterId, Long userId, String idempotencyKey,
             p5laris.gateway.domain.character.api.dto.CareActionRequest request) {
+        PerformCareActionResponse response = characterStub.performCareAction(
+                PerformCareActionRequest.newBuilder()
+                        .setCharacterId(characterId)
+                        .setUserId(userId)
+                        .setActionType(request.actionType())
+                        .setItemId(request.itemId() != null ? request.itemId() : 0L)
+                        .setIdempotencyKey(idempotencyKey != null ? idempotencyKey : "")
+                        .build()
+        );
 
-        com.p5laris.proto.character.v1.PerformCareActionResponse response =
-                characterStub.performCareAction(
-                        com.p5laris.proto.character.v1.PerformCareActionRequest.newBuilder()
-                                .setCharacterId(characterId)
-                                .setUserId(userId)
-                                .setActionType(request.actionType())
-                                .setItemId(request.itemId() != null ? request.itemId() : 0L)
-                                .setIdempotencyKey(idempotencyKey != null ? idempotencyKey : "")
-                                .build()
-                );
-
-        // itemId=0 means no item was consumed
         Long consumedItemId = response.getConsumedItemId() > 0 ? response.getConsumedItemId() : null;
 
         return p5laris.gateway.domain.character.api.dto.CareActionResponse.builder()
@@ -244,38 +191,55 @@ public class CharacterGatewayService {
                 .build();
     }
 
-    /**
-     * Equip skin on character (API spec 4.8).
-     */
     public p5laris.gateway.domain.character.api.dto.EquipSkinResponse equipSkin(
-            Long characterId, Long userId,
+            Long characterId,
+            Long userId,
             p5laris.gateway.domain.character.api.dto.EquipSkinRequest request) {
+        EquipSkinRequest.Builder grpcRequest = EquipSkinRequest.newBuilder()
+                .setCharacterId(characterId)
+                .setUserId(userId);
 
-        com.p5laris.proto.character.v1.EquipSkinResponse response =
-                characterStub.equipSkin(
-                        com.p5laris.proto.character.v1.EquipSkinRequest.newBuilder()
-                                .setCharacterId(characterId)
-                                .setUserId(userId)
-                                .setItemId(request.itemId())
-                                .build()
-                );
+        if (request.itemId() != null) {
+            grpcRequest.setItemId(request.itemId());
+        }
 
-        // TODO [Item Domain Integration]: fetch skin name from item service using equippedSkinId.
-        // Example (uncomment after item domain is ready):
-        // var itemResponse = itemGatewayService.getItem(response.getEquippedSkinId());
-        // String skinName = itemResponse.getName();
-        //
-        // Temporary Mock: use placeholder name until item domain is integrated.
-        String skinName = "Skin " + response.getEquippedSkinId();
+        EquipSkinResponse response = characterStub.equipSkin(grpcRequest.build());
+
+        p5laris.gateway.domain.character.api.dto.EquipSkinResponse.EquippedSkin equippedSkin = null;
+        if (response.getEquippedSkinId() > 0) {
+            equippedSkin = p5laris.gateway.domain.character.api.dto.EquipSkinResponse.EquippedSkin.builder()
+                    .itemId(response.getEquippedSkinId())
+                    .name(resolveSkinName(userId, response.getEquippedSkinId()))
+                    .build();
+        }
 
         return p5laris.gateway.domain.character.api.dto.EquipSkinResponse.builder()
                 .characterId(response.getCharacterId())
-                .equippedSkin(p5laris.gateway.domain.character.api.dto.EquipSkinResponse.EquippedSkin.builder()
-                        .itemId(response.getEquippedSkinId())
-                        .name(skinName)
-                        .build())
+                .equippedSkin(equippedSkin)
                 .updatedAt(java.time.Instant.parse(response.getUpdatedAt()))
                 .build();
     }
-}
 
+    private p5laris.gateway.domain.character.api.dto.CharacterStatusResponse.StateDetail toStateDetail(
+            com.p5laris.proto.character.v1.CharacterStateDetail state) {
+        return p5laris.gateway.domain.character.api.dto.CharacterStatusResponse.StateDetail.builder()
+                .value(state.getValue())
+                .label(state.getLabel())
+                .grade(state.getGrade())
+                .build();
+    }
+
+    private String resolveSkinName(Long userId, Long itemId) {
+        try {
+            return itemGatewayService.getUserItems(userId, "SKIN", "", 100)
+                    .getItemsList()
+                    .stream()
+                    .filter(item -> item.getItemId() == itemId)
+                    .findFirst()
+                    .map(UserItem::getName)
+                    .orElse("Skin " + itemId);
+        } catch (Exception e) {
+            return "Skin " + itemId;
+        }
+    }
+}
