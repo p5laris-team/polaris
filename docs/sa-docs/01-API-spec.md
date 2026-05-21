@@ -110,14 +110,13 @@ Base Pattern: /api/{domain}/v1/{resource}
 
 ### 0.6 프론트-백엔드 연동 갭
 
-아래 표는 2026-05-21 기준 `polaris` 백엔드 코드와 `polaris-frontend` 실제 API 호출을 대조한 결과다. 이번 작업에서는 백엔드 코드를 수정하지 않고, 프론트 연동 전에 필요한 백엔드 작업만 정리한다.
+아래 표는 2026-05-21 기준 `polaris` 백엔드 코드와 `polaris-frontend` 실제 API 호출을 대조했을 때 아직 정리가 필요한 항목이다. 이미 백엔드 구현과 명세가 정렬된 API는 이 표에서 제외한다.
 
 | 구분 | 프론트 필요 API/필드 | 현재 백엔드 코드 확인 | 프론트 영향 / 요청 |
 |---|---|---|---|
 | 홈 통합 조회 | `GET /api/home/v1/home` | gateway에 home 컨트롤러 없음 | 홈, 상단 요약, 현재 미션, 알림 개수 표시를 위해 백엔드 통합 조회 API 추가가 필요하다. 대안으로 프론트가 user/wallet/character/mission/notification을 조합 호출하도록 별도 결정해야 한다. |
 | 현재 캐릭터 | `GET /api/character/v1/characters/me` 응답의 `states`, `currentAssetUrl` | 현재 응답은 `id`, `name`, `characterTypeCode`, `active`, `equippedSkin` 중심 | 캐릭터 상세/보관함이 캐릭터 상태와 현재 에셋을 바로 쓰려면 응답 보강이 필요하다. 아니면 프론트가 status/assets API를 추가 호출해야 한다. |
 | 스킨 해제 | `PUT /api/character/v1/characters/{characterId}/equipped-skin` body `itemId: null` | proto `item_id`는 `int64`, gateway에서 null 처리 없음 | 보관함의 "해제" 버튼을 실제 API와 연결하려면 null 해제 정책 또는 별도 해제 endpoint가 필요하다. |
-| 오늘 미션 스택 | `GET /api/mission/v1/missions/today` | gateway/proto에 today 조회 없음 | 미션 기록, 공유 카드의 오늘 완료/제안 목록을 실제 데이터로 표시하려면 추가가 필요하다. |
 | 지갑 거래내역 | `GET /api/wallet/v1/wallets/me/transactions` | `star_piece_transactions` 테이블은 있으나 REST/gRPC 조회 없음 | 별조각 화면의 거래내역 리스트에 필요하다. cursor 기반 최신순 조회가 필요하다. |
 | 상점 아이템 필드 | `GET /api/item/v1/items` 응답의 `characterTypeId`, `effectType` | entity에는 있으나 item proto/gateway 응답에는 없음 | 캐릭터별 스킨 필터와 소모품 라벨 표시를 안정적으로 처리하려면 응답 보강이 필요하다. |
 | 보유 아이템 필드 | `GET /api/item/v1/user-items` 응답의 `characterTypeId`, `imageUrl` | 현재 응답은 `userItemId`, `itemId`, `name`, `itemType`, `effectType`, `quantity` | 보관함의 캐릭터별 스킨 필터와 이미지 렌더링에 필요하다. |
@@ -150,7 +149,7 @@ Base Pattern: /api/{domain}/v1/{resource}
 | GET    | `/api/onboarding/v1/profiles/me`                                | 내 온보딩 프로필 조회  | none | profile | 🔐 |
 | PUT    | `/api/onboarding/v1/profiles/me`                                | 내 온보딩 프로필 저장/완료 | body | profile | 🔐 |
 | GET    | `/api/mission/v1/missions/current`                              | 현재 제안 미션 조회   | query | mission | 🔐 |
-| GET    | `🧩 /api/mission/v1/missions/today`                              | 오늘 미션 스택 조회   | none | today missions | 🔐 |
+| GET    | `/api/mission/v1/missions/today`                                 | 오늘 미션 스택 조회   | none | today missions | 🔐 |
 | POST   | `/api/mission/v1/missions/today-focus/next`                     | 다음 미션 요청      | body | mission | 🔐 |
 | POST   | `/api/mission/v1/missions/{missionId}/rejections`               | 미션 거절 기록 생성   | path + body | rejection | 🔐 |
 | POST   | `/api/mission/v1/missions/{missionId}/completion-sessions`      | 완료 질문 세션 시작   | path + body | question | 🔐 |
@@ -766,6 +765,7 @@ MVP 정책:
 missionId path variable은 1 이상의 숫자여야 한다.
 다음 미션 요청의 characterId는 필수이며 1 이상의 숫자여야 한다.
 다음 미션 요청의 lastMissionId는 선택값이며, 전달하는 경우 0 이상의 숫자여야 한다.
+처음 미션 요청처럼 직전 미션이 없으면 lastMissionId는 생략하거나 null로 보낼 수 있다.
 완료 답변 answer는 공백만으로 구성될 수 없고 300자를 초과할 수 없다.
 입력값 형식 오류, JSON body 누락/파싱 오류, path variable 타입 오류는 INVALID_INPUT_VALUE로 응답한다.
 ```
@@ -809,7 +809,9 @@ missionId path variable은 1 이상의 숫자여야 한다.
 
 목록은 `stackOrder` 오름차순으로 반환한다. `currentMissionId`는 현재 진행 중인 `OFFERED` 또는 `ANSWERING` 상태 미션의 id이며, 현재 미션이 없으면 `null`이다.
 
-> 백엔드 코드 확인: 현재 gateway/proto에는 today stack 조회 API가 없다. `UserMission.stackOrder`와 일일 제안 수 정책은 존재하므로, 미션 기록/공유 카드 실제 연동 전에 REST/gRPC 조회가 필요하다.
+`offeredCount`는 현재 `OFFERED` 상태인 미션 수가 아니라, 오늘 유저에게 제안된 전체 미션 stack 개수다. 따라서 `remainingOfferCount`는 `maxDailyOffers - offeredCount`로 계산한다.
+
+mission REST 응답에는 AI fallback 여부를 노출하지 않는다. fallback 여부는 `ai_mission_generations`, `ai_usage_logs`, event-log의 `AI_FALLBACK_USED`에서 운영 분석용으로 추적한다.
 
 **Request**
 
@@ -861,7 +863,7 @@ missionId path variable은 1 이상의 숫자여야 한다.
 
 ---
 
-### 6.3 POST `⚠️ /api/mission/v1/missions/today-focus/next` 🔐
+### 6.3 POST `/api/mission/v1/missions/today-focus/next` 🔐
 
 **설명**
 다음 미션을 생성해 현재 미션으로 제안한다.
@@ -879,7 +881,7 @@ missionId path variable은 1 이상의 숫자여야 한다.
 }
 ```
 
-`characterId`는 미션 제안 캐릭터를 기록하기 위해 전달한다. `lastMissionId`는 클라이언트가 마지막으로 보고 있던 미션을 함께 보내기 위한 필드다. 진행 중 미션 존재 여부는 서버 상태 기준으로 확인한다.
+`characterId`는 미션 제안 캐릭터를 기록하기 위해 전달한다. `lastMissionId`는 클라이언트가 마지막으로 보고 있던 미션을 함께 보내기 위한 필드다. 첫 미션 요청처럼 직전 미션이 없으면 `lastMissionId`는 생략하거나 `null`로 보낼 수 있다. 진행 중 미션 존재 여부는 서버 상태 기준으로 확인한다.
 
 **Response**
 
@@ -1068,7 +1070,7 @@ fallback 응답 예시:
 }
 ```
 
-AI 생성 결과는 `ai_mission_generations`, 사용 로그는 `ai_usage_logs`에 저장한다. `ai_mission_generations.request_id`는 생성 결과 재사용 기준이고, `ai_usage_logs.request_id`는 해당 생성 시도의 사용량/지연 추적 기준이다. fallback이 사용되면 event-log에 `AI_FALLBACK_USED`를 남긴다.
+AI 생성 결과는 `ai_mission_generations`, 사용 로그는 `ai_usage_logs`에 저장한다. `ai_mission_generations.request_id`는 생성 결과 재사용 기준이고, `ai_usage_logs.request_id`는 해당 생성 시도의 사용량/지연 추적 기준이다. fallback이 사용되면 event-log에 `AI_FALLBACK_USED`를 남긴다. mission REST 응답에는 `fallbackUsed`를 노출하지 않고, 운영 분석은 저장된 생성 결과와 로그를 기준으로 한다.
 
 ---
 

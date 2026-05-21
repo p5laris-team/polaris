@@ -3,6 +3,7 @@ package p5laris.mission.domain.application;
 import com.p5laris.proto.mission.v1.CreateNextMissionResponse;
 import com.p5laris.proto.mission.v1.CompletionInputType;
 import com.p5laris.proto.mission.v1.GetCurrentMissionResponse;
+import com.p5laris.proto.mission.v1.GetTodayMissionsResponse;
 import com.p5laris.proto.mission.v1.MissionStatus;
 import com.p5laris.proto.mission.v1.RejectMissionResponse;
 import com.p5laris.proto.mission.v1.StartCompletionSessionResponse;
@@ -175,6 +176,43 @@ class MissionServiceTest {
         assertThat(current.hasMission()).isFalse();
         assertThat(saved.getStatus()).isEqualTo(UserMissionStatus.REJECTED);
         assertThat(saved.getRejectedAt()).isNotNull();
+    }
+
+    @Test
+    void 오늘_미션_stack은_완료_거절_진행중_미션과_집계를_함께_반환한다() {
+        CreateNextMissionResponse first = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        missionService.startCompletionSession(USER_ID, first.getMission().getId());
+        missionService.submitCompletionAnswer(USER_ID, first.getMission().getId(), "첫 번째 미션 완료");
+
+        CreateNextMissionResponse second = missionService.createNextMission(USER_ID, CHARACTER_ID, first.getMission().getId());
+        missionService.rejectMission(USER_ID, second.getMission().getId());
+
+        CreateNextMissionResponse third = missionService.createNextMission(USER_ID, CHARACTER_ID, second.getMission().getId());
+
+        GetTodayMissionsResponse response = missionService.getTodayMissions(USER_ID);
+
+        assertThat(response.getMissionDate()).isNotBlank();
+        assertThat(response.getMaxDailyOffers()).isEqualTo(15);
+        assertThat(response.getOfferedCount()).isEqualTo(3);
+        assertThat(response.getCompletedCount()).isEqualTo(1);
+        assertThat(response.getRejectedCount()).isEqualTo(1);
+        assertThat(response.getRemainingOfferCount()).isEqualTo(12);
+        assertThat(response.hasCurrentMissionId()).isTrue();
+        assertThat(response.getCurrentMissionId()).isEqualTo(third.getMission().getId());
+        assertThat(response.getMissionsList()).hasSize(3);
+        assertThat(response.getMissions(0).getId()).isEqualTo(first.getMission().getId());
+        assertThat(response.getMissions(0).getStackOrder()).isEqualTo(1);
+        assertThat(response.getMissions(0).getStatus()).isEqualTo(MissionStatus.MISSION_STATUS_COMPLETED);
+        assertThat(response.getMissions(0).getCompletedAt()).isNotBlank();
+        assertThat(response.getMissions(1).getId()).isEqualTo(second.getMission().getId());
+        assertThat(response.getMissions(1).getStackOrder()).isEqualTo(2);
+        assertThat(response.getMissions(1).getStatus()).isEqualTo(MissionStatus.MISSION_STATUS_REJECTED);
+        assertThat(response.getMissions(1).getRejectedAt()).isNotBlank();
+        assertThat(response.getMissions(2).getId()).isEqualTo(third.getMission().getId());
+        assertThat(response.getMissions(2).getStackOrder()).isEqualTo(3);
+        assertThat(response.getMissions(2).getStatus()).isEqualTo(MissionStatus.MISSION_STATUS_OFFERED);
+        assertThat(response.getMissions(2).getCompletedAt()).isBlank();
+        assertThat(response.getMissions(2).getRejectedAt()).isBlank();
     }
 
     @Test

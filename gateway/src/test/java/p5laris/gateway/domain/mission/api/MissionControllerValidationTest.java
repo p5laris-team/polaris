@@ -15,14 +15,18 @@ import org.springframework.web.context.request.NativeWebRequest;
 import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.method.support.HandlerMethodArgumentResolver;
 import org.springframework.web.method.support.ModelAndViewContainer;
+import p5laris.gateway.domain.mission.api.dto.MissionDto;
 import p5laris.gateway.domain.mission.infrastructure.grpc.MissionGatewayService;
 import p5laris.gateway.global.auth.LoginUserId;
 import p5laris.gateway.global.exception.GlobalExceptionHandler;
 import p5laris.gateway.global.exception.BusinessException;
 import p5laris.gateway.global.exception.CommonErrorCode;
 
+import java.util.List;
+
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -139,6 +143,40 @@ class MissionControllerValidationTest {
                 .andExpect(jsonPath("$.error.code").value("C001"));
 
         verifyNoInteractions(missionGatewayService);
+    }
+
+    @Test
+    void 오늘_미션_stack_조회는_현재_미션_id와_목록을_반환한다() throws Exception {
+        MissionDto.TodayMissionsResponse response = new MissionDto.TodayMissionsResponse(
+                "2026-05-21",
+                15,
+                2,
+                1,
+                0,
+                13,
+                12L,
+                List.of(new MissionDto.TodayMissionItem(
+                        11L,
+                        1,
+                        "물 한 컵 마시기",
+                        "HEALTH",
+                        "EASY",
+                        10,
+                        "COMPLETED",
+                        "좋아, 오늘도 한 걸음이야.",
+                        "2026-05-21T09:00:00",
+                        "2026-05-21T09:10:00",
+                        null
+                ))
+        );
+        when(missionGatewayService.getTodayMissions(LOGIN_USER_ID)).thenReturn(response);
+
+        mockMvc.perform(get("/api/mission/v1/missions/today"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.currentMissionId").value(12))
+                .andExpect(jsonPath("$.data.missions[0].id").value(11))
+                .andExpect(jsonPath("$.data.missions[0].completedAt").value("2026-05-21T09:10:00"));
     }
 
     private static class TestLoginUserIdArgumentResolver implements HandlerMethodArgumentResolver {
