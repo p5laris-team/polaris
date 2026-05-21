@@ -105,7 +105,7 @@ class CharacterServiceTest {
         assertEquals("FEED", response.actionType());
         assertEquals(50, response.beforeStates().hunger());
         assertEquals(80, response.afterStates().hunger());
-        assertEquals("Mmm... light has a taste too.", response.characterMessage());
+        assertEquals("음… 오늘의 빛은 좀 달콤하네요.", response.characterMessage());
 
         // Verify no repository interactions for userCharacter
         verifyNoInteractions(userCharacterRepository);

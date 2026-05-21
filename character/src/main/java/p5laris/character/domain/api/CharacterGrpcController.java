@@ -336,5 +336,16 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
                 .build());
         responseObserver.onCompleted();
     }
+
+    @Override
+    public void getTodayShareEventStatus(GetTodayShareEventStatusRequest request,
+                                         StreamObserver<GetTodayShareEventStatusResponse> responseObserver) {
+        var result = shareService.getTodayShareEventStatus(request.getUserId());
+        responseObserver.onNext(GetTodayShareEventStatusResponse.newBuilder()
+                .setRewardClaimed(result.rewardClaimed())
+                .setLastSharedAt(result.lastSharedAt() != null ? result.lastSharedAt() : "")
+                .build());
+        responseObserver.onCompleted();
+    }
 }
 

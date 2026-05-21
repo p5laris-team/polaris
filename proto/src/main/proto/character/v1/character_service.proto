@@ -22,6 +22,7 @@ service CharacterService {
   rpc CreateShareEvent(CreateShareEventRequest) returns (CreateShareEventResponse);
   rpc GetShareLink(GetShareLinkRequest) returns (GetShareLinkResponse);
   rpc RecordShareClick(RecordShareClickRequest) returns (RecordShareClickResponse);
+  rpc GetTodayShareEventStatus(GetTodayShareEventStatusRequest) returns (GetTodayShareEventStatusResponse);
   rpc GetSharePresignedUrl(GetSharePresignedUrlRequest) returns (GetSharePresignedUrlResponse);
 }
 
@@ -243,14 +244,24 @@ message RecordShareClickResponse {
   bool recorded = 2;
 }
 
-// GetSharePresignedUrl: R2 업로드를 위한 Presigned URL 발급
+// GetTodayShareEventStatus: returns today's share reward status (spec: GET /api/share/v1/share-events/today)
+message GetTodayShareEventStatusRequest {
+  int64 user_id = 1;
+}
+
+message GetTodayShareEventStatusResponse {
+  bool reward_claimed = 1;
+  string last_shared_at = 2; // ISO-8601 instant; empty when never shared
+}
+
+// GetSharePresignedUrl: issues presigned URL for R2 upload
 message GetSharePresignedUrlRequest {
   int64 user_id = 1;
   string extension = 2; // e.g. "png", "jpg"
 }
 
 message GetSharePresignedUrlResponse {
-  string presigned_url = 1; // R2 업로드용 임시 URL
-  string image_url = 2;     // 최종적으로 접근할 수 있는 공개 URL
+  string presigned_url = 1; // temporary URL for upload
+  string image_url = 2;     // final public URL
 }
 

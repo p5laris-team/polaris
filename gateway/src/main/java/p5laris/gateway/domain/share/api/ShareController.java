@@ -77,4 +77,10 @@ public class ShareController {
             @RequestBody ShareDto.RecordShareClickRequest request) {
         return ApiResponse.success(shareGatewayService.recordShareClick(request));
     }
+
+    @GetMapping("/v1/share-events/today")
+    public ApiResponse<ShareDto.TodayShareEventStatusResponse> getTodayShareEventStatus(
+            @LoginUserId Long userId) {
+        return ApiResponse.success(shareGatewayService.getTodayShareEventStatus(userId));
+    }
 }

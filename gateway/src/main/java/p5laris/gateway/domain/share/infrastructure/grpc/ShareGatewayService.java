@@ -114,4 +114,16 @@ public class ShareGatewayService {
                 response.getRecorded()
         );
     }
+
+    public ShareDto.TodayShareEventStatusResponse getTodayShareEventStatus(Long userId) {
+        var response = characterStub.getTodayShareEventStatus(
+                GetTodayShareEventStatusRequest.newBuilder()
+                        .setUserId(userId)
+                        .build()
+        );
+        return new ShareDto.TodayShareEventStatusResponse(
+                response.getRewardClaimed(),
+                response.getLastSharedAt()
+        );
+    }
 }

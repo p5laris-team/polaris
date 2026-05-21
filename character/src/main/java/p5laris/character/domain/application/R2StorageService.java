@@ -12,11 +12,15 @@ import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignReques
 
 import java.net.URI;
 import java.time.Duration;
+import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
 @Service
 public class R2StorageService {
+
+    private static final Set<String> ALLOWED_IMAGE_EXTENSIONS = Set.of("png", "jpg", "jpeg", "webp");
 
     private final String bucketName;
     private final String publicDomain;
@@ -48,12 +52,13 @@ public class R2StorageService {
      * @return R2PresignedResult containing the upload URL and the final public URL
      */
     public R2PresignedResult generatePresignedUrlForShareCard(String extension) {
-        String fileName = "share-cards/" + UUID.randomUUID() + "." + extension;
+        String safeExt = normalizeAndValidateExtension(extension);
+        String fileName = "share-cards/" + UUID.randomUUID() + "." + safeExt;
 
         PutObjectRequest objectRequest = PutObjectRequest.builder()
                 .bucket(bucketName)
                 .key(fileName)
-                .contentType("image/" + (extension.equals("jpg") ? "jpeg" : extension))
+                .contentType("image/" + (safeExt.equals("jpg") ? "jpeg" : safeExt))
                 .build();
 
         PutObjectPresignRequest presignRequest = PutObjectPresignRequest.builder()
@@ -65,6 +70,20 @@ public class R2StorageService {
         String imageUrl = publicDomain + "/" + fileName;
 
         return new R2PresignedResult(presignedUrl, imageUrl);
+    }
+
+    private String normalizeAndValidateExtension(String extension) {
+        if (extension == null) {
+            return "png";
+        }
+        String normalized = extension.trim().toLowerCase(Locale.ROOT);
+        if (normalized.startsWith(".")) {
+            normalized = normalized.substring(1);
+        }
+        if (!ALLOWED_IMAGE_EXTENSIONS.contains(normalized)) {
+            return "png";
+        }
+        return normalized;
     }
 
     public record R2PresignedResult(String presignedUrl, String imageUrl) {}

@@ -14,6 +14,8 @@ import p5laris.character.domain.application.R2StorageService;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.UUID;
 
 /**
@@ -32,6 +34,8 @@ public class ShareService {
     private static final String BASE_SHARE_URL = "https://polaris.app/share/";
     private static final String BASE_SIGNUP_URL = "https://polaris.app/signup?shareId=";
     private static final String PLACEHOLDER_HEADLINE = "Today, I shone a little.";
+    private static final ZoneId SHARE_DATE_ZONE = ZoneId.of("Asia/Seoul");
+    private static final DateTimeFormatter SHARE_DATE_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE;
 
     private final ShareCardRepository shareCardRepository;
     private final ShareLogRepository shareLogRepository;
@@ -59,13 +63,14 @@ public class ShareService {
         // Idempotent: reuse existing card for same (userId, characterId) and update image if provided
         return shareCardRepository.findByUserIdAndCharacterId(userId, characterId)
                 .map(card -> {
-                    // C 방식: 사용자가 프론트에서 최신 이미지를 찍어서 올릴 수 있으므로 URL 갱신 지원 (옵션)
-                    // 현재는 JPA 변경 감지(Dirty checking)로 자동 업데이트됨. 엔티티에 updateImageUrl 필요하지만 생략(또는 추가)
-                    // 본 MVP에서는 생략하고 기존 것을 그대로 반환하거나, 새로 발급합니다.
+                    if (uploadedImageUrl != null && !uploadedImageUrl.isBlank()
+                            && (card.getImageUrl() == null || !uploadedImageUrl.equals(card.getImageUrl()))) {
+                        card.updateImageUrl(uploadedImageUrl);
+                    }
                     return new ShareCardResult(
                         card.getId(),
                         extractShareId(card.getShareUrl()),
-                        uploadedImageUrl != null && !uploadedImageUrl.isEmpty() ? uploadedImageUrl : card.getImageUrl(),
+                        card.getImageUrl(),
                         card.getShareUrl());
                 })
                 .orElseGet(() -> {
@@ -129,12 +134,30 @@ public class ShareService {
                                              String idempotencyKey) {
         ShareCard card = shareCardRepository.findById(shareCardId)
                 .orElseThrow(() -> new p5laris.character.domain.exception.CharacterException(p5laris.character.domain.exception.CharacterErrorCode.SHARE_CARD_NOT_FOUND));
+        if (!card.getUserId().equals(userId)) {
+            throw new p5laris.character.domain.exception.CharacterException(p5laris.character.domain.exception.CharacterErrorCode.NOT_SHARE_CARD_OWNER);
+        }
 
         // Check daily reward eligibility (AGENTS.md §20.5)
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(SHARE_DATE_ZONE);
+        String rewardIdempotencyKey = buildDailyShareRewardIdempotencyKey(userId, today);
+
+        // Idempotency for daily reward: return previously recorded reward log if exists.
+        var existingRewardLog = shareLogRepository.findByIdempotencyKey(rewardIdempotencyKey);
+        if (existingRewardLog.isPresent()) {
+            ShareLog log = existingRewardLog.get();
+            return new ShareEventResult(log.getId(), log.isRewardPaid(), log.getRewardStarPiece(), 0);
+        }
+
         boolean alreadyRewarded = shareLogRepository.existsByUserIdAndShareDateAndRewardPaidTrue(userId, today);
         boolean rewardPaid = !alreadyRewarded;
         int rewardAmount = rewardPaid ? SHARE_REWARD_STAR_PIECE : 0;
+
+        String finalIdempotencyKey = rewardPaid
+                ? rewardIdempotencyKey
+                : (idempotencyKey != null && !idempotencyKey.isBlank()
+                    ? idempotencyKey
+                    : "SHARE_EVENT:" + userId + ":" + UUID.randomUUID());
 
         ShareLog shareLog = ShareLog.builder()
                 .userId(userId)
@@ -146,7 +169,7 @@ public class ShareService {
                 .shareDate(today)
                 .rewardStarPiece(rewardAmount)
                 .rewardPaid(rewardPaid)
-                .idempotencyKey(idempotencyKey)
+                .idempotencyKey(finalIdempotencyKey)
                 .build();
         shareLogRepository.save(shareLog);
 
@@ -212,6 +235,21 @@ public class ShareService {
         return lastSlash >= 0 ? shareUrl.substring(lastSlash + 1) : shareUrl;
     }
 
+    private String buildDailyShareRewardIdempotencyKey(Long userId, LocalDate shareDate) {
+        return "SHARE_REWARD:" + userId + ":" + SHARE_DATE_FORMATTER.format(shareDate);
+    }
+
+    @Transactional(readOnly = true)
+    public TodayShareEventStatusResult getTodayShareEventStatus(Long userId) {
+        LocalDate today = LocalDate.now(SHARE_DATE_ZONE);
+        boolean rewardClaimed = shareLogRepository.existsByUserIdAndShareDateAndRewardPaidTrue(userId, today);
+        String lastSharedAt = shareLogRepository.findTopByUserIdAndShareDateOrderBySharedAtDesc(userId, today)
+                .map(ShareLog::getSharedAt)
+                .map(Instant::toString)
+                .orElse("");
+        return new TodayShareEventStatusResult(rewardClaimed, lastSharedAt);
+    }
+
     // ---------- Result records ----------
 
     public record ShareCardResult(Long shareCardId, String shareId, String imageUrl, String shareUrl) {}
@@ -219,4 +257,5 @@ public class ShareService {
     public record ShareEventResult(Long shareEventId, boolean rewardPaid, int rewardStarPiece, int walletStarPiece) {}
     public record ShareLinkResult(String shareId, String characterName, String imageUrl, String headline, String signupUrl) {}
     public record ShareClickResult(String shareId, boolean recorded) {}
+    public record TodayShareEventStatusResult(boolean rewardClaimed, String lastSharedAt) {}
 }

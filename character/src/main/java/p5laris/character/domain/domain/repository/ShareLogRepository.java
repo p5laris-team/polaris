@@ -19,4 +19,6 @@ public interface ShareLogRepository extends JpaRepository<ShareLog, Long> {
      * 공유 보상은 하루 1회만 지급한다 (AGENTS.md §20.5).
      */
     boolean existsByUserIdAndShareDateAndRewardPaidTrue(Long userId, LocalDate shareDate);
+
+    Optional<ShareLog> findTopByUserIdAndShareDateOrderBySharedAtDesc(Long userId, LocalDate shareDate);
 }
