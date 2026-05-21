@@ -86,7 +86,11 @@ public class CharacterService {
 
         // Deactivate existing active character if any
         userCharacterRepository.findByUserIdAndActiveTrue(userId)
-                .ifPresent(p5laris.character.domain.domain.entity.UserCharacter::deactivate);
+                .ifPresent(c -> {
+                    c.deactivate();
+                    userCharacterRepository.saveAndFlush(c);
+                });
+
 
         p5laris.character.domain.domain.entity.UserCharacter newCharacter = p5laris.character.domain.domain.entity.UserCharacter.builder()
                 .userId(userId)
