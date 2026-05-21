@@ -159,7 +159,7 @@ Base Pattern: /api/{domain}/v1/{resource}
 | GET    | `💾🧩 /api/item/v1/items`                                       | 상점 아이템 목록 조회  | query cursor | items | 🔐 |
 | GET    | `🧩 /api/item/v1/user-items`                                     | 내 보유 아이템 조회   | query cursor | user items | 🔐 |
 | POST   | `⚠️ /api/item/v1/item-purchases`                                | 아이템 구매        | body | purchase result | 🔐 |
-| GET    | `/api/share/v1/presigned-url`                                   | 프론트엔드 R2 직접 업로드용 임시 URL 발급 | query | presigned url | 🔐 |
+| GET    | `/api/share/v1/presigned-url`                                   | 프론트엔드 S3 직접 업로드용 임시 URL 발급 | query | presigned url | 🔐 |
 | POST   | `/api/share/v1/share-cards`                                     | 공유 카드 생성 (업로드 이미지 URL 포함) | body | share card | 🔐 |
 | POST   | `⚠️ /api/share/v1/share-events`                                 | 공유 시도 이벤트 생성 및 보상 처리 | body | share event | 🔐 |
 | GET    | `🧩 /api/share/v1/share-events/today`                            | 오늘 공유 보상 여부 조회 | none | share status | 🔐 |
@@ -1298,7 +1298,7 @@ AI 생성 결과는 `ai_mission_generations`, 사용 로그는 `ai_usage_logs`�
 ### 9.1 GET `/api/share/v1/presigned-url` 🔐
 
 **설명**  
-프론트엔드에서 렌더링된 캐릭터 이미지를 외부 스토리지(Cloudflare R2/AWS S3)에 직접 업로드하기 위해, 쓰기 권한이 포함된 1회용 임시 URL(Presigned URL)을 발급받는다. 서버 부하 없이 이미지 업로드가 가능하다.
+프론트엔드에서 렌더링된 캐릭터 이미지를 AWS S3에 직접 업로드하기 위해, 쓰기 권한이 포함된 1회용 임시 URL(Presigned URL)을 발급받는다. 서버 부하 없이 이미지 업로드가 가능하다.
 
 **Request (Query String)**
 
@@ -1310,7 +1310,7 @@ AI 생성 결과는 `ai_mission_generations`, 사용 로그는 `ai_usage_logs`�
 
 ```json
 {
-  "presignedUrl": "https://<bucket>.r2.cloudflarestorage.com/share-cards/UUID.png?X-Amz-Signature=...",
+  "presignedUrl": "https://<bucket>.s3.ap-northeast-2.amazonaws.com/share-cards/UUID.png?X-Amz-Signature=...",
   "imageUrl": "https://cdn.polaris.app/share-cards/UUID.png"
 }
 ```

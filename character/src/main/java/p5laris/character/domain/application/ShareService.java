@@ -10,7 +10,6 @@ import p5laris.character.domain.domain.entity.UserCharacter;
 import p5laris.character.domain.domain.repository.ShareCardRepository;
 import p5laris.character.domain.domain.repository.ShareLogRepository;
 import p5laris.character.domain.domain.repository.UserCharacterRepository;
-import p5laris.character.domain.application.R2StorageService;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -39,7 +38,7 @@ public class ShareService {
 
     private final ShareCardRepository shareCardRepository;
     private final ShareLogRepository shareLogRepository;
-    private final R2StorageService r2StorageService;
+    private final S3StorageService s3StorageService;
     private final UserCharacterRepository userCharacterRepository;
 
     // ---------- §9.1 CreateShareCard ----------
@@ -224,8 +223,8 @@ public class ShareService {
 
     // ---------- Presigned URL 발급 ----------
 
-    public R2StorageService.R2PresignedResult getSharePresignedUrl(Long userId, String extension) {
-        return r2StorageService.generatePresignedUrlForShareCard(extension);
+    public S3StorageService.S3PresignedResult getSharePresignedUrl(Long userId, String extension) {
+        return s3StorageService.generatePresignedUrlForShareCard(extension);
     }
 
     // ---------- Internal helper ----------

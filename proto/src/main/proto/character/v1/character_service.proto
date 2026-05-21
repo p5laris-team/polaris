@@ -254,7 +254,7 @@ message GetTodayShareEventStatusResponse {
   string last_shared_at = 2; // ISO-8601 instant; empty when never shared
 }
 
-// GetSharePresignedUrl: issues presigned URL for R2 upload
+// GetSharePresignedUrl: issues presigned URL for S3 upload
 message GetSharePresignedUrlRequest {
   int64 user_id = 1;
   string extension = 2; // e.g. "png", "jpg"
