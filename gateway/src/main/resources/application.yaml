@@ -28,6 +28,18 @@ grpc:
       address: ${AI_GRPC_ADDRESS}
       negotiationType: plaintext
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: never
+  health:
+    db:
+      enabled: true
+
 jwt:
   secret: ${JWT_SECRET}
   access-expiration-ms: ${JWT_ACCESS_EXPIRATION_MS}
