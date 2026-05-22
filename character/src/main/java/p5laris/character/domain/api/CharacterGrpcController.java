@@ -118,6 +118,13 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
                 .setCharacterTypeCode(result.characterTypeCode())
                 .setActive(result.active())
                 .setEquippedSkinId(result.equippedSkinId())
+                .setStates(CharacterStates.newBuilder()
+                        .setHunger(result.states().hunger())
+                        .setEnergy(result.states().energy())
+                        .setAffection(result.states().affection())
+                        .build())
+                .setCurrentAssetUrl(result.currentAssetUrl() != null ? result.currentAssetUrl() : "")
+                .putAllAssetUrls(result.assetUrls() != null ? result.assetUrls() : java.util.Map.of())
                 .build();
 
         responseObserver.onNext(response);
@@ -244,7 +251,8 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
         var result = shareService.createShareCard(
                 request.getUserId(), 
                 request.getCharacterId(), 
-                request.getHeadline()
+                request.getHeadline(),
+                request.getImageUrl()
         );
 
         responseObserver.onNext(CreateShareCardResponse.newBuilder()

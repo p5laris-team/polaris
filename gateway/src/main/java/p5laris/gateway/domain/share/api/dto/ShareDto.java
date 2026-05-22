@@ -11,7 +11,8 @@ public class ShareDto {
     // §9.1 CreateShareCard
     public record CreateShareCardRequest(
             Long characterId,
-            String headline
+            String headline,
+            String imageUrl
     ) {}
 
     public record ShareCardResponse(

@@ -2,6 +2,7 @@ package p5laris.character.domain.application;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import p5laris.character.domain.domain.entity.ShareCard;
@@ -15,10 +16,12 @@ import p5laris.character.domain.exception.CharacterException;
 import p5laris.character.domain.infrastructure.grpc.MissionShareStatsClient;
 import software.amazon.awssdk.core.exception.SdkException;
 
+import java.net.URI;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.Locale;
 import java.util.UUID;
 
 /**
@@ -34,10 +37,9 @@ import java.util.UUID;
 public class ShareService {
 
     private static final int SHARE_REWARD_STAR_PIECE = 10;
-    private static final String BASE_SHARE_URL = "https://polaris.app/share/";
-    private static final String BASE_SIGNUP_URL = "https://polaris.app/signup?shareId=";
     private static final String PLACEHOLDER_HEADLINE = "Today, I shone a little.";
     private static final int HEADLINE_MAX_LENGTH = 100;
+    private static final String SHARE_CARD_IMAGE_HOST = "d24c6my56k1w5v.cloudfront.net";
     private static final ZoneId SHARE_DATE_ZONE = ZoneId.of("Asia/Seoul");
     private static final DateTimeFormatter SHARE_DATE_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE;
 
@@ -48,10 +50,13 @@ public class ShareService {
     private final MissionShareStatsClient missionShareStatsClient;
     private final UserCharacterRepository userCharacterRepository;
 
+    @Value("${app.public-base-url:https://p5laris.life}")
+    private String publicBaseUrl;
+
     // ---------- §9.1 CreateShareCard ----------
 
     @Transactional
-    public ShareCardResult createShareCard(Long userId, Long characterId, String headline) {
+    public ShareCardResult createShareCard(Long userId, Long characterId, String headline, String imageUrl) {
         String safeHeadline = normalizeAndValidateHeadline(headline);
 
         UserCharacter character = userCharacterRepository.findById(characterId)
@@ -60,11 +65,11 @@ public class ShareService {
             throw new CharacterException(CharacterErrorCode.NOT_CHARACTER_OWNER);
         }
 
-        String imageUrl = generateAndUploadShareCardImage(userId, character, safeHeadline);
+        String resolvedImageUrl = resolveShareCardImageUrl(userId, character, safeHeadline, imageUrl);
 
         return shareCardRepository.findByUserIdAndCharacterId(userId, characterId)
                 .map(card -> {
-                    card.updateGeneratedCard(imageUrl, safeHeadline);
+                    card.updateGeneratedCard(resolvedImageUrl, safeHeadline);
                     return new ShareCardResult(
                         card.getId(),
                         extractShareId(card.getShareUrl()),
@@ -73,20 +78,20 @@ public class ShareService {
                 })
                 .orElseGet(() -> {
                     String shareId = "sh_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
-                    String shareUrl = BASE_SHARE_URL + shareId;
+                    String shareUrl = buildShareUrl(shareId);
                     
                     // C 방식: 프론트가 전달한 URL 사용
 
                     ShareCard card = ShareCard.builder()
                             .userId(userId)
                             .characterId(characterId)
-                            .imageUrl(imageUrl)
+                            .imageUrl(resolvedImageUrl)
                             .headline(safeHeadline)
                             .shareUrl(shareUrl)
                             .build();
                     shareCardRepository.save(card);
 
-                    return new ShareCardResult(card.getId(), shareId, imageUrl, shareUrl);
+                    return new ShareCardResult(card.getId(), shareId, resolvedImageUrl, shareUrl);
                 });
     }
 
@@ -186,7 +191,7 @@ public class ShareService {
      */
     @Transactional(readOnly = true)
     public ShareLinkResult getShareLink(String shareId) {
-        String shareUrl = BASE_SHARE_URL + shareId;
+        String shareUrl = buildShareUrl(shareId);
         ShareCard card = shareCardRepository.findByShareUrl(shareUrl)
                 .orElseThrow(() -> new CharacterException(CharacterErrorCode.SHARE_LINK_NOT_FOUND));
 
@@ -198,7 +203,7 @@ public class ShareService {
                 character.getName(),
                 card.getImageUrl(),
                 card.getHeadline() != null ? card.getHeadline() : PLACEHOLDER_HEADLINE,
-                BASE_SIGNUP_URL + shareId);
+                buildSignupUrl(shareId));
     }
 
     // ---------- §9.5 RecordShareClick (Public) ----------
@@ -221,7 +226,7 @@ public class ShareService {
     // ---------- Presigned URL 발급 ----------
 
     public S3StorageService.S3PresignedResult getSharePresignedUrl(Long userId, String extension) {
-        return s3StorageService.generatePresignedUrlForShareCard(extension);
+        return s3StorageService.generatePresignedUrlForShareCard(userId, extension);
     }
 
     // ---------- Internal helper ----------
@@ -235,6 +240,42 @@ public class ShareService {
             throw new CharacterException(CharacterErrorCode.INVALID_SHARE_HEADLINE);
         }
         return normalized;
+    }
+
+    private String resolveShareCardImageUrl(Long userId, UserCharacter character, String headline, String imageUrl) {
+        if (imageUrl != null && !imageUrl.isBlank()) {
+            return validateShareCardImageUrl(imageUrl);
+        }
+        log.warn("CreateShareCard called without imageUrl. Falling back to server-side image generation. userId={}, characterId={}",
+                userId, character.getId());
+        return generateAndUploadShareCardImage(userId, character, headline);
+    }
+
+    private String validateShareCardImageUrl(String imageUrl) {
+        try {
+            URI uri = URI.create(imageUrl.trim());
+            String scheme = uri.getScheme();
+            String host = uri.getHost();
+            String path = uri.getPath();
+            if (!"https".equalsIgnoreCase(scheme)
+                    || !SHARE_CARD_IMAGE_HOST.equalsIgnoreCase(host)
+                    || path == null
+                    || !(path.startsWith("/share-cards/") || path.startsWith("/assets/share-cards/"))
+                    || !hasAllowedImageExtension(path)) {
+                throw new CharacterException(CharacterErrorCode.INVALID_SHARE_CARD_IMAGE_URL);
+            }
+            return uri.toString();
+        } catch (IllegalArgumentException e) {
+            throw new CharacterException(CharacterErrorCode.INVALID_SHARE_CARD_IMAGE_URL);
+        }
+    }
+
+    private boolean hasAllowedImageExtension(String path) {
+        String lowerPath = path.toLowerCase(Locale.ROOT);
+        return lowerPath.endsWith(".png")
+                || lowerPath.endsWith(".jpg")
+                || lowerPath.endsWith(".jpeg")
+                || lowerPath.endsWith(".webp");
     }
 
     private String generateAndUploadShareCardImage(Long userId, UserCharacter character, String headline) {
@@ -258,6 +299,23 @@ public class ShareService {
     private String extractShareId(String shareUrl) {
         int lastSlash = shareUrl.lastIndexOf('/');
         return lastSlash >= 0 ? shareUrl.substring(lastSlash + 1) : shareUrl;
+    }
+
+    private String buildShareUrl(String shareId) {
+        return normalizedPublicBaseUrl() + "/share/" + shareId;
+    }
+
+    private String buildSignupUrl(String shareId) {
+        return normalizedPublicBaseUrl() + "/signup?shareId=" + shareId;
+    }
+
+    private String normalizedPublicBaseUrl() {
+        String normalized = publicBaseUrl == null || publicBaseUrl.isBlank()
+                ? "https://p5laris.life"
+                : publicBaseUrl.trim();
+        return normalized.endsWith("/")
+                ? normalized.substring(0, normalized.length() - 1)
+                : normalized;
     }
 
     private String buildDailyShareRewardIdempotencyKey(Long userId, LocalDate shareDate) {
