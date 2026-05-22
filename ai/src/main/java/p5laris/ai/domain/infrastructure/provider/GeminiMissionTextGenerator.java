@@ -3,6 +3,7 @@ package p5laris.ai.domain.infrastructure.provider;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import p5laris.ai.domain.application.dto.MissionTextCandidate;
 import p5laris.ai.domain.application.dto.MissionTextGenerationCommand;
@@ -19,6 +20,7 @@ import p5laris.ai.domain.exception.FallbackRequiredException;
  */
 @Component
 @RequiredArgsConstructor
+@Slf4j
 public class GeminiMissionTextGenerator implements ExternalMissionTextGenerator {
 
     private final AiChatClient aiChatClient;
@@ -37,6 +39,8 @@ public class GeminiMissionTextGenerator implements ExternalMissionTextGenerator 
         } catch (FallbackRequiredException e) {
             throw e;
         } catch (Exception e) {
+            log.warn("Gemini provider call failed. errorClass={}, message={}",
+                    e.getClass().getSimpleName(), e.getMessage());
             throw new FallbackRequiredException(toErrorType(e), "Gemini 문구 생성에 실패했습니다.");
         }
     }
@@ -98,7 +102,20 @@ public class GeminiMissionTextGenerator implements ExternalMissionTextGenerator 
                 너는 Polaris 서비스의 캐릭터 말투 변환기다.
                 사용자가 수행할 미션의 의미는 절대 바꾸지 말고, 사용자에게 보여줄 문구만 캐릭터 말투로 바꾼다.
                 반드시 JSON 객체 하나만 반환한다.
+                반환 JSON은 줄바꿈 없는 한 줄 compact JSON으로 작성한다.
                 JSON key는 characterMessage, completionQuestion, completionCharacterResponse 세 개만 사용한다.
+                JSON 앞뒤에 설명, 마크다운 코드블록, 주석을 붙이지 않는다.
+                문자열 value 내부에도 줄바꿈을 넣지 않는다.
+                각 value는 한국어 100자 이하로 작성한다.
+                사용자 이름, 닉네임, [user], {user}, placeholder 표현은 절대 쓰지 않는다.
+                미션 설명에 없는 시간대, 장소, 감정 상태를 단정하지 않는다.
+                온보딩 context와 최근 미션 context는 말투와 난이도 조절에만 참고하고, 미션 의미를 새로 만들지 않는다.
+                NOVA는 느리고 조심스럽고 다정한 별알 말투로 말하며, 작은 빛/별조각 같은 부드러운 이미지를 짧게 쓸 수 있다.
+                MUMU는 반드시 "무... 무무..." 발화와 "(해석: ...)"을 함께 쓴다.
+                MUMU의 각 value는 "무... 무무... (해석: ...)" 한 문장으로 끝내고, 해석을 반복하지 않는다.
+                MUMU의 completionQuestion은 "무...? 무무... (해석: ...?)" 형식을 따른다.
+                JJORY는 건조하고 짧은 반말 농담 말투를 사용한다. 존댓말보다 "~임", "~됨", "인정" 같은 짧은 표현을 선호한다.
+                JJORY도 무례하거나 사용자를 비난하면 안 된다.
                 비난, 죄책감 유발, 낙인, 협박, 과도한 자기비하 표현은 쓰지 않는다.
                 미션 제목, 카테고리, 난이도, 보상은 새로 만들거나 바꾸지 않는다.
                 completionQuestion은 사용자가 미션을 수행한 뒤 짧게 답할 수 있는 질문이어야 한다.

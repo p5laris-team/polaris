@@ -1,12 +1,15 @@
 spring:
+  config:
+    import: optional:file:.env[.properties]
+
   application:
     name: mission
 
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/mission}
+    url: ${DB_URL}
     driver-class-name: org.postgresql.Driver
-    username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:12345678}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
 
   jpa:
     hibernate:
@@ -23,22 +26,22 @@ flyway:
 
 grpc:
   server:
-    port: 9094
+    port: ${GRPC_SERVER_PORT}
     reflection-service-enabled: true
 
   client:
     user:
-      address: static://localhost:9091
+      address: ${USER_GRPC_ADDRESS}
       negotiationType: plaintext
     character:
-      address: static://localhost:9092
+      address: ${CHARACTER_GRPC_ADDRESS}
       negotiationType: plaintext
     item:
-      address: static://localhost:9093
+      address: ${ITEM_GRPC_ADDRESS}
       negotiationType: plaintext
     ai:
-      address: static://localhost:9095
+      address: ${AI_GRPC_ADDRESS}
       negotiationType: plaintext
     event-log:
-      address: ${EVENT_LOG_GRPC_ADDRESS:static://localhost:9099}
+      address: ${EVENT_LOG_GRPC_ADDRESS}
       negotiationType: plaintext

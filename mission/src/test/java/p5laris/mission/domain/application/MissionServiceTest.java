@@ -40,7 +40,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-@SpringBootTest
+@SpringBootTest(properties = "grpc.server.port=0")
 class MissionServiceTest {
 
     private static final Long USER_ID = 1001L;
