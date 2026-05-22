@@ -128,7 +128,7 @@ public class CharacterService {
         userCharacter.calculateTimeBasedStatDecrease();
 
         Map<String, String> assetUrls = buildAssetUrls(userCharacter);
-        String currentAssetUrl = assetUrls.getOrDefault(CharacterMood.IDLE.responseKey(), "");
+        String currentAssetUrl = assetUrls.getOrDefault(userCharacter.calculateMood().responseKey(), "");
 
         return p5laris.character.domain.application.dto.MyCharacterResponse.builder()
                 .id(userCharacter.getId())
@@ -142,7 +142,6 @@ public class CharacterService {
                         .affection(userCharacter.getAffection())
                         .build())
                 .currentAssetUrl(currentAssetUrl)
-                .assetUrls(assetUrls)
                 .build();
     }
 

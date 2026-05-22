@@ -81,7 +81,6 @@ public class HomeGatewayService {
                     .name(myChar.name())
                     .characterTypeCode(myChar.characterTypeCode())
                     .currentAssetUrl(myChar.currentAssetUrl())
-                    .assetUrls(myChar.assetUrls())
                     .states(statesSummary)
                     .build();
         }

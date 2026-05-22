@@ -18,6 +18,10 @@ import p5laris.character.domain.domain.repository.CharacterCareLogRepository;
 import p5laris.character.domain.domain.repository.CharacterTypeRepository;
 import p5laris.character.domain.domain.repository.UserCharacterRepository;
 
+import p5laris.character.domain.domain.entity.CharacterAsset;
+import p5laris.character.domain.domain.entity.CharacterType;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -53,8 +57,16 @@ class CharacterServiceTest {
     @BeforeEach
     void setUp() {
         org.springframework.test.util.ReflectionTestUtils.setField(characterService, "itemStub", itemStub);
+        CharacterType characterType = CharacterType.builder()
+                .code("NOVA")
+                .name("Nova")
+                .active(true)
+                .build();
+        org.springframework.test.util.ReflectionTestUtils.setField(characterType, "id", 1L);
+
         character = UserCharacter.builder()
                 .userId(1L)
+                .characterType(characterType)
                 .name("Nova")
                 .level(1)
                 .exp(0)
@@ -228,5 +240,103 @@ class CharacterServiceTest {
                 () -> characterService.equipSkin(characterId, userId, itemId)
         );
         assertEquals(p5laris.character.domain.exception.CharacterErrorCode.ITEM_NOT_OWNED, exception.getErrorCode());
+    }
+
+    private List<CharacterAsset> createMockAssets(CharacterType type) {
+        return List.of(
+                CharacterAsset.builder().characterType(type).assetType("IDLE").assetUrl("http://cdn/idle.png").build(),
+                CharacterAsset.builder().characterType(type).assetType("HUNGRY").assetUrl("http://cdn/hungry.png").build(),
+                CharacterAsset.builder().characterType(type).assetType("LOW_ENERGY").assetUrl("http://cdn/lowEnergy.png").build(),
+                CharacterAsset.builder().characterType(type).assetType("LONELY").assetUrl("http://cdn/lonely.png").build()
+        );
+    }
+
+    @Test
+    @DisplayName("getMyCharacter - 기분이 IDLE 일 때 기본 IDLE 이미지 반환")
+    void getMyCharacter_idleMood_returnsIdleUrl() {
+        // given
+        when(userCharacterRepository.findByUserIdAndActiveTrue(1L)).thenReturn(Optional.of(character));
+        when(characterAssetRepository.findByCharacterTypeId(1L)).thenReturn(createMockAssets(character.getCharacterType()));
+
+        // when
+        var response = characterService.getMyCharacter(1L);
+
+        // then
+        assertNotNull(response);
+        assertEquals("http://cdn/idle.png", response.currentAssetUrl());
+        assertEquals("Nova", response.name());
+    }
+
+    @Test
+    @DisplayName("getMyCharacter - 기분이 HUNGRY 일 때 (포만감 < 40) HUNGRY 이미지 반환")
+    void getMyCharacter_hungryMood_returnsHungryUrl() {
+        // given
+        org.springframework.test.util.ReflectionTestUtils.setField(character, "fullness", 30);
+        when(userCharacterRepository.findByUserIdAndActiveTrue(1L)).thenReturn(Optional.of(character));
+        when(characterAssetRepository.findByCharacterTypeId(1L)).thenReturn(createMockAssets(character.getCharacterType()));
+
+        // when
+        var response = characterService.getMyCharacter(1L);
+
+        // then
+        assertNotNull(response);
+        assertEquals("http://cdn/hungry.png", response.currentAssetUrl());
+    }
+
+    @Test
+    @DisplayName("getMyCharacter - 기분이 LOW_ENERGY 일 때 (에너지 < 40) LOW_ENERGY 이미지 반환")
+    void getMyCharacter_lowEnergyMood_returnsLowEnergyUrl() {
+        // given
+        org.springframework.test.util.ReflectionTestUtils.setField(character, "energy", 30);
+        when(userCharacterRepository.findByUserIdAndActiveTrue(1L)).thenReturn(Optional.of(character));
+        when(characterAssetRepository.findByCharacterTypeId(1L)).thenReturn(createMockAssets(character.getCharacterType()));
+
+        // when
+        var response = characterService.getMyCharacter(1L);
+
+        // then
+        assertNotNull(response);
+        assertEquals("http://cdn/lowEnergy.png", response.currentAssetUrl());
+    }
+
+    @Test
+    @DisplayName("getMyCharacter - 기분이 LONELY 일 때 (애정도 < 40) LONELY 이미지 반환")
+    void getMyCharacter_lonelyMood_returnsLonelyUrl() {
+        // given
+        org.springframework.test.util.ReflectionTestUtils.setField(character, "affection", 30);
+        when(userCharacterRepository.findByUserIdAndActiveTrue(1L)).thenReturn(Optional.of(character));
+        when(characterAssetRepository.findByCharacterTypeId(1L)).thenReturn(createMockAssets(character.getCharacterType()));
+
+        // when
+        var response = characterService.getMyCharacter(1L);
+
+        // then
+        assertNotNull(response);
+        assertEquals("http://cdn/lonely.png", response.currentAssetUrl());
+    }
+
+    @Test
+    @DisplayName("getMyCharacter - 스킨이 장착되어 있고 포만감이 낮을 때, 스킨의 HUNGRY 이미지 반환")
+    void getMyCharacter_equippedSkin_returnsSkinHungryUrl() {
+        // given
+        org.springframework.test.util.ReflectionTestUtils.setField(character, "fullness", 30);
+        org.springframework.test.util.ReflectionTestUtils.setField(character, "equippedSkinId", 100L);
+
+        when(userCharacterRepository.findByUserIdAndActiveTrue(1L)).thenReturn(Optional.of(character));
+        when(characterAssetRepository.findByCharacterTypeId(1L)).thenReturn(createMockAssets(character.getCharacterType()));
+
+        com.p5laris.proto.item.v1.GetSkinAssetsResponse skinResponse = com.p5laris.proto.item.v1.GetSkinAssetsResponse.newBuilder()
+                .putAssetUrls("idle", "http://cdn/skin-idle.png")
+                .putAssetUrls("hungry", "http://cdn/skin-hungry.png")
+                .build();
+        when(itemStub.getSkinAssets(any(com.p5laris.proto.item.v1.GetSkinAssetsRequest.class)))
+                .thenReturn(skinResponse);
+
+        // when
+        var response = characterService.getMyCharacter(1L);
+
+        // then
+        assertNotNull(response);
+        assertEquals("http://cdn/skin-hungry.png", response.currentAssetUrl());
     }
 }

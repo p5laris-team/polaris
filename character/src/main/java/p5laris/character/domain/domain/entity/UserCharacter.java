@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import p5laris.character.domain.domain.enums.ActionType;
+import p5laris.character.domain.domain.enums.CharacterMood;
 
 import java.time.Instant;
 
@@ -201,5 +202,22 @@ public class UserCharacter {
         }
         this.name = newName;
         this.updatedAt = Instant.now();
+    }
+
+    /**
+     * 캐릭터의 현재 상태 수치(포만감, 에너지, 애정도)에 근거하여 기분(Mood)을 동적으로 계산합니다.
+     * 우선순위: HUNGRY (포만감 < 40) > LOW_ENERGY (에너지 < 40) > LONELY (애정도 < 40) > IDLE (그 외)
+     */
+    public CharacterMood calculateMood() {
+        if (this.fullness < 40) {
+            return CharacterMood.HUNGRY;
+        }
+        if (this.energy < 40) {
+            return CharacterMood.LOW_ENERGY;
+        }
+        if (this.affection < 40) {
+            return CharacterMood.LONELY;
+        }
+        return CharacterMood.IDLE;
     }
 }
