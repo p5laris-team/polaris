@@ -57,14 +57,23 @@ public class AuthService {
     }
 
     @Transactional
-    public LoginResult loginGoogle(String code, String redirectUri) {
+    public LoginResult loginGoogle(String code, String redirectUri, String clientIdParam) {
         try {
             // 1. 구글에서 Access Token 가져오기
-            String tokenRequestBody = "code=" + URLEncoder.encode(code, StandardCharsets.UTF_8)
-                    + "&client_id=" + clientId
-                    + "&client_secret=" + clientSecret
-                    + "&redirect_uri=" + URLEncoder.encode(redirectUri, StandardCharsets.UTF_8)
-                    + "&grant_type=authorization_code";
+            String targetClientId = (clientIdParam != null && !clientIdParam.isBlank()) ? clientIdParam : this.clientId;
+            boolean isWebClient = targetClientId.equals(this.clientId);
+
+            StringBuilder tokenRequestBodyBuilder = new StringBuilder();
+            tokenRequestBodyBuilder.append("code=").append(URLEncoder.encode(code, StandardCharsets.UTF_8))
+                    .append("&client_id=").append(targetClientId)
+                    .append("&redirect_uri=").append(URLEncoder.encode(redirectUri, StandardCharsets.UTF_8))
+                    .append("&grant_type=authorization_code");
+
+            if (isWebClient) {
+                tokenRequestBodyBuilder.append("&client_secret=").append(clientSecret);
+            }
+
+            String tokenRequestBody = tokenRequestBodyBuilder.toString();
 
             HttpRequest tokenRequest = HttpRequest.newBuilder()
                     .uri(URI.create(GOOGLE_TOKEN_URL))

@@ -325,6 +325,12 @@ public class CharacterService {
             throw new CharacterException(CharacterErrorCode.NOT_CHARACTER_OWNER);
         }
 
+        // 2. TODO [Item Domain Integration]: verify user owns the skin item.
+        //    Example (uncomment after item domain is ready):
+        //    if (!itemService.userOwnsItem(userId, itemId)) {
+        //        throw new IllegalArgumentException("User does not own item: " + itemId);
+        //    }
+
         Long equippedSkinId = itemId;
         if (itemId == null || itemId <= 0) {
             character.unequipSkin();

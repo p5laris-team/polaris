@@ -20,6 +20,8 @@ public class AuthRequest {
         private String state;
         @NotBlank
         private String redirectUri;
+        
+        private String clientId;
     }
 
     @Getter
