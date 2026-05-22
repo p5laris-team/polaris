@@ -30,7 +30,7 @@ public class S3StorageService {
     public S3StorageService(
             @Value("${cloud.aws.region:ap-northeast-2}") String region,
             @Value("${cloud.aws.s3.bucket-name:polaris-share-cards}") String bucketName,
-            @Value("${cloud.aws.s3.public-domain:https://cdn.polaris.app}") String publicDomain) {
+            @Value("${cloud.aws.s3.public-domain:https://d24c6my56k1w5v.cloudfront.net}") String publicDomain) {
 
         this.bucketName = bucketName;
         this.publicDomain = publicDomain.endsWith("/")
@@ -66,8 +66,14 @@ public class S3StorageService {
     }
 
     public S3PresignedResult generatePresignedUrlForShareCard(String extension) {
+        return generatePresignedUrlForShareCard(null, extension);
+    }
+
+    public S3PresignedResult generatePresignedUrlForShareCard(Long userId, String extension) {
         String safeExt = normalizeAndValidateExtension(extension);
-        String fileName = "share-cards/" + UUID.randomUUID() + "." + safeExt;
+        String fileName = userId != null && userId > 0
+                ? "share-cards/" + userId + "/" + UUID.randomUUID() + "." + safeExt
+                : "share-cards/" + UUID.randomUUID() + "." + safeExt;
 
         PutObjectRequest objectRequest = PutObjectRequest.builder()
                 .bucket(bucketName)

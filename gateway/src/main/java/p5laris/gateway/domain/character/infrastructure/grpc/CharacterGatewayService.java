@@ -114,7 +114,14 @@ public class CharacterGatewayService {
                 .id(response.getId())
                 .name(response.getName())
                 .characterTypeCode(response.getCharacterTypeCode())
+                .currentAssetUrl(response.getCurrentAssetUrl())
+                .assetUrls(response.getAssetUrlsMap())
                 .active(response.getActive())
+                .states(p5laris.gateway.domain.character.api.dto.MyCharacterResponse.States.builder()
+                        .hunger(response.getStates().getHunger())
+                        .energy(response.getStates().getEnergy())
+                        .affection(response.getStates().getAffection())
+                        .build())
                 .equippedSkin(skin)
                 .build();
     }
