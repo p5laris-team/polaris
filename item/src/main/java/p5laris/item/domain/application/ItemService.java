@@ -7,6 +7,7 @@ import com.p5laris.proto.user.v1.WalletServiceGrpc;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.client.inject.GrpcClient;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -34,6 +35,9 @@ public class ItemService {
     private final UserItemRepository userItemRepository;
     private final UserItemUsageRepository userItemUsageRepository;
     private final ApplicationEventPublisher eventPublisher;
+
+    @Value("${asset.cdn-base-url}")
+    private String cdnBaseUrl;
 
     @GrpcClient("user")
     private WalletServiceGrpc.WalletServiceBlockingStub walletStub;
@@ -71,7 +75,7 @@ public class ItemService {
                     .setDescription(item.getDescription() != null ? item.getDescription() : "")
                     .setItemType(item.getItemType())
                     .setPrice(item.getPrice())
-                    .setImageUrl(item.getImageUrl() != null ? item.getImageUrl() : "")
+                    .setImageUrl(toPublicImageUrl(item.getImageUrl()))
                     .setOwned(ownedItemIds.contains(item.getId()))
                     .setEffectType(item.getEffectType() != null ? item.getEffectType() : "")
                     .setCharacterTypeId(item.getCharacterTypeId() != null ? item.getCharacterTypeId() : 0L)
@@ -121,7 +125,7 @@ public class ItemService {
                     .setEffectType(ui.getItem().getEffectType() != null ? ui.getItem().getEffectType() : "")
                     .setQuantity(ui.getQuantity())
                     .setCharacterTypeId(ui.getItem().getCharacterTypeId() != null ? ui.getItem().getCharacterTypeId() : 0L)
-                    .setImageUrl(ui.getItem().getImageUrl() != null ? ui.getItem().getImageUrl() : "")
+                    .setImageUrl(toPublicImageUrl(ui.getItem().getImageUrl()))
                     .build()
             );
         }
@@ -307,5 +311,24 @@ public class ItemService {
     private String encodeCursor(Long id) {
         if (id == null) return "";
         return Base64.getEncoder().encodeToString(String.valueOf(id).getBytes());
+    }
+
+    private String toPublicImageUrl(String imageUrl) {
+        if (imageUrl == null || imageUrl.isBlank()) {
+            return "";
+        }
+        String normalizedImageUrl = imageUrl.trim();
+        if (normalizedImageUrl.startsWith("http://") || normalizedImageUrl.startsWith("https://")) {
+            return normalizedImageUrl;
+        }
+
+        String baseUrl = cdnBaseUrl == null ? "" : cdnBaseUrl.trim();
+        if (baseUrl.endsWith("/")) {
+            baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
+        }
+        if (!normalizedImageUrl.startsWith("/")) {
+            normalizedImageUrl = "/" + normalizedImageUrl;
+        }
+        return baseUrl + normalizedImageUrl;
     }
 }
