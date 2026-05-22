@@ -12,6 +12,7 @@ service ItemService {
   rpc GetUserItems(GetUserItemsRequest) returns (GetUserItemsResponse);
   rpc PurchaseItem(PurchaseItemRequest) returns (PurchaseItemResponse);
   rpc UseItem(UseItemRequest) returns (UseItemResponse);
+  rpc GetSkinAssets(GetSkinAssetsRequest) returns (GetSkinAssetsResponse);
 }
 
 message PingPongRequest {
@@ -121,5 +122,14 @@ message UseItemResponse {
   int64  item_id           = 3;
   int32  quantity_used     = 4;
   int32  remaining_quantity = 5; // 사용 후 남은 수량
+}
+
+message GetSkinAssetsRequest {
+  int64 skin_item_id = 1;
+  int64 character_type_id = 2;
+}
+
+message GetSkinAssetsResponse {
+  map<string, string> asset_urls = 1;
 }
 

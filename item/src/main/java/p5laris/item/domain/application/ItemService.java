@@ -313,6 +313,52 @@ public class ItemService {
         return Base64.getEncoder().encodeToString(String.valueOf(id).getBytes());
     }
 
+    @Transactional(readOnly = true)
+    public GetSkinAssetsResponse getSkinAssets(GetSkinAssetsRequest request) {
+        Long skinItemId = request.getSkinItemId();
+        Long characterTypeId = request.getCharacterTypeId();
+
+        Item skinItem = itemRepository.findById(skinItemId)
+                .orElseThrow(() -> new ItemException(ItemErrorCode.ITEM_NOT_FOUND));
+
+        if (!"SKIN".equals(skinItem.getItemType())) {
+            throw new ItemException(ItemErrorCode.INVALID_ITEM_TYPE);
+        }
+
+        String skinName = skinItem.getName();
+
+        String koreanName;
+        if (characterTypeId == 1L) {
+            koreanName = "노바";
+        } else if (characterTypeId == 2L) {
+            koreanName = "무무";
+        } else if (characterTypeId == 3L) {
+            koreanName = "쪼리";
+        } else {
+            throw new ItemException(ItemErrorCode.INVALID_CHARACTER_TYPE);
+        }
+
+        String prefix = skinName + " - " + koreanName + " ";
+        List<Item> childAssets = itemRepository.findByNameStartingWithAndCharacterTypeId(prefix, characterTypeId);
+
+        Map<String, String> assetUrls = new HashMap<>();
+        for (Item asset : childAssets) {
+            String fullName = asset.getName();
+            if (fullName.length() > prefix.length()) {
+                String statusPart = fullName.substring(prefix.length()).trim();
+                String statusKey = statusPart;
+                if ("low-energy".equals(statusPart)) {
+                    statusKey = "lowEnergy";
+                }
+                assetUrls.put(statusKey, toPublicImageUrl(asset.getImageUrl()));
+            }
+        }
+
+        return GetSkinAssetsResponse.newBuilder()
+                .putAllAssetUrls(assetUrls)
+                .build();
+    }
+
     private String toPublicImageUrl(String imageUrl) {
         if (imageUrl == null || imageUrl.isBlank()) {
             return "";
