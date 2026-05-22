@@ -52,6 +52,7 @@ class CharacterServiceTest {
 
     @BeforeEach
     void setUp() {
+        org.springframework.test.util.ReflectionTestUtils.setField(characterService, "itemStub", itemStub);
         character = UserCharacter.builder()
                 .userId(1L)
                 .name("Nova")
@@ -108,7 +109,7 @@ class CharacterServiceTest {
         assertEquals("FEED", response.actionType());
         assertEquals(50, response.beforeStates().hunger());
         assertEquals(80, response.afterStates().hunger());
-        assertEquals("음… 오늘의 빛은 좀 달콤하네요.", response.characterMessage());
+        assertEquals("먹는 중... 빛도 맛이 있구나.", response.characterMessage());
 
         // Verify no repository interactions for userCharacter
         verifyNoInteractions(userCharacterRepository);
@@ -119,16 +120,56 @@ class CharacterServiceTest {
     @DisplayName("Successful care action performance for new idempotency key")
     void testPerformCareAction_NewIdempotencyKey() {
         String key = "new-idempotency-key";
+        Long itemId = 10L;
         
         when(characterCareLogRepository.findByIdempotencyKey(key)).thenReturn(Optional.empty());
         when(userCharacterRepository.findById(1L)).thenReturn(Optional.of(character));
 
-        CareActionResponse response = characterService.performCareAction(1L, 1L, "FEED", null, key);
+        CharacterCareLog savedCareLog = CharacterCareLog.builder()
+                .userId(1L)
+                .characterId(1L)
+                .itemId(itemId)
+                .actionType(ActionType.FEED)
+                .beforeStateJson("{\"fullness\":50,\"energy\":50,\"affection\":50}")
+                .afterStateJson("{\"fullness\":80,\"energy\":50,\"affection\":50}")
+                .idempotencyKey(key)
+                .build();
+        org.springframework.test.util.ReflectionTestUtils.setField(savedCareLog, "id", 123L);
+        when(characterCareLogRepository.save(any(CharacterCareLog.class))).thenReturn(savedCareLog);
 
-        assertNotNull(response);
-        assertEquals("FEED", response.actionType());
-        assertEquals(50, response.beforeStates().hunger());
-        assertEquals(80, response.afterStates().hunger()); // +30 fullness recovery
+        com.p5laris.proto.item.v1.UserItem userItem = com.p5laris.proto.item.v1.UserItem.newBuilder()
+                .setItemId(itemId)
+                .setName("맛있는 사료")
+                .setItemType("CONSUMABLE")
+                .setEffectType("FOOD")
+                .setQuantity(5)
+                .build();
+        com.p5laris.proto.item.v1.GetUserItemsResponse ownedItems = com.p5laris.proto.item.v1.GetUserItemsResponse.newBuilder()
+                .addItems(userItem)
+                .build();
+        when(itemStub.getUserItems(any(com.p5laris.proto.item.v1.GetUserItemsRequest.class)))
+                .thenReturn(ownedItems);
+
+        com.p5laris.proto.item.v1.UseItemResponse useItemResponse = com.p5laris.proto.item.v1.UseItemResponse.newBuilder()
+                .setUsageId(1L)
+                .setUserItemId(100L)
+                .setItemId(itemId)
+                .setQuantityUsed(1)
+                .setRemainingQuantity(4)
+                .build();
+        when(itemStub.useItem(any(com.p5laris.proto.item.v1.UseItemRequest.class)))
+                .thenReturn(useItemResponse);
+
+        try {
+            CareActionResponse response = characterService.performCareAction(1L, 1L, "FEED", itemId, key);
+            assertNotNull(response);
+            assertEquals("FEED", response.actionType());
+            assertEquals(50, response.beforeStates().hunger());
+            assertEquals(80, response.afterStates().hunger()); // +30 fullness recovery
+        } catch (p5laris.character.domain.exception.CharacterException e) {
+            System.out.println("DEBUG - CharacterException thrown with code: " + e.getErrorCode());
+            throw e;
+        }
         
         // Verify database saves the care log
         verify(characterCareLogRepository).save(any(CharacterCareLog.class));

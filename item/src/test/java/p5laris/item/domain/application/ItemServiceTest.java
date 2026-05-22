@@ -11,6 +11,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 import p5laris.item.domain.domain.entity.Item;
+import p5laris.item.domain.domain.entity.UserItem;
+import p5laris.item.domain.domain.entity.UserItemPurchase;
 import p5laris.item.domain.domain.repository.ItemRepository;
 import p5laris.item.domain.domain.repository.UserItemRepository;
 import p5laris.item.domain.domain.repository.UserItemUsageRepository;
@@ -51,6 +53,7 @@ class ItemServiceTest {
     @BeforeEach
     void setUp() {
         ReflectionTestUtils.setField(itemService, "cdnBaseUrl", "https://d24c6my56k1w5v.cloudfront.net");
+        ReflectionTestUtils.setField(itemService, "walletStub", walletStub);
     }
 
     @Test

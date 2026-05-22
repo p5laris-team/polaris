@@ -110,10 +110,14 @@ public class ItemController {
     @PostMapping("/v1/item-purchases")
     public ApiResponse<ItemDto.PurchaseResponse> purchaseItem(
             @LoginUserId Long userId,
+            @RequestHeader(value = "Idempotency-Key", required = false) String headerIdempotencyKey,
             @RequestBody ItemDto.PurchaseRequest request
     ) {
-        // 클라이언트에서 멱등키를 제공하지 않은 경우에만 시간 기반 멱등키 생성
-        String idempotencyKey = request.idempotencyKey();
+        // 멱등키 확인: 1순위 HTTP Header, 2순위 Request Body, 3순위 (없을 시 fallback) 시간기반 자동 생성
+        String idempotencyKey = headerIdempotencyKey;
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            idempotencyKey = request.idempotencyKey();
+        }
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
             idempotencyKey = "purchase-" + userId + "-" + request.itemId() + "-" + System.currentTimeMillis();
         }
