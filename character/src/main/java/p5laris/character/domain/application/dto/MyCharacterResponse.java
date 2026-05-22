@@ -2,7 +2,6 @@ package p5laris.character.domain.application.dto;
 
 import lombok.Builder;
 
-import java.util.Map;
 
 /**
  * DTO for GetMyCharacter API spec 4.4.
@@ -15,8 +14,7 @@ public record MyCharacterResponse(
         boolean active,
         Long equippedSkinId,
         States states,
-        String currentAssetUrl,
-        Map<String, String> assetUrls
+        String currentAssetUrl
 ) {
     @Builder
     public record States(

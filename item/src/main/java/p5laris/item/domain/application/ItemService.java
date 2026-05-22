@@ -7,6 +7,7 @@ import com.p5laris.proto.user.v1.WalletServiceGrpc;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.client.inject.GrpcClient;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -15,10 +16,12 @@ import org.springframework.transaction.annotation.Transactional;
 import p5laris.item.domain.application.event.ItemEventLogEvent;
 import p5laris.item.domain.domain.entity.Item;
 import p5laris.item.domain.domain.entity.UserItem;
+import p5laris.item.domain.domain.entity.UserItemPurchase;
 import p5laris.item.domain.domain.entity.UserItemUsage;
 import p5laris.item.domain.domain.repository.ItemRepository;
 import p5laris.item.domain.domain.repository.UserItemRepository;
 import p5laris.item.domain.domain.repository.UserItemUsageRepository;
+import p5laris.item.domain.domain.repository.UserItemPurchaseRepository;
 import p5laris.item.domain.exception.ItemErrorCode;
 import p5laris.item.domain.exception.ItemException;
 
@@ -33,7 +36,11 @@ public class ItemService {
     private final ItemRepository itemRepository;
     private final UserItemRepository userItemRepository;
     private final UserItemUsageRepository userItemUsageRepository;
+    private final UserItemPurchaseRepository userItemPurchaseRepository;
     private final ApplicationEventPublisher eventPublisher;
+
+    @Value("${asset.cdn-base-url}")
+    private String cdnBaseUrl;
 
     @GrpcClient("user")
     private WalletServiceGrpc.WalletServiceBlockingStub walletStub;
@@ -71,7 +78,7 @@ public class ItemService {
                     .setDescription(item.getDescription() != null ? item.getDescription() : "")
                     .setItemType(item.getItemType())
                     .setPrice(item.getPrice())
-                    .setImageUrl(item.getImageUrl() != null ? item.getImageUrl() : "")
+                    .setImageUrl(toPublicImageUrl(item.getImageUrl()))
                     .setOwned(ownedItemIds.contains(item.getId()))
                     .setEffectType(item.getEffectType() != null ? item.getEffectType() : "")
                     .setCharacterTypeId(item.getCharacterTypeId() != null ? item.getCharacterTypeId() : 0L)
@@ -121,7 +128,7 @@ public class ItemService {
                     .setEffectType(ui.getItem().getEffectType() != null ? ui.getItem().getEffectType() : "")
                     .setQuantity(ui.getQuantity())
                     .setCharacterTypeId(ui.getItem().getCharacterTypeId() != null ? ui.getItem().getCharacterTypeId() : 0L)
-                    .setImageUrl(ui.getItem().getImageUrl() != null ? ui.getItem().getImageUrl() : "")
+                    .setImageUrl(toPublicImageUrl(ui.getItem().getImageUrl()))
                     .build()
             );
         }
@@ -143,6 +150,24 @@ public class ItemService {
         Long userId = request.getUserId();
         Long itemId = request.getItemId();
         int quantity = request.getQuantity() > 0 ? request.getQuantity() : 1;
+        String idempotencyKey = request.getIdempotencyKey().isEmpty() ? null : request.getIdempotencyKey();
+
+        // 멱등성 검사: 이미 처리된 요청이면 기존 결과를 그대로 반환한다.
+        if (idempotencyKey != null) {
+            Optional<UserItemPurchase> existing = userItemPurchaseRepository.findByIdempotencyKey(idempotencyKey);
+            if (existing.isPresent()) {
+                UserItemPurchase dup = existing.get();
+                return PurchaseItemResponse.newBuilder()
+                        .setPurchaseId(dup.getId())
+                        .setItemId(dup.getItemId())
+                        .setName(dup.getUserItem().getItem().getName())
+                        .setQuantity(dup.getQuantity())
+                        .setPrice(dup.getPrice())
+                        .setStarPiece(dup.getStarPiece())
+                        .setTransactionId(dup.getTransactionId())
+                        .build();
+            }
+        }
         
         Item item = itemRepository.findById(itemId)
                 .orElseThrow(() -> new ItemException(ItemErrorCode.ITEM_NOT_FOUND));
@@ -168,7 +193,7 @@ public class ItemService {
                     .setReason("ITEM_PURCHASE")
                     .setRefType("ITEM")
                     .setRefId(itemId)
-                    .setIdempotencyKey(request.getIdempotencyKey())
+                    .setIdempotencyKey(idempotencyKey != null ? idempotencyKey : "")
                     .build()
             );
         } catch (Exception e) {
@@ -195,6 +220,19 @@ public class ItemService {
         }
         UserItem savedUserItem = userItemRepository.save(userItem);
 
+        // 구매 이력 저장
+        UserItemPurchase purchaseHistory = UserItemPurchase.builder()
+                .userId(userId)
+                .userItem(savedUserItem)
+                .itemId(itemId)
+                .quantity(quantity)
+                .price(totalPrice)
+                .starPiece(spendResponse.getStarPiece())
+                .transactionId(spendResponse.getTransactionId())
+                .idempotencyKey(idempotencyKey)
+                .build();
+        UserItemPurchase savedPurchase = userItemPurchaseRepository.save(purchaseHistory);
+
         eventPublisher.publishEvent(ItemEventLogEvent.itemPurchased(
                 userId,
                 savedUserItem,
@@ -210,11 +248,11 @@ public class ItemService {
                 totalPrice,
                 spendResponse.getTransactionId(),
                 spendResponse.getStarPiece(),
-                request.getIdempotencyKey()
+                idempotencyKey != null ? idempotencyKey : ""
         ));
         
         return PurchaseItemResponse.newBuilder()
-                .setPurchaseId(savedUserItem.getId())
+                .setPurchaseId(savedPurchase.getId())
                 .setItemId(itemId)
                 .setName(item.getName())
                 .setQuantity(quantity)
@@ -307,5 +345,70 @@ public class ItemService {
     private String encodeCursor(Long id) {
         if (id == null) return "";
         return Base64.getEncoder().encodeToString(String.valueOf(id).getBytes());
+    }
+
+    @Transactional(readOnly = true)
+    public GetSkinAssetsResponse getSkinAssets(GetSkinAssetsRequest request) {
+        Long skinItemId = request.getSkinItemId();
+        Long characterTypeId = request.getCharacterTypeId();
+
+        Item skinItem = itemRepository.findById(skinItemId)
+                .orElseThrow(() -> new ItemException(ItemErrorCode.ITEM_NOT_FOUND));
+
+        if (!"SKIN".equals(skinItem.getItemType())) {
+            throw new ItemException(ItemErrorCode.INVALID_ITEM_TYPE);
+        }
+
+        String skinName = skinItem.getName();
+
+        String koreanName;
+        if (characterTypeId == 1L) {
+            koreanName = "노바";
+        } else if (characterTypeId == 2L) {
+            koreanName = "무무";
+        } else if (characterTypeId == 3L) {
+            koreanName = "쪼리";
+        } else {
+            throw new ItemException(ItemErrorCode.INVALID_CHARACTER_TYPE);
+        }
+
+        String prefix = skinName + " - " + koreanName + " ";
+        List<Item> childAssets = itemRepository.findByNameStartingWithAndCharacterTypeId(prefix, characterTypeId);
+
+        Map<String, String> assetUrls = new HashMap<>();
+        for (Item asset : childAssets) {
+            String fullName = asset.getName();
+            if (fullName.length() > prefix.length()) {
+                String statusPart = fullName.substring(prefix.length()).trim();
+                String statusKey = statusPart;
+                if ("low-energy".equals(statusPart)) {
+                    statusKey = "lowEnergy";
+                }
+                assetUrls.put(statusKey, toPublicImageUrl(asset.getImageUrl()));
+            }
+        }
+
+        return GetSkinAssetsResponse.newBuilder()
+                .putAllAssetUrls(assetUrls)
+                .build();
+    }
+
+    private String toPublicImageUrl(String imageUrl) {
+        if (imageUrl == null || imageUrl.isBlank()) {
+            return "";
+        }
+        String normalizedImageUrl = imageUrl.trim();
+        if (normalizedImageUrl.startsWith("http://") || normalizedImageUrl.startsWith("https://")) {
+            return normalizedImageUrl;
+        }
+
+        String baseUrl = cdnBaseUrl == null ? "" : cdnBaseUrl.trim();
+        if (baseUrl.endsWith("/")) {
+            baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
+        }
+        if (!normalizedImageUrl.startsWith("/")) {
+            normalizedImageUrl = "/" + normalizedImageUrl;
+        }
+        return baseUrl + normalizedImageUrl;
     }
 }

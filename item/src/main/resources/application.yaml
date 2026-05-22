@@ -21,6 +21,9 @@ flyway:
   baseline-on-migrate: false
   validate-on-migrate: true
 
+asset:
+  cdn-base-url: ${ASSET_CDN_BASE_URL:https://d24c6my56k1w5v.cloudfront.net}
+
 grpc:
   server:
     port: ${GRPC_SERVER_PORT}

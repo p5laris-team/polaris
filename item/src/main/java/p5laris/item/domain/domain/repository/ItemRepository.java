@@ -13,4 +13,6 @@ public interface ItemRepository extends JpaRepository<Item, Long> {
     // For cursor-based paging
     List<Item> findByIdGreaterThanAndActiveOrderByIdAsc(Long id, boolean active, Pageable pageable);
     List<Item> findByIdGreaterThanAndItemTypeAndActiveOrderByIdAsc(Long id, String itemType, boolean active, Pageable pageable);
+
+    List<Item> findByNameStartingWithAndCharacterTypeId(String prefix, Long characterTypeId);
 }

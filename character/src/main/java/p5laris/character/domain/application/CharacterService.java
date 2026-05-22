@@ -22,7 +22,7 @@ import p5laris.character.domain.domain.enums.StatType;
 import p5laris.character.domain.domain.repository.CharacterAssetRepository;
 import p5laris.character.domain.domain.repository.CharacterCareLogRepository;
 import p5laris.character.domain.domain.repository.CharacterTypeRepository;
-import p5laris.character.domain.domain.repository.SkinAssetRepository;
+
 import p5laris.character.domain.domain.repository.UserCharacterRepository;
 import p5laris.character.domain.exception.CharacterErrorCode;
 import p5laris.character.domain.exception.CharacterException;
@@ -42,7 +42,6 @@ public class CharacterService {
     private final CharacterAssetRepository characterAssetRepository;
     private final UserCharacterRepository userCharacterRepository;
     private final CharacterCareLogRepository characterCareLogRepository;
-    private final SkinAssetRepository skinAssetRepository;
     private final ObjectMapper objectMapper;
 
     @GrpcClient("item")
@@ -129,7 +128,7 @@ public class CharacterService {
         userCharacter.calculateTimeBasedStatDecrease();
 
         Map<String, String> assetUrls = buildAssetUrls(userCharacter);
-        String currentAssetUrl = assetUrls.getOrDefault(CharacterMood.IDLE.responseKey(), "");
+        String currentAssetUrl = assetUrls.getOrDefault(userCharacter.calculateMood().responseKey(), "");
 
         return p5laris.character.domain.application.dto.MyCharacterResponse.builder()
                 .id(userCharacter.getId())
@@ -143,7 +142,6 @@ public class CharacterService {
                         .affection(userCharacter.getAffection())
                         .build())
                 .currentAssetUrl(currentAssetUrl)
-                .assetUrls(assetUrls)
                 .build();
     }
 
@@ -155,13 +153,21 @@ public class CharacterService {
             return assetUrls;
         }
 
-        Map<String, String> skinAssetUrls = new LinkedHashMap<>();
-        skinAssetRepository.findByItemIdAndCharacterTypeId(equippedSkinId, characterTypeId)
-                .forEach(asset -> putMoodAsset(skinAssetUrls, asset.getAssetType(), asset.getAssetUrl()));
-        if (skinAssetUrls.isEmpty()) {
-            return assetUrls;
+        try {
+            com.p5laris.proto.item.v1.GetSkinAssetsResponse response = itemStub.getSkinAssets(
+                    com.p5laris.proto.item.v1.GetSkinAssetsRequest.newBuilder()
+                            .setSkinItemId(equippedSkinId)
+                            .setCharacterTypeId(characterTypeId)
+                            .build()
+            );
+            Map<String, String> skinAssetUrls = response.getAssetUrlsMap();
+            if (skinAssetUrls != null && !skinAssetUrls.isEmpty()) {
+                assetUrls.putAll(skinAssetUrls);
+            }
+        } catch (Exception e) {
+            log.error("Failed to get skin assets from item service for skinItemId: {}, characterTypeId: {}", 
+                    equippedSkinId, characterTypeId, e);
         }
-        assetUrls.putAll(skinAssetUrls);
         return assetUrls;
     }
 
@@ -283,7 +289,7 @@ public class CharacterService {
                 .afterStateJson(toStateJson(afterStates))
                 .idempotencyKey(idempotencyKey)
                 .build();
-        characterCareLogRepository.save(careLog);
+        CharacterCareLog savedCareLog = characterCareLogRepository.save(careLog);
 
         try {
             itemStub.useItem(
@@ -292,7 +298,7 @@ public class CharacterService {
                             .setItemId(resolvedItemId)
                             .setQuantity(1)
                             .setRefType("CARE_ACTION")
-                            .setRefId(careLog.getId())
+                            .setRefId(savedCareLog.getId() != null ? savedCareLog.getId() : 0L)
                             .setIdempotencyKey(idempotencyKey)
                             .build()
             );
@@ -325,18 +331,23 @@ public class CharacterService {
             throw new CharacterException(CharacterErrorCode.NOT_CHARACTER_OWNER);
         }
 
-        // 2. TODO [Item Domain Integration]: verify user owns the skin item.
-        //    Example (uncomment after item domain is ready):
-        //    if (!itemService.userOwnsItem(userId, itemId)) {
-        //        throw new IllegalArgumentException("User does not own item: " + itemId);
-        //    }
+        // 2. verify user owns the skin item.
+        if (itemId != null && itemId > 0) {
+            try {
+                findOwnedItem(userId, itemId, "SKIN");
+            } catch (CharacterException e) {
+                throw e;
+            } catch (Exception e) {
+                log.error("Failed to verify skin ownership for userId: {}, itemId: {}", userId, itemId, e);
+                throw new CharacterException(CharacterErrorCode.ITEM_SERVICE_CALL_FAILED);
+            }
+        }
 
         Long equippedSkinId = itemId;
         if (itemId == null || itemId <= 0) {
             character.unequipSkin();
             equippedSkinId = null;
         } else {
-            findOwnedItem(userId, itemId, "SKIN");
             character.equipSkin(itemId);
         }
 
