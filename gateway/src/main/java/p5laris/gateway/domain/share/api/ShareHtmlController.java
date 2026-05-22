@@ -19,10 +19,10 @@ public class ShareHtmlController {
 
     private final ShareGatewayService shareGatewayService;
 
-    @Value("${app.public-base-url:https://polaris.app}")
+    @Value("${app.public-base-url:https://p5laris.life}")
     private String publicBaseUrl;
 
-    @Value("${app.default-share-image-url:https://cdn.polaris.app/share-cards/placeholder.png}")
+    @Value("${app.default-share-image-url:https://d24c6my56k1w5v.cloudfront.net/assets/share-cards/placeholder.png}")
     private String defaultShareImageUrl;
 
     @GetMapping(value = "/share/{shareId}", produces = MediaType.TEXT_HTML_VALUE)
@@ -82,7 +82,7 @@ public class ShareHtmlController {
                     <p>공유 페이지로 이동하려면 아래 링크를 눌러주세요.</p>
                     <p><a href="%s">%s</a></p>
                   </noscript>
-                  <p>이동 중…</p>
+                  <p>이동 중...</p>
                   <p><a href="%s">%s</a></p>
                   <script>
                     window.location.replace(%s);
@@ -105,7 +105,9 @@ public class ShareHtmlController {
     }
 
     private String htmlEscape(String input) {
-        if (input == null) return "";
+        if (input == null) {
+            return "";
+        }
         return input
                 .replace("&", "&amp;")
                 .replace("<", "&lt;")
@@ -115,7 +117,6 @@ public class ShareHtmlController {
     }
 
     private String jsStringLiteral(String url) {
-        // minimal escaping for JS string literal
         return "\"" + url.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
     }
 
@@ -127,14 +128,19 @@ public class ShareHtmlController {
 
     private String normalizeAbsoluteHttpsUrlOrFallback(String candidate, String fallback) {
         try {
-            if (candidate == null || candidate.isBlank()) return fallback;
+            if (candidate == null || candidate.isBlank()) {
+                return fallback;
+            }
             URI uri = URI.create(candidate);
-            if (!"https".equalsIgnoreCase(uri.getScheme())) return fallback;
-            if (uri.getHost() == null || uri.getHost().isBlank()) return fallback;
+            if (!"https".equalsIgnoreCase(uri.getScheme())) {
+                return fallback;
+            }
+            if (uri.getHost() == null || uri.getHost().isBlank()) {
+                return fallback;
+            }
             return uri.toString();
         } catch (Exception e) {
             return fallback;
         }
     }
 }
-
