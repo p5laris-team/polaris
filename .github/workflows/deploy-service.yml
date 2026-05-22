@@ -16,8 +16,13 @@ on:
           - event-log
           - ai
           - all
+          - affected
       ref:
         description: "배포할 브랜치 또는 커밋 SHA"
+        required: true
+        default: "main"
+      base_ref:
+        description: "affected 비교 기준 브랜치"
         required: true
         default: "main"
 
@@ -38,6 +43,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref }}
+          fetch-depth: 0
 
       - name: Set up JDK
         uses: actions/setup-java@v4
@@ -46,9 +52,13 @@ jobs:
           java-version: 21
           cache: gradle
 
-      - name: Grant execute permission for Gradle wrapper
+      - name: Grant execute permission
         shell: bash
-        run: chmod +x ./gradlew
+        run: |
+          chmod +x ./gradlew
+          if [ -f ./nx ]; then
+            chmod +x ./nx
+          fi
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -76,11 +86,22 @@ jobs:
         shell: bash
         env:
           SELECTED_SERVICE: ${{ inputs.service }}
+          BASE_REF: ${{ inputs.base_ref }}
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
         run: |
           set -euo pipefail
+
+          DEPLOY_ORDER=(
+            user
+            character
+            item
+            mission
+            event-log
+            ai
+            gateway
+          )
 
           resolve_service() {
             local service="$1"
@@ -126,6 +147,51 @@ jobs:
                 exit 1
                 ;;
             esac
+          }
+
+          contains_line() {
+            local needle="$1"
+            local haystack="$2"
+
+            echo "$haystack" | grep -qx "$needle"
+          }
+
+          resolve_services_to_deploy() {
+            if [ "$SELECTED_SERVICE" = "all" ]; then
+              SERVICES=("${DEPLOY_ORDER[@]}")
+              return
+            fi
+
+            if [ "$SELECTED_SERVICE" = "affected" ]; then
+              echo "== Resolve affected services =="
+              echo "Base ref: origin/$BASE_REF"
+              echo "Head ref: HEAD"
+              echo ""
+
+              git fetch origin "$BASE_REF"
+
+              AFFECTED_PROJECTS="$(./nx show projects --affected --base="origin/$BASE_REF" --head=HEAD || true)"
+
+              echo "Affected projects:"
+              if [ -n "$AFFECTED_PROJECTS" ]; then
+                echo "$AFFECTED_PROJECTS"
+              else
+                echo "(none)"
+              fi
+              echo ""
+
+              SERVICES=()
+
+              for candidate in "${DEPLOY_ORDER[@]}"; do
+                if contains_line "$candidate" "$AFFECTED_PROJECTS"; then
+                  SERVICES+=("$candidate")
+                fi
+              done
+
+              return
+            fi
+
+            SERVICES=("$SELECTED_SERVICE")
           }
 
           deploy_one() {
@@ -190,22 +256,17 @@ jobs:
             echo "Deploy completed: $service"
           }
 
-          if [ "$SELECTED_SERVICE" = "all" ]; then
-            SERVICES=(
-              user
-              character
-              item
-              mission
-              event-log
-              ai
-              gateway
-            )
-          else
-            SERVICES=("$SELECTED_SERVICE")
-          fi
+          resolve_services_to_deploy
 
           echo "Selected service: $SELECTED_SERVICE"
           echo "Deploy order:"
+          if [ "${#SERVICES[@]}" -eq 0 ]; then
+            echo " - no deploy target"
+            echo ""
+            echo "No affected deployable service. Skip deployment."
+            exit 0
+          fi
+
           printf ' - %s\n' "${SERVICES[@]}"
 
           for service in "${SERVICES[@]}"; do

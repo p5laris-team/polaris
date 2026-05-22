@@ -223,12 +223,12 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
         var result = characterService.equipSkin(
                 request.getCharacterId(),
                 request.getUserId(),
-                request.getItemId()
+                request.hasItemId() ? request.getItemId() : null
         );
 
         EquipSkinResponse response = EquipSkinResponse.newBuilder()
                 .setCharacterId(result.characterId())
-                .setEquippedSkinId(result.equippedSkinId())
+                .setEquippedSkinId(result.equippedSkinId() != null ? result.equippedSkinId() : 0L)
                 .setUpdatedAt(result.updatedAt().toString())
                 .build();
 
@@ -244,7 +244,7 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
         var result = shareService.createShareCard(
                 request.getUserId(), 
                 request.getCharacterId(), 
-                request.getImageUrl()
+                request.getHeadline()
         );
 
         responseObserver.onNext(CreateShareCardResponse.newBuilder()

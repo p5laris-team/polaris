@@ -24,10 +24,11 @@ dependencies {
     implementation 'org.flywaydb:flyway-core'
     implementation 'org.flywaydb:flyway-database-postgresql'
 
-    // Cloudflare R2 연동용 (AWS S3 호환 SDK)
+    // AWS S3 presigned URL support
     implementation platform('software.amazon.awssdk:bom:2.24.0')
     implementation 'software.amazon.awssdk:s3'
 
+    implementation 'org.springframework.boot:spring-boot-starter-json'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     runtimeOnly 'org.postgresql:postgresql'
 

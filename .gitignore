@@ -36,3 +36,8 @@ out/
 ### VS Code ###
 .vscode/
 .env
+
+.nx/installation
+.nx/cache
+.nx/workspace-data
+.nx/self-healing
