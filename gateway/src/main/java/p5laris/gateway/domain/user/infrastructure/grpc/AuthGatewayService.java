@@ -36,6 +36,7 @@ public class AuthGatewayService {
                 .setCode(request.getCode())
                 .setState(request.getState())
                 .setRedirectUri(request.getRedirectUri())
+                .setClientId(request.getClientId() != null ? request.getClientId() : "")
                 .build();
 
         LoginGoogleResponse grpcResponse = userServiceStub.loginGoogle(grpcRequest);

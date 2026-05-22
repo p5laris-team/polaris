@@ -45,7 +45,7 @@ public class UserGrpcController extends UserServiceGrpc.UserServiceImplBase {
     @Override
     public void loginGoogle(LoginGoogleRequest request, StreamObserver<LoginGoogleResponse> responseObserver) {
         try {
-            AuthService.LoginResult result = authService.loginGoogle(request.getCode(), request.getRedirectUri());
+            AuthService.LoginResult result = authService.loginGoogle(request.getCode(), request.getRedirectUri(), request.getClientId());
             
             User protoUser = User.newBuilder()
                     .setId(result.user().getId())
