@@ -16,10 +16,12 @@ import org.springframework.transaction.annotation.Transactional;
 import p5laris.item.domain.application.event.ItemEventLogEvent;
 import p5laris.item.domain.domain.entity.Item;
 import p5laris.item.domain.domain.entity.UserItem;
+import p5laris.item.domain.domain.entity.UserItemPurchase;
 import p5laris.item.domain.domain.entity.UserItemUsage;
 import p5laris.item.domain.domain.repository.ItemRepository;
 import p5laris.item.domain.domain.repository.UserItemRepository;
 import p5laris.item.domain.domain.repository.UserItemUsageRepository;
+import p5laris.item.domain.domain.repository.UserItemPurchaseRepository;
 import p5laris.item.domain.exception.ItemErrorCode;
 import p5laris.item.domain.exception.ItemException;
 
@@ -34,6 +36,7 @@ public class ItemService {
     private final ItemRepository itemRepository;
     private final UserItemRepository userItemRepository;
     private final UserItemUsageRepository userItemUsageRepository;
+    private final UserItemPurchaseRepository userItemPurchaseRepository;
     private final ApplicationEventPublisher eventPublisher;
 
     @Value("${asset.cdn-base-url}")
@@ -147,6 +150,24 @@ public class ItemService {
         Long userId = request.getUserId();
         Long itemId = request.getItemId();
         int quantity = request.getQuantity() > 0 ? request.getQuantity() : 1;
+        String idempotencyKey = request.getIdempotencyKey().isEmpty() ? null : request.getIdempotencyKey();
+
+        // 멱등성 검사: 이미 처리된 요청이면 기존 결과를 그대로 반환한다.
+        if (idempotencyKey != null) {
+            Optional<UserItemPurchase> existing = userItemPurchaseRepository.findByIdempotencyKey(idempotencyKey);
+            if (existing.isPresent()) {
+                UserItemPurchase dup = existing.get();
+                return PurchaseItemResponse.newBuilder()
+                        .setPurchaseId(dup.getId())
+                        .setItemId(dup.getItemId())
+                        .setName(dup.getUserItem().getItem().getName())
+                        .setQuantity(dup.getQuantity())
+                        .setPrice(dup.getPrice())
+                        .setStarPiece(dup.getStarPiece())
+                        .setTransactionId(dup.getTransactionId())
+                        .build();
+            }
+        }
         
         Item item = itemRepository.findById(itemId)
                 .orElseThrow(() -> new ItemException(ItemErrorCode.ITEM_NOT_FOUND));
@@ -172,7 +193,7 @@ public class ItemService {
                     .setReason("ITEM_PURCHASE")
                     .setRefType("ITEM")
                     .setRefId(itemId)
-                    .setIdempotencyKey(request.getIdempotencyKey())
+                    .setIdempotencyKey(idempotencyKey != null ? idempotencyKey : "")
                     .build()
             );
         } catch (Exception e) {
@@ -199,6 +220,19 @@ public class ItemService {
         }
         UserItem savedUserItem = userItemRepository.save(userItem);
 
+        // 구매 이력 저장
+        UserItemPurchase purchaseHistory = UserItemPurchase.builder()
+                .userId(userId)
+                .userItem(savedUserItem)
+                .itemId(itemId)
+                .quantity(quantity)
+                .price(totalPrice)
+                .starPiece(spendResponse.getStarPiece())
+                .transactionId(spendResponse.getTransactionId())
+                .idempotencyKey(idempotencyKey)
+                .build();
+        UserItemPurchase savedPurchase = userItemPurchaseRepository.save(purchaseHistory);
+
         eventPublisher.publishEvent(ItemEventLogEvent.itemPurchased(
                 userId,
                 savedUserItem,
@@ -214,11 +248,11 @@ public class ItemService {
                 totalPrice,
                 spendResponse.getTransactionId(),
                 spendResponse.getStarPiece(),
-                request.getIdempotencyKey()
+                idempotencyKey != null ? idempotencyKey : ""
         ));
         
         return PurchaseItemResponse.newBuilder()
-                .setPurchaseId(savedUserItem.getId())
+                .setPurchaseId(savedPurchase.getId())
                 .setItemId(itemId)
                 .setName(item.getName())
                 .setQuantity(quantity)

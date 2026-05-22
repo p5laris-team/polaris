@@ -14,6 +14,7 @@ import p5laris.item.domain.domain.entity.Item;
 import p5laris.item.domain.domain.repository.ItemRepository;
 import p5laris.item.domain.domain.repository.UserItemRepository;
 import p5laris.item.domain.domain.repository.UserItemUsageRepository;
+import p5laris.item.domain.domain.repository.UserItemPurchaseRepository;
 import p5laris.item.domain.exception.ItemException;
 
 import java.util.Arrays;
@@ -34,6 +35,15 @@ class ItemServiceTest {
 
     @Mock
     private UserItemUsageRepository userItemUsageRepository;
+
+    @Mock
+    private UserItemPurchaseRepository userItemPurchaseRepository;
+
+    @Mock
+    private org.springframework.context.ApplicationEventPublisher eventPublisher;
+
+    @Mock
+    private com.p5laris.proto.user.v1.WalletServiceGrpc.WalletServiceBlockingStub walletStub;
 
     @InjectMocks
     private ItemService itemService;
@@ -114,5 +124,145 @@ class ItemServiceTest {
                 .isEqualTo("https://d24c6my56k1w5v.cloudfront.net/assets/skins/starlight/equipped/mumu/core/skin-starlight-mumu-idle.png");
         assertThat(response.getAssetUrlsOrThrow("lowEnergy"))
                 .isEqualTo("https://d24c6my56k1w5v.cloudfront.net/assets/skins/starlight/equipped/mumu/status/skin-starlight-mumu-low-energy.png");
+    }
+
+    @Test
+    @DisplayName("purchaseItem - 동일한 멱등키로 재요청 시 지갑 차감 없이 기존 구매 결과 반환")
+    void purchaseItem_duplicateIdempotencyKey_returnsExistingPurchase() {
+        // given
+        Long userId = 1L;
+        Long itemId = 10L;
+        String idempotencyKey = "test-idempotency-key";
+
+        com.p5laris.proto.item.v1.PurchaseItemRequest request = com.p5laris.proto.item.v1.PurchaseItemRequest.newBuilder()
+                .setUserId(userId)
+                .setItemId(itemId)
+                .setQuantity(1)
+                .setIdempotencyKey(idempotencyKey)
+                .build();
+
+        Item item = Item.builder()
+                .id(itemId)
+                .name("말랑 별빛 스킨")
+                .itemType("SKIN")
+                .price(60)
+                .build();
+
+        UserItem userItem = UserItem.builder()
+                .id(100L)
+                .userId(userId)
+                .item(item)
+                .quantity(1)
+                .build();
+
+        UserItemPurchase existingPurchase = UserItemPurchase.builder()
+                .id(500L)
+                .userId(userId)
+                .userItem(userItem)
+                .itemId(itemId)
+                .quantity(1)
+                .price(60)
+                .starPiece(1000)
+                .transactionId(12345L)
+                .idempotencyKey(idempotencyKey)
+                .build();
+
+        when(userItemPurchaseRepository.findByIdempotencyKey(idempotencyKey))
+                .thenReturn(Optional.of(existingPurchase));
+
+        // when
+        com.p5laris.proto.item.v1.PurchaseItemResponse response = itemService.purchaseItem(request);
+
+        // then
+        assertThat(response.getPurchaseId()).isEqualTo(500L);
+        assertThat(response.getItemId()).isEqualTo(itemId);
+        assertThat(response.getName()).isEqualTo("말랑 별빛 스킨");
+        assertThat(response.getQuantity()).isEqualTo(1);
+        assertThat(response.getPrice()).isEqualTo(60);
+        assertThat(response.getStarPiece()).isEqualTo(1000);
+        assertThat(response.getTransactionId()).isEqualTo(12345L);
+
+        // 지갑 API 및 DB 저장이 전혀 호출되지 않아야 함
+        verify(userItemRepository, never()).save(any());
+        verify(userItemPurchaseRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("purchaseItem - 신규 구매 시 지갑 차감, 인벤토리 적재, 구매 이력 저장 후 올바른 purchaseId 반환")
+    void purchaseItem_newPurchase_success() {
+        // given
+        Long userId = 1L;
+        Long itemId = 10L;
+        String idempotencyKey = "new-idempotency-key";
+
+        com.p5laris.proto.item.v1.PurchaseItemRequest request = com.p5laris.proto.item.v1.PurchaseItemRequest.newBuilder()
+                .setUserId(userId)
+                .setItemId(itemId)
+                .setQuantity(1)
+                .setIdempotencyKey(idempotencyKey)
+                .build();
+
+        Item item = Item.builder()
+                .id(itemId)
+                .name("말랑 별빛 스킨")
+                .itemType("SKIN")
+                .price(60)
+                .build();
+
+        UserItem userItem = UserItem.builder()
+                .id(100L)
+                .userId(userId)
+                .item(item)
+                .quantity(1)
+                .build();
+
+        com.p5laris.proto.user.v1.SpendStarPieceResponse spendResponse = com.p5laris.proto.user.v1.SpendStarPieceResponse.newBuilder()
+                .setStarPiece(940)
+                .setTransactionId(12345L)
+                .build();
+
+        when(userItemPurchaseRepository.findByIdempotencyKey(idempotencyKey))
+                .thenReturn(Optional.empty());
+        when(itemRepository.findById(itemId))
+                .thenReturn(Optional.of(item));
+        when(userItemRepository.findByUserIdAndItemId(userId, itemId))
+                .thenReturn(Optional.empty());
+        
+        when(walletStub.spendStarPiece(any(com.p5laris.proto.user.v1.SpendStarPieceRequest.class)))
+                .thenReturn(spendResponse);
+        
+        when(userItemRepository.save(any(UserItem.class)))
+                .thenReturn(userItem);
+
+        UserItemPurchase savedPurchase = UserItemPurchase.builder()
+                .id(500L)
+                .userId(userId)
+                .userItem(userItem)
+                .itemId(itemId)
+                .quantity(1)
+                .price(60)
+                .starPiece(940)
+                .transactionId(12345L)
+                .idempotencyKey(idempotencyKey)
+                .build();
+
+        when(userItemPurchaseRepository.save(any(UserItemPurchase.class)))
+                .thenReturn(savedPurchase);
+
+        // when
+        com.p5laris.proto.item.v1.PurchaseItemResponse response = itemService.purchaseItem(request);
+
+        // then
+        assertThat(response.getPurchaseId()).isEqualTo(500L); // UserItemPurchase ID 여야 함
+        assertThat(response.getItemId()).isEqualTo(itemId);
+        assertThat(response.getName()).isEqualTo("말랑 별빛 스킨");
+        assertThat(response.getQuantity()).isEqualTo(1);
+        assertThat(response.getPrice()).isEqualTo(60);
+        assertThat(response.getStarPiece()).isEqualTo(940);
+        assertThat(response.getTransactionId()).isEqualTo(12345L);
+
+        verify(walletStub, times(1)).spendStarPiece(any());
+        verify(userItemRepository, times(1)).save(any());
+        verify(userItemPurchaseRepository, times(1)).save(any());
     }
 }

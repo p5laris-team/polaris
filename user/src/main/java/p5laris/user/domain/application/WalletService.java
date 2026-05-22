@@ -30,10 +30,11 @@ public class WalletService {
         if (amount < 0) throw new UserException(UserErrorCode.EARN_AMOUNT_MUST_BE_POSITIVE);
 
         // 이미 처리된 요청인지 확인
-        Optional<StarPieceTransaction> existing = transactionRepository.findByIdempotencyKey(idempotencyKey);
-
-        if (existing.isPresent()) {
-            return existing.get();
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            Optional<StarPieceTransaction> existing = transactionRepository.findByIdempotencyKey(idempotencyKey);
+            if (existing.isPresent()) {
+                return existing.get();
+            }
         }
 
         Wallet wallet = walletRepository.findByUserId(userId)
@@ -41,6 +42,8 @@ public class WalletService {
 
         // 보상 지급
         wallet.addStarPiece(amount);
+
+        String keyToSave = (idempotencyKey != null && !idempotencyKey.isBlank()) ? idempotencyKey : null;
 
         // 별조각 거래내역에 추가
         StarPieceTransaction tx = StarPieceTransaction.builder()
@@ -51,7 +54,7 @@ public class WalletService {
                 .reason(reason)
                 .refType(refType)
                 .refId(refId)
-                .idempotencyKey(idempotencyKey)
+                .idempotencyKey(keyToSave)
                 .build();
                 
         return transactionRepository.save(tx);
@@ -62,10 +65,11 @@ public class WalletService {
         if (amount < 0) throw new IllegalArgumentException("Amount must be positive");
 
         // 멱등성 체크
-        Optional<StarPieceTransaction> existing = transactionRepository.findByIdempotencyKey(idempotencyKey);
-
-        if (existing.isPresent()) {
-            return existing.get();
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            Optional<StarPieceTransaction> existing = transactionRepository.findByIdempotencyKey(idempotencyKey);
+            if (existing.isPresent()) {
+                return existing.get();
+            }
         }
 
         Wallet wallet = walletRepository.findByUserId(userId)
@@ -78,6 +82,8 @@ public class WalletService {
         // 별조각 차감
         wallet.useStarPiece(amount);
 
+        String keyToSave = (idempotencyKey != null && !idempotencyKey.isBlank()) ? idempotencyKey : null;
+
         // 별조각 거래내역에 추가
         StarPieceTransaction tx = StarPieceTransaction.builder()
                 .userId(userId)
@@ -87,7 +93,7 @@ public class WalletService {
                 .reason(reason)
                 .refType(refType)
                 .refId(refId)
-                .idempotencyKey(idempotencyKey)
+                .idempotencyKey(keyToSave)
                 .build();
                 
         return transactionRepository.save(tx);

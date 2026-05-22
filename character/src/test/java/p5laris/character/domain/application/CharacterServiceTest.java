@@ -39,6 +39,9 @@ class CharacterServiceTest {
     @Mock
     private CharacterCareLogRepository characterCareLogRepository;
 
+    @Mock
+    private com.p5laris.proto.item.v1.ItemServiceGrpc.ItemServiceBlockingStub itemStub;
+
     @Spy
     private ObjectMapper objectMapper = new ObjectMapper();
 
@@ -129,5 +132,60 @@ class CharacterServiceTest {
         
         // Verify database saves the care log
         verify(characterCareLogRepository).save(any(CharacterCareLog.class));
+    }
+
+    @Test
+    @DisplayName("equipSkin - 보유한 스킨의 경우 정상 장착")
+    void equipSkin_ownedSkin_success() {
+        // given
+        Long characterId = 1L;
+        Long userId = 1L;
+        Long itemId = 10L;
+
+        when(userCharacterRepository.findById(characterId)).thenReturn(Optional.of(character));
+
+        com.p5laris.proto.item.v1.UserItem userItem = com.p5laris.proto.item.v1.UserItem.newBuilder()
+                .setItemId(itemId)
+                .setName("푸른 새벽 스킨")
+                .build();
+
+        com.p5laris.proto.item.v1.GetUserItemsResponse ownedItems = com.p5laris.proto.item.v1.GetUserItemsResponse.newBuilder()
+                .addItems(userItem)
+                .build();
+
+        when(itemStub.getUserItems(any(com.p5laris.proto.item.v1.GetUserItemsRequest.class)))
+                .thenReturn(ownedItems);
+
+        // when
+        var response = characterService.equipSkin(characterId, userId, itemId);
+
+        // then
+        assertNotNull(response);
+        assertEquals(itemId, response.equippedSkinId());
+        assertEquals(itemId, character.getEquippedSkinId());
+    }
+
+    @Test
+    @DisplayName("equipSkin - 보유하지 않은 스킨의 경우 예외 발생")
+    void equipSkin_notOwnedSkin_throwsException() {
+        // given
+        Long characterId = 1L;
+        Long userId = 1L;
+        Long itemId = 10L;
+
+        when(userCharacterRepository.findById(characterId)).thenReturn(Optional.of(character));
+
+        com.p5laris.proto.item.v1.GetUserItemsResponse emptyItems = com.p5laris.proto.item.v1.GetUserItemsResponse.newBuilder()
+                .build();
+
+        when(itemStub.getUserItems(any(com.p5laris.proto.item.v1.GetUserItemsRequest.class)))
+                .thenReturn(emptyItems);
+
+        // when & then
+        p5laris.character.domain.exception.CharacterException exception = assertThrows(
+                p5laris.character.domain.exception.CharacterException.class,
+                () -> characterService.equipSkin(characterId, userId, itemId)
+        );
+        assertEquals(p5laris.character.domain.exception.CharacterErrorCode.ITEM_NOT_OWNED, exception.getErrorCode());
     }
 }

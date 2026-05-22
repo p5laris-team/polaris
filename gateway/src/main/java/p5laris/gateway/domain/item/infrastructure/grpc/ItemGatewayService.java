@@ -43,4 +43,14 @@ public class ItemGatewayService {
                         .build()
         );
     }
+
+    public java.util.Map<String, String> getSkinAssets(Long skinItemId, Long characterTypeId) {
+        GetSkinAssetsResponse response = itemStub.getSkinAssets(
+                GetSkinAssetsRequest.newBuilder()
+                        .setSkinItemId(skinItemId)
+                        .setCharacterTypeId(characterTypeId)
+                        .build()
+        );
+        return response.getAssetUrlsMap();
+    }
 }

@@ -376,11 +376,35 @@ public class CharacterService {
             throw new p5laris.character.domain.exception.CharacterException(p5laris.character.domain.exception.CharacterErrorCode.NOT_CHARACTER_OWNER);
         }
 
-        // 2. TODO [Item Domain Integration]: verify user owns the skin item.
-        //    Example (uncomment after item domain is ready):
-        //    if (!itemService.userOwnsItem(userId, itemId)) {
-        //        throw new IllegalArgumentException("User does not own item: " + itemId);
-        //    }
+        // 2. verify user owns the skin item.
+        if (itemId != null && itemId > 0) {
+            try {
+                com.p5laris.proto.item.v1.GetUserItemsResponse ownedItems = itemStub.getUserItems(
+                        com.p5laris.proto.item.v1.GetUserItemsRequest.newBuilder()
+                                .setUserId(userId)
+                                .setItemType("SKIN")
+                                .setSize(100)
+                                .build()
+                );
+                
+                boolean ownsSkin = ownedItems.getItemsList().stream()
+                        .anyMatch(userItem -> userItem.getItemId() == itemId);
+                        
+                if (!ownsSkin) {
+                    throw new p5laris.character.domain.exception.CharacterException(
+                            p5laris.character.domain.exception.CharacterErrorCode.ITEM_NOT_OWNED
+                    );
+                }
+            } catch (Exception e) {
+                log.error("Failed to verify skin ownership for userId: {}, itemId: {}", userId, itemId, e);
+                if (e instanceof p5laris.character.domain.exception.CharacterException) {
+                    throw (p5laris.character.domain.exception.CharacterException) e;
+                }
+                throw new p5laris.character.domain.exception.CharacterException(
+                        p5laris.character.domain.exception.CharacterErrorCode.ITEM_SERVICE_CALL_FAILED
+                );
+            }
+        }
 
         Long equippedSkinId = itemId;
         if (itemId == null || itemId <= 0) {
