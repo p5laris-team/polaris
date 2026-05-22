@@ -3,6 +3,8 @@ package p5laris.gateway.domain.home.api.dto;
 import lombok.Builder;
 import lombok.Getter;
 
+import java.util.Map;
+
 public class HomeDto {
 
     @Getter
@@ -35,6 +37,7 @@ public class HomeDto {
         private String name;
         private String characterTypeCode;
         private String currentAssetUrl;
+        private Map<String, String> assetUrls;
         private StatesSummary states;
     }
 
