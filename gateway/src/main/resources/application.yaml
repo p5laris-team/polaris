@@ -27,6 +27,9 @@ grpc:
     ai:
       address: ${AI_GRPC_ADDRESS}
       negotiationType: plaintext
+    notification:
+      address: ${NOTIFICATION_GRPC_ADDRESS}
+      negotiationType: plaintext
 
 management:
   endpoints:
