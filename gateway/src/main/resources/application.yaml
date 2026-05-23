@@ -27,6 +27,21 @@ grpc:
     ai:
       address: ${AI_GRPC_ADDRESS}
       negotiationType: plaintext
+    notification:
+      address: ${NOTIFICATION_GRPC_ADDRESS}
+      negotiationType: plaintext
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: never
+  health:
+    db:
+      enabled: true
 
 management:
   endpoints:
@@ -46,5 +61,5 @@ jwt:
   refresh-expiration-ms: ${JWT_REFRESH_EXPIRATION_MS}
 
 app:
-  public-base-url: ${APP_PUBLIC_BASE_URL:https://polaris.app}
-  default-share-image-url: ${APP_DEFAULT_SHARE_IMAGE_URL:https://cdn.polaris.app/share-cards/placeholder.png}
+  public-base-url: ${APP_PUBLIC_BASE_URL:https://p5laris.life}
+  default-share-image-url: ${APP_DEFAULT_SHARE_IMAGE_URL:https://d24c6my56k1w5v.cloudfront.net/assets/share-cards/placeholder.png}

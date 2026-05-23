@@ -11,8 +11,6 @@ import p5laris.gateway.domain.user.api.dto.WalletDto;
 import p5laris.gateway.domain.character.infrastructure.grpc.CharacterGatewayService;
 import p5laris.gateway.domain.character.api.dto.MyCharacterResponse;
 import p5laris.gateway.domain.character.api.dto.CharacterStatusResponse;
-import p5laris.gateway.domain.character.api.dto.CharacterTypesResponse;
-import p5laris.gateway.domain.character.api.dto.CharacterAssetsResponse;
 import p5laris.gateway.domain.mission.infrastructure.grpc.MissionGatewayService;
 import p5laris.gateway.domain.mission.api.dto.MissionDto;
 
@@ -78,35 +76,11 @@ public class HomeGatewayService {
                 log.warn("Failed to get character status for characterId: {}. States will be null in home response. Error: {}", myChar.id(), e.getMessage());
             }
 
-            // Character Asset Url 조회 (선택)
-            String currentAssetUrl = "";
-            try {
-                CharacterTypesResponse typesResponse = characterGatewayService.getCharacterTypes();
-                final String typeCode = myChar.characterTypeCode();
-                var typeItem = typesResponse.items().stream()
-                        .filter(t -> t.code().equalsIgnoreCase(typeCode))
-                        .findFirst();
-
-                if (typeItem.isPresent()) {
-                    var assetsResponse = characterGatewayService.getCharacterAssets(typeItem.get().id());
-                    var idleAsset = assetsResponse.items().stream()
-                            .filter(a -> a.assetType().equalsIgnoreCase("idle"))
-                            .findFirst();
-                    if (idleAsset.isPresent()) {
-                        currentAssetUrl = idleAsset.get().assetUrl();
-                    } else if (!assetsResponse.items().isEmpty()) {
-                        currentAssetUrl = assetsResponse.items().get(0).assetUrl();
-                    }
-                }
-            } catch (Exception e) {
-                log.warn("Failed to get character asset url for typeCode: {}. Error: {}", myChar.characterTypeCode(), e.getMessage());
-            }
-
             characterSummary = HomeDto.CharacterSummary.builder()
                     .id(myChar.id())
                     .name(myChar.name())
                     .characterTypeCode(myChar.characterTypeCode())
-                    .currentAssetUrl(currentAssetUrl)
+                    .currentAssetUrl(myChar.currentAssetUrl())
                     .states(statesSummary)
                     .build();
         }

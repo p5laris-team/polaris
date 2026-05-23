@@ -60,4 +60,18 @@ public class ItemGrpcController extends ItemServiceGrpc.ItemServiceImplBase {
             responseObserver.onError(io.grpc.Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
         }
     }
+
+    @Override
+    public void getSkinAssets(GetSkinAssetsRequest request, StreamObserver<GetSkinAssetsResponse> responseObserver) {
+        try {
+            GetSkinAssetsResponse response = itemService.getSkinAssets(request);
+            responseObserver.onNext(response);
+            responseObserver.onCompleted();
+        } catch (p5laris.item.domain.exception.ItemException e) {
+            responseObserver.onError(
+                    io.grpc.Status.INTERNAL.withDescription(e.getErrorCode().getCode()).asRuntimeException());
+        } catch (Exception e) {
+            responseObserver.onError(io.grpc.Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+        }
+    }
 }

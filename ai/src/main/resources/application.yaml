@@ -1,32 +1,37 @@
 spring:
+  config:
+    import: optional:file:.env[.properties]
+
   application:
     name: ai
 
   ai:
     model:
-      chat: ${SPRING_AI_MODEL_CHAT:none}
+      chat: ${SPRING_AI_MODEL_CHAT}
     google:
       genai:
-        api-key: ${GEMINI_API_KEY:}
+        api-key: ${GEMINI_API_KEY}
         chat:
           options:
-            model: ${AI_PROVIDER_MODEL:gemini-2.5-flash}
-            response-mime-type: application/json
-            temperature: ${AI_PROVIDER_TEMPERATURE:0.4}
-            max-output-tokens: ${AI_PROVIDER_MAX_OUTPUT_TOKENS:500}
+            model: ${AI_PROVIDER_MODEL}
+            response-mime-type: ${AI_PROVIDER_RESPONSE_MIME_TYPE}
+            temperature: ${AI_PROVIDER_TEMPERATURE}
+            max-output-tokens: ${AI_PROVIDER_MAX_OUTPUT_TOKENS}
+            thinking-budget: ${AI_PROVIDER_THINKING_BUDGET}
+            include-thoughts: ${AI_PROVIDER_INCLUDE_THOUGHTS}
 
   data:
     redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:}
-      timeout: ${REDIS_TIMEOUT:200ms}
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
+      password: ${REDIS_PASSWORD}
+      timeout: ${REDIS_TIMEOUT}
 
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/ai}
+    url: ${DB_URL}
     driver-class-name: org.postgresql.Driver
-    username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:12345678}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
 
   jpa:
     hibernate:
@@ -43,36 +48,36 @@ spring:
 
 grpc:
   server:
-    port: 9095
+    port: ${GRPC_SERVER_PORT}
     reflection-service-enabled: true
 
   client:
     user:
-      address: static://localhost:9091
+      address: ${USER_GRPC_ADDRESS}
       negotiationType: plaintext
     character:
-      address: static://localhost:9092
+      address: ${CHARACTER_GRPC_ADDRESS}
       negotiationType: plaintext
     item:
-      address: static://localhost:9093
+      address: ${ITEM_GRPC_ADDRESS}
       negotiationType: plaintext
     mission:
-      address: static://localhost:9094
+      address: ${MISSION_GRPC_ADDRESS}
       negotiationType: plaintext
     event-log:
-      address: ${EVENT_LOG_GRPC_ADDRESS:static://localhost:9099}
+      address: ${EVENT_LOG_GRPC_ADDRESS}
       negotiationType: plaintext
 
 ai:
   provider:
-    enabled: ${AI_PROVIDER_ENABLED:false}
-    type: ${AI_PROVIDER_TYPE:local}
-    model: ${AI_PROVIDER_MODEL:}
+    enabled: ${AI_PROVIDER_ENABLED}
+    type: ${AI_PROVIDER_TYPE}
+    model: ${AI_PROVIDER_MODEL}
   rate-limit:
-    enabled: ${AI_RATE_LIMIT_ENABLED:true}
-    backend: ${AI_RATE_LIMIT_BACKEND:redis}
-    provider-requests-per-minute: ${AI_RATE_LIMIT_PROVIDER_REQUESTS_PER_MINUTE:30}
-    user-requests-per-minute: ${AI_RATE_LIMIT_USER_REQUESTS_PER_MINUTE:5}
-    window-seconds: ${AI_RATE_LIMIT_WINDOW_SECONDS:60}
-    key-ttl-seconds: ${AI_RATE_LIMIT_KEY_TTL_SECONDS:70}
-    fail-closed: ${AI_RATE_LIMIT_FAIL_CLOSED:true}
+    enabled: ${AI_RATE_LIMIT_ENABLED}
+    backend: ${AI_RATE_LIMIT_BACKEND}
+    provider-requests-per-minute: ${AI_RATE_LIMIT_PROVIDER_REQUESTS_PER_MINUTE}
+    user-requests-per-minute: ${AI_RATE_LIMIT_USER_REQUESTS_PER_MINUTE}
+    window-seconds: ${AI_RATE_LIMIT_WINDOW_SECONDS}
+    key-ttl-seconds: ${AI_RATE_LIMIT_KEY_TTL_SECONDS}
+    fail-closed: ${AI_RATE_LIMIT_FAIL_CLOSED}

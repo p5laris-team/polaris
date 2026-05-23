@@ -2,6 +2,7 @@ package p5laris.character.domain.application.dto;
 
 import lombok.Builder;
 
+
 /**
  * DTO for GetMyCharacter API spec 4.4.
  */
@@ -11,5 +12,14 @@ public record MyCharacterResponse(
         String name,
         String characterTypeCode,
         boolean active,
-        Long equippedSkinId
-) {}
+        Long equippedSkinId,
+        States states,
+        String currentAssetUrl
+) {
+    @Builder
+    public record States(
+            int hunger,
+            int energy,
+            int affection
+    ) {}
+}

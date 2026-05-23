@@ -15,6 +15,7 @@ on:
           - mission
           - event-log
           - ai
+          - notification
           - all
           - affected
       ref:
@@ -100,6 +101,7 @@ jobs:
             mission
             event-log
             ai
+            notification
             gateway
           )
 
@@ -141,6 +143,11 @@ jobs:
                 MODULE_DIR="ai"
                 GRADLE_TASK=":ai:bootJar"
                 IMAGE_REPO="p5laris-ai"
+                ;;
+              notification)
+                MODULE_DIR="notification"
+                GRADLE_TASK=":notification:bootJar"
+                IMAGE_REPO="p5laris-notification"
                 ;;
               *)
                 echo "ERROR: unknown service: $service"

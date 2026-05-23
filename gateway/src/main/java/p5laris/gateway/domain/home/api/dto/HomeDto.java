@@ -3,6 +3,7 @@ package p5laris.gateway.domain.home.api.dto;
 import lombok.Builder;
 import lombok.Getter;
 
+
 public class HomeDto {
 
     @Getter
