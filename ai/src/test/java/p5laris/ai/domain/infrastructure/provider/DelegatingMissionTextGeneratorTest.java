@@ -20,13 +20,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class DelegatingMissionTextGeneratorTest {
 
     @Test
-    void provider가_비활성화되어_있으면_local_generator를_사용한다() {
+    void provider가_비활성화되어_있으면_rule_based_generator를_사용한다() {
         AiProviderProperties properties = providerProperties(false, "gemini");
         SpyRateLimiter rateLimiter = new SpyRateLimiter();
         SpyExternalGenerator externalGenerator = new SpyExternalGenerator();
         DelegatingMissionTextGenerator generator = new DelegatingMissionTextGenerator(
                 properties,
-                new LocalMissionTextGenerator(new CharacterTonePolicy()),
+                new RuleBasedMissionTextGenerator(new CharacterTonePolicy()),
                 rateLimiter,
                 List.of(externalGenerator)
         );
@@ -45,7 +45,7 @@ class DelegatingMissionTextGeneratorTest {
         SpyExternalGenerator externalGenerator = new SpyExternalGenerator();
         DelegatingMissionTextGenerator generator = new DelegatingMissionTextGenerator(
                 properties,
-                new LocalMissionTextGenerator(new CharacterTonePolicy()),
+                new RuleBasedMissionTextGenerator(new CharacterTonePolicy()),
                 rateLimiter,
                 List.of(externalGenerator)
         );
@@ -69,7 +69,7 @@ class DelegatingMissionTextGeneratorTest {
         SpyExternalGenerator externalGenerator = new SpyExternalGenerator();
         DelegatingMissionTextGenerator generator = new DelegatingMissionTextGenerator(
                 properties,
-                new LocalMissionTextGenerator(new CharacterTonePolicy()),
+                new RuleBasedMissionTextGenerator(new CharacterTonePolicy()),
                 rateLimiter,
                 List.of(externalGenerator)
         );

@@ -6,7 +6,7 @@ import p5laris.ai.domain.domain.enums.AiProviderType;
 /**
  * AI provider 설정값을 application.yaml/env에서 읽어오는 클래스다.
  *
- * 기본값은 local generator이며, env에서 enabled/type/model을 바꾸면 외부 provider로 전환된다.
+ * 기본값은 rule-based generator이며, env에서 enabled/type/model을 바꾸면 외부 provider로 전환된다.
  */
 @ConfigurationProperties(prefix = "ai.provider")
 public class AiProviderProperties {
