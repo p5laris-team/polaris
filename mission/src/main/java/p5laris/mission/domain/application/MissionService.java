@@ -23,10 +23,12 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import p5laris.mission.domain.application.event.MissionEventLogEvent;
 import p5laris.mission.domain.domain.entity.MissionCompletionAnswer;
+import p5laris.mission.domain.domain.entity.MissionRewardOutbox;
 import p5laris.mission.domain.domain.entity.MissionTemplate;
 import p5laris.mission.domain.domain.entity.UserMission;
 import p5laris.mission.domain.domain.enums.UserMissionStatus;
 import p5laris.mission.domain.domain.repository.MissionCompletionAnswerRepository;
+import p5laris.mission.domain.domain.repository.MissionRewardOutboxRepository;
 import p5laris.mission.domain.domain.repository.MissionTemplateRepository;
 import p5laris.mission.domain.domain.repository.UserMissionRepository;
 import p5laris.mission.domain.exception.MissionErrorCode;
@@ -57,6 +59,11 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class MissionService {
 
+    /*
+     * 아래 값들은 운영 토글이 아니라 현재 MVP 정책을 표현하는 도메인 상수다.
+     * 배포 환경별로 달라져야 하는 값은 application.yaml/env로 분리하고,
+     * 하루 제안 수/답변 길이/멱등키 prefix처럼 API 정책과 함께 움직이는 값만 코드에 둔다.
+     */
     private static final int DAILY_MISSION_OFFER_LIMIT = 15;
     private static final int COMPLETION_ANSWER_MIN_LENGTH = 1;
     private static final int COMPLETION_ANSWER_MAX_LENGTH = 300;
@@ -75,10 +82,12 @@ public class MissionService {
     private final MissionTemplateSelector missionTemplateSelector;
     private final UserMissionRepository userMissionRepository;
     private final MissionCompletionAnswerRepository missionCompletionAnswerRepository;
+    private final MissionRewardOutboxRepository missionRewardOutboxRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final AiMissionTextClient aiMissionTextClient;
     private final CharacterProfileClient characterProfileClient;
     private final WalletRewardClient walletRewardClient;
+    private final MissionRewardDispatcher missionRewardDispatcher;
     private final TransactionTemplate transactionTemplate;
     private final Clock clock;
 
@@ -342,7 +351,7 @@ public class MissionService {
      *
      * mission DB 쓰기와 wallet gRPC 호출을 한 트랜잭션에 넣지 않는다.
      * 답변 저장/상태 전환은 짧은 mission 트랜잭션으로 끝내고, 별조각 지급은 트랜잭션 밖에서 호출한다.
-     * wallet 지급까지 성공하면 다시 짧은 mission 트랜잭션을 열어 user_missions.idempotency_key를 보상 지급 완료 marker로 저장한다.
+     * wallet 지급 요청은 mission_reward_outbox를 통해 남기고, 성공하면 dispatcher가 보상 지급 완료 marker까지 저장한다.
      */
     public SubmitCompletionAnswerResponse submitCompletionAnswer(Long userId, Long missionId, String answerText) {
         String normalizedAnswer = validateAndNormalizeAnswer(answerText);
@@ -351,10 +360,6 @@ public class MissionService {
         ));
 
         WalletRewardResult rewardResult = resolveReward(userId, context);
-        if (!context.rewardAlreadyPaid()) {
-            recordRewardPaid(userId, missionId, context.rewardIdempotencyKey());
-        }
-
         return toCompletionResponse(context.mission(), context.answer(), rewardResult.starPiece());
     }
 
@@ -374,7 +379,13 @@ public class MissionService {
             if (!answer.hasSameAnswer(normalizedAnswer)) {
                 throw new MissionException(MissionErrorCode.MISSION_ALREADY_COMPLETED);
             }
-            return new MissionCompletionContext(mission, answer, mission.isRewardPaid(), rewardIdempotencyKey);
+
+            if (mission.isRewardPaid()) {
+                return new MissionCompletionContext(mission, answer, true, rewardIdempotencyKey, null);
+            }
+
+            MissionRewardOutbox outbox = ensureRewardOutbox(mission, rewardIdempotencyKey, LocalDateTime.now(clock));
+            return new MissionCompletionContext(mission, answer, false, rewardIdempotencyKey, outbox.getId());
         }
 
         if (!mission.isAnswering()) {
@@ -392,44 +403,36 @@ public class MissionService {
         answer.submit(normalizedAnswer, now);
         mission.complete(now);
         eventPublisher.publishEvent(MissionEventLogEvent.missionCompleted(mission, answer, toOccurredAt(now)));
+        MissionRewardOutbox outbox = ensureRewardOutbox(mission, rewardIdempotencyKey, now);
 
-        return new MissionCompletionContext(mission, answer, false, rewardIdempotencyKey);
+        return new MissionCompletionContext(mission, answer, false, rewardIdempotencyKey, outbox.getId());
     }
 
     /**
      * wallet 보상 지급 결과를 구한다.
      *
      * 이미 user_missions.idempotency_key가 있으면 보상 지급이 끝난 것으로 보고 새 거래를 만들지 않는다.
-     * marker가 없으면 같은 MISSION_REWARD:{missionId} 키로 wallet 적립을 요청해 중복 지급을 방어한다.
+     * marker가 없으면 같은 MISSION_REWARD:{missionId} 키로 outbox를 즉시 발송해 중복 지급을 방어한다.
      */
     private WalletRewardResult resolveReward(Long userId, MissionCompletionContext context) {
         if (context.rewardAlreadyPaid()) {
             return new WalletRewardResult(walletRewardClient.getWalletStarPiece(userId), null);
         }
 
-        return walletRewardClient.earnMissionReward(
-                userId,
-                context.mission().getId(),
-                context.mission().getRewardStarPiece(),
-                context.rewardIdempotencyKey()
-        );
+        return missionRewardDispatcher.dispatchNow(context.rewardOutboxId());
     }
 
-    /**
-     * wallet 지급 성공 후 mission row에 보상 지급 완료 marker를 남긴다.
-     *
-     * 이 값이 있어야 이후 같은 완료 요청이 들어와도 wallet EarnStarPiece를 다시 호출하지 않는다.
-     */
-    private void recordRewardPaid(Long userId, Long missionId, String rewardIdempotencyKey) {
-        transactionTemplate.executeWithoutResult(status -> {
-            UserMission mission = findOwnedMissionForUpdate(userId, missionId);
-            if (!mission.isCompleted()) {
-                throw new MissionException(MissionErrorCode.MISSION_INVALID_STATUS);
-            }
-            if (!mission.isRewardPaid()) {
-                mission.recordRewardPaid(rewardIdempotencyKey);
-            }
-        });
+    private MissionRewardOutbox ensureRewardOutbox(
+            UserMission mission,
+            String rewardIdempotencyKey,
+            LocalDateTime nextAttemptAt
+    ) {
+        return missionRewardOutboxRepository.findByMissionId(mission.getId())
+                .orElseGet(() -> missionRewardOutboxRepository.save(MissionRewardOutbox.pending(
+                        mission,
+                        rewardIdempotencyKey,
+                        nextAttemptAt
+                )));
     }
 
     /**
@@ -635,12 +638,14 @@ public class MissionService {
      * 완료 처리 트랜잭션이 끝난 뒤 wallet 호출에 필요한 미션/답변 스냅샷이다.
      *
      * rewardAlreadyPaid가 true면 이미 mission row에 보상 지급 marker가 있으므로 wallet 적립을 다시 호출하지 않는다.
+     * rewardOutboxId는 marker가 없을 때 dispatcher가 즉시 발송할 outbox row id다.
      */
     private record MissionCompletionContext(
             UserMission mission,
             MissionCompletionAnswer answer,
             boolean rewardAlreadyPaid,
-            String rewardIdempotencyKey
+            String rewardIdempotencyKey,
+            Long rewardOutboxId
     ) {
     }
 
