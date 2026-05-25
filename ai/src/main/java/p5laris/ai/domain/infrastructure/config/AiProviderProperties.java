@@ -6,14 +6,15 @@ import p5laris.ai.domain.domain.enums.AiProviderType;
 /**
  * AI provider 설정값을 application.yaml/env에서 읽어오는 클래스다.
  *
- * 기본값은 rule-based generator이며, env에서 enabled/type/model을 바꾸면 외부 provider로 전환된다.
+ * 실제 실행 값은 application.yaml이 참조하는 env에서 주입된다.
+ * enabled=false면 rule-based generator만 사용하고, enabled=true + type=gemini면 외부 Gemini provider를 호출한다.
  */
 @ConfigurationProperties(prefix = "ai.provider")
 public class AiProviderProperties {
 
-    private boolean enabled = false;
-    private String type = "local";
-    private String model = "local-tone-v1";
+    private boolean enabled;
+    private String type;
+    private String model;
 
     public boolean isEnabled() {
         return enabled;
@@ -47,7 +48,7 @@ public class AiProviderProperties {
         return enabled && providerType().isExternal();
     }
 
-    // model 값이 비어 있으면 provider별 기본 모델명으로 보정한다.
+    // model 값이 비어 있으면 provider별 안전 기본 모델명으로 보정한다. 운영에서는 env에 명시하는 것을 원칙으로 한다.
     public String resolvedModel() {
         if (model != null && !model.isBlank()) {
             return model.trim();

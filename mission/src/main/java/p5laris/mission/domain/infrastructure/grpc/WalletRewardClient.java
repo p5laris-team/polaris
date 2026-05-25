@@ -53,11 +53,11 @@ public class WalletRewardClient {
 
             return new WalletRewardResult(response.getStarPiece(), response.getTransactionId());
         } catch (StatusRuntimeException e) {
-            log.warn("Failed to earn mission reward. userId={}, missionId={}, status={}",
+            log.warn("미션 보상 별조각 지급 실패. userId={}, missionId={}, status={}",
                     userId, missionId, e.getStatus().getCode(), e);
             throw new MissionException(MissionErrorCode.MISSION_REWARD_FAILED);
         } catch (Exception e) {
-            log.warn("Failed to earn mission reward. userId={}, missionId={}", userId, missionId, e);
+            log.warn("미션 보상 별조각 지급 실패. userId={}, missionId={}", userId, missionId, e);
             throw new MissionException(MissionErrorCode.MISSION_REWARD_FAILED);
         }
     }
@@ -76,11 +76,11 @@ public class WalletRewardClient {
             );
             return response.getStarPiece();
         } catch (StatusRuntimeException e) {
-            log.warn("Failed to get wallet snapshot. userId={}, status={}",
+            log.warn("wallet 잔액 조회 실패. userId={}, status={}",
                     userId, e.getStatus().getCode(), e);
             throw new MissionException(MissionErrorCode.MISSION_REWARD_FAILED);
         } catch (Exception e) {
-            log.warn("Failed to get wallet snapshot. userId={}", userId, e);
+            log.warn("wallet 잔액 조회 실패. userId={}", userId, e);
             throw new MissionException(MissionErrorCode.MISSION_REWARD_FAILED);
         }
     }

@@ -39,7 +39,7 @@ public class GeminiMissionTextGenerator implements ExternalMissionTextGenerator 
         } catch (FallbackRequiredException e) {
             throw e;
         } catch (Exception e) {
-            log.warn("Gemini provider call failed. errorClass={}, message={}",
+            log.warn("Gemini provider 호출 실패. 예외클래스={}, 메시지={}",
                     e.getClass().getSimpleName(), e.getMessage());
             throw new FallbackRequiredException(toErrorType(e), "Gemini 문구 생성에 실패했습니다.");
         }
