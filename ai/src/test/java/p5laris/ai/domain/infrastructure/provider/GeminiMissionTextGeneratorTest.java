@@ -83,6 +83,25 @@ class GeminiMissionTextGeneratorTest {
                 .isEqualTo(AiErrorType.TIMEOUT);
     }
 
+    @Test
+    void Gemini_prompt는_무무_발화_패턴을_고정하지_않고_섞도록_요청한다() {
+        CapturingAiChatClient chatClient = new CapturingAiChatClient("""
+                {
+                  "characterMessage": "무우... 무...? (해석: 물 한 컵 마셔봐요.)",
+                  "completionQuestion": "무...? (해석: 마시고 나서 어땠나요?)",
+                  "completionCharacterResponse": "무...! (해석: 작은 완료도 충분히 반짝였어요.)"
+                }
+                """);
+        GeminiMissionTextGenerator generator = new GeminiMissionTextGenerator(chatClient, new ObjectMapper());
+
+        generator.generate(validCommand());
+
+        assertThat(chatClient.systemPrompt)
+                .contains("\"무\"", "\"무무\"", "\"무우\"", "\"무...?\"", "\"무...!\"")
+                .contains("항상 \"(해석: ...)\"")
+                .doesNotContain("반드시 \"무... 무무...\"");
+    }
+
     private MissionTextGenerationCommand validCommand() {
         return new MissionTextGenerationCommand(
                 1001L,
@@ -106,6 +125,21 @@ class GeminiMissionTextGeneratorTest {
 
         @Override
         public String call(String systemPrompt, String userPrompt) {
+            return content;
+        }
+    }
+
+    private static class CapturingAiChatClient implements AiChatClient {
+        private final String content;
+        private String systemPrompt;
+
+        private CapturingAiChatClient(String content) {
+            this.content = content;
+        }
+
+        @Override
+        public String call(String systemPrompt, String userPrompt) {
+            this.systemPrompt = systemPrompt;
             return content;
         }
     }

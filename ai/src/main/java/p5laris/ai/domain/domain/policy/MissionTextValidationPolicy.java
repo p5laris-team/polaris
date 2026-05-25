@@ -8,7 +8,7 @@ import p5laris.ai.domain.exception.FallbackRequiredException;
 import java.util.List;
 
 /**
- * AI 또는 local generator가 만든 문구가 서비스 정책에 맞는지 검증한다.
+ * AI provider 또는 rule-based generator가 만든 문구가 서비스 정책에 맞는지 검증한다.
  *
  * Polaris 미션 문구는 짧고 가벼워야 하며, 사용자를 비난하거나 죄책감 들게 만들면 안 된다.
  */

@@ -17,11 +17,17 @@ import p5laris.ai.domain.exception.AiErrorCode;
 import p5laris.ai.domain.exception.AiException;
 
 import java.util.UUID;
+import java.util.stream.Collectors;
+import java.util.stream.LongStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-@SpringBootTest(properties = "grpc.server.port=0")
+// 외부 Gemini 응답은 네트워크와 rate limit에 영향을 받으므로, 서비스 통합 테스트는 rule-based 경로로 고정한다.
+@SpringBootTest(properties = {
+        "grpc.server.port=0",
+        "ai.provider.enabled=false"
+})
 class AiMissionTextServiceTest {
 
     @Autowired
@@ -94,10 +100,20 @@ class AiMissionTextServiceTest {
         MissionTextGenerationResult result = aiMissionTextService.generateMissionTexts(command);
 
         assertThat(result.status()).isEqualTo(AiGenerationStatus.SUCCESS);
-        assertThat(result.characterMessage()).startsWith("무... 무무...");
-        assertThat(result.characterMessage()).contains("(해석:");
-        assertThat(result.completionQuestion()).startsWith("무...?");
-        assertThat(result.completionCharacterResponse()).contains("무무가 조용히 좋아하고 있어요");
+        assertMumuText(result.characterMessage());
+        assertMumuText(result.completionQuestion());
+        assertMumuText(result.completionCharacterResponse());
+    }
+
+    @Test
+    void 무무_말투는_미션_문맥에_따라_여러_패턴으로_응답한다() {
+        var characterMessages = LongStream.rangeClosed(3001L, 3012L)
+                .mapToObj(templateId -> aiMissionTextService.generateMissionTexts(validCommand("MUMU", templateId)))
+                .map(MissionTextGenerationResult::characterMessage)
+                .collect(Collectors.toSet());
+
+        assertThat(characterMessages).hasSizeGreaterThan(1);
+        assertThat(characterMessages).allSatisfy(this::assertMumuText);
     }
 
     @Test
@@ -176,12 +192,27 @@ class AiMissionTextServiceTest {
         return validCommand(characterType, UUID.randomUUID().toString());
     }
 
+    private MissionTextGenerationCommand validCommand(String characterType, Long missionTemplateId) {
+        return validCommand(characterType, UUID.randomUUID().toString(), missionTemplateId);
+    }
+
     private MissionTextGenerationCommand validCommand(String characterType, String requestId) {
+        return validCommand(characterType, requestId, 3001L);
+    }
+
+    private void assertMumuText(String text) {
+        assertThat(text)
+                .startsWith("무")
+                .contains("(해석:")
+                .endsWith(")");
+    }
+
+    private MissionTextGenerationCommand validCommand(String characterType, String requestId, Long missionTemplateId) {
         return new MissionTextGenerationCommand(
                 1001L,
                 2001L,
                 characterType,
-                3001L,
+                missionTemplateId,
                 "물 한 컵 마시기",
                 "지금 자리에서 물 한 컵을 천천히 마셔보세요.",
                 "BASIC_ROUTINE",

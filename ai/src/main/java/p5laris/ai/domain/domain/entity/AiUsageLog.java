@@ -69,7 +69,7 @@ public class AiUsageLog {
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
-    // 현재 PR에서는 local generator라 token 사용량이 없으므로 0으로 저장한다.
+    // rule-based generator는 token 사용량이 없으므로 0으로 저장한다.
     public static AiUsageLog create(
             Long userId,
             String requestId,

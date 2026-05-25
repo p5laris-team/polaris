@@ -165,7 +165,7 @@ public class AiMissionTextService {
                 .orElse(null);
     }
 
-    // provider 또는 local generator 결과가 정책 검증에 실패하면 mission template의 fallback 문구를 그대로 사용한다.
+    // provider 또는 rule-based generator 결과가 정책 검증에 실패하면 mission template의 fallback 문구를 그대로 사용한다.
     private MissionTextCandidate fallbackCandidate(MissionTextGenerationCommand command) {
         return new MissionTextCandidate(
                 command.fallbackCharacterMessage(),
