@@ -47,7 +47,6 @@ import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.EnumSet;
-import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
@@ -73,6 +72,7 @@ public class MissionService {
     );
 
     private final MissionTemplateRepository missionTemplateRepository;
+    private final MissionTemplateSelector missionTemplateSelector;
     private final UserMissionRepository userMissionRepository;
     private final MissionCompletionAnswerRepository missionCompletionAnswerRepository;
     private final ApplicationEventPublisher eventPublisher;
@@ -437,15 +437,19 @@ public class MissionService {
      *
      * AI가 미션 제목/보상/카테고리를 임의 생성하지 않도록 seed template을 기준으로 선택한다.
      * 같은 날 같은 템플릿이 반복 제안되는 느낌을 줄이기 위해 오늘 사용한 template id는 제외한다.
+     * 후보 선택 순서는 id 오름차순이 아니라 날짜 기준 랜덤 정책에 맡긴다.
      */
     private MissionTemplate selectNextTemplate(Long userId, LocalDate missionDate) {
         List<Long> usedTemplateIds = userMissionRepository.findMissionTemplateIdsByUserIdAndMissionDate(userId, missionDate);
-        Set<Long> usedTemplateIdSet = new HashSet<>(usedTemplateIds);
+        Set<Long> usedTemplateIdSet = Set.copyOf(usedTemplateIds);
+        List<MissionTemplate> activeTemplates = missionTemplateRepository.findByActiveTrueOrderByIdAsc();
 
-        return missionTemplateRepository.findByActiveTrueOrderByIdAsc().stream()
-                .filter(template -> !usedTemplateIdSet.contains(template.getId()))
-                .findFirst()
-                .orElseThrow(() -> new MissionException(MissionErrorCode.MISSION_TEMPLATE_NOT_FOUND));
+        return missionTemplateSelector.selectNextTemplate(
+                userId,
+                missionDate,
+                activeTemplates,
+                usedTemplateIdSet
+        );
     }
 
     private UserMission findOwnedMissionForUpdate(Long userId, Long missionId) {
