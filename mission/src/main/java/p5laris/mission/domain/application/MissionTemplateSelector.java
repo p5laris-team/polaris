@@ -24,6 +24,7 @@ import java.util.Set;
 @Component
 public class MissionTemplateSelector {
 
+    // 정렬용 해시가 우연히 다른 기능의 해시와 섞이지 않도록 미션 템플릿 선택 전용 salt를 둔다.
     private static final String DAILY_RANDOM_SALT = "MISSION_TEMPLATE_DAILY_RANDOM_V1";
 
     public MissionTemplate selectNextTemplate(

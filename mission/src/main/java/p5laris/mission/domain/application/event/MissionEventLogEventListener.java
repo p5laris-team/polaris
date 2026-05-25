@@ -38,7 +38,7 @@ public class MissionEventLogEventListener {
         try {
             eventLogStub.recordEventLog(toRequest(event));
         } catch (Exception e) {
-            log.warn("Failed to send mission event log. eventType={}, userId={}",
+            log.warn("미션 이벤트 로그 전송 실패. eventType={}, userId={}",
                     event.eventType(), event.userId(), e);
         }
     }

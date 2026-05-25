@@ -8,17 +8,18 @@ import java.time.Duration;
  * 외부 AI provider 호출량 제한 설정을 env/application.yaml에서 읽어오는 클래스다.
  *
  * Gemini/OpenAI는 유료 API이므로 호출 직전에 Redis 기반 rate limit을 확인한다.
+ * 요청 제한 수치와 fail-closed 정책은 운영 환경마다 달라질 수 있어 env로 명시해 주입한다.
  */
 @ConfigurationProperties(prefix = "ai.rate-limit")
 public class AiRateLimitProperties {
 
-    private boolean enabled = true;
-    private String backend = "redis";
-    private int providerRequestsPerMinute = 30;
-    private int userRequestsPerMinute = 5;
-    private int windowSeconds = 60;
-    private int keyTtlSeconds = 70;
-    private boolean failClosed = true;
+    private boolean enabled;
+    private String backend;
+    private int providerRequestsPerMinute;
+    private int userRequestsPerMinute;
+    private int windowSeconds;
+    private int keyTtlSeconds;
+    private boolean failClosed;
 
     public boolean isEnabled() {
         return enabled;
