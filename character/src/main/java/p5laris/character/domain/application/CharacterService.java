@@ -42,6 +42,7 @@ public class CharacterService {
     private final CharacterAssetRepository characterAssetRepository;
     private final UserCharacterRepository userCharacterRepository;
     private final CharacterCareLogRepository characterCareLogRepository;
+    private final S3StorageService s3StorageService;
     private final ObjectMapper objectMapper;
 
     @GrpcClient("item")
@@ -71,7 +72,7 @@ public class CharacterService {
                 .stream()
                 .map(a -> CharacterAssetResponse.builder()
                         .assetType(a.getAssetType())
-                        .assetUrl(a.getAssetUrl())
+                        .assetUrl(s3StorageService.toPublicUrl(a.getAssetUrl()))
                         .build())
                 .toList();
     }
@@ -142,6 +143,7 @@ public class CharacterService {
                         .affection(userCharacter.getAffection())
                         .build())
                 .currentAssetUrl(currentAssetUrl)
+                .assetUrls(assetUrls)
                 .build();
     }
 
@@ -183,7 +185,7 @@ public class CharacterService {
     private void putMoodAsset(Map<String, String> assetUrls, String assetType, String assetUrl) {
         try {
             CharacterMood mood = CharacterMood.fromAssetType(assetType);
-            assetUrls.put(mood.responseKey(), assetUrl);
+            assetUrls.put(mood.responseKey(), s3StorageService.toPublicUrl(assetUrl));
         } catch (IllegalArgumentException e) {
             log.debug("Skipping unknown character asset type: {}", assetType);
         }

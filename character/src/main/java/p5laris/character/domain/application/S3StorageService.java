@@ -11,6 +11,7 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
+import java.net.URI;
 import java.time.Duration;
 import java.util.Locale;
 import java.util.Set;
@@ -30,7 +31,7 @@ public class S3StorageService {
     public S3StorageService(
             @Value("${cloud.aws.region:ap-northeast-2}") String region,
             @Value("${cloud.aws.s3.bucket-name:polaris-share-cards}") String bucketName,
-            @Value("${cloud.aws.s3.public-domain:https://d24c6my56k1w5v.cloudfront.net}") String publicDomain) {
+            @Value("${cloud.aws.s3.public-domain:https://cdn.p5laris.life}") String publicDomain) {
 
         this.bucketName = bucketName;
         this.publicDomain = publicDomain.endsWith("/")
@@ -63,6 +64,39 @@ public class S3StorageService {
         s3Client.putObject(objectRequest, RequestBody.fromBytes(imageBytes));
 
         return new S3UploadResult(fileName, publicDomain + "/" + fileName);
+    }
+
+    public String toPublicUrl(String objectKey) {
+        if (objectKey == null || objectKey.isBlank()) {
+            return "";
+        }
+        String normalized = objectKey.trim();
+        if (normalized.startsWith("https://")) {
+            return normalized;
+        }
+        if (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+        return publicDomain + "/" + normalized;
+    }
+
+    public String toObjectKey(String publicUrl) {
+        URI uri = URI.create(publicUrl.trim());
+        String host = publicHost();
+        if (!"https".equalsIgnoreCase(uri.getScheme())
+                || host == null
+                || !host.equalsIgnoreCase(uri.getHost())) {
+            throw new IllegalArgumentException("URL does not belong to configured S3 public domain");
+        }
+        String path = uri.getPath();
+        if (path == null || path.isBlank() || "/".equals(path)) {
+            throw new IllegalArgumentException("URL does not contain an object key");
+        }
+        return path.startsWith("/") ? path.substring(1) : path;
+    }
+
+    public String publicHost() {
+        return URI.create(publicDomain).getHost();
     }
 
     public S3PresignedResult generatePresignedUrlForShareCard(String extension) {

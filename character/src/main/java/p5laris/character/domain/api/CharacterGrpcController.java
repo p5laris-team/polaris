@@ -124,6 +124,7 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
                         .setAffection(result.states().affection())
                         .build())
                 .setCurrentAssetUrl(result.currentAssetUrl() != null ? result.currentAssetUrl() : "")
+                .putAllAssetUrls(result.assetUrls() != null ? result.assetUrls() : java.util.Map.of())
                 .build();
 
         responseObserver.onNext(response);

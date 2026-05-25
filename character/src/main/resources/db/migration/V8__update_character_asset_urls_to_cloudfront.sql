@@ -1,4 +1,4 @@
--- Align character asset URLs with the S3/CloudFront asset key convention.
+-- Align character asset keys with the S3/CloudFront asset key convention.
 --
 -- Character core images:
 --   assets/characters/{character}/core/character-{character}-{state}.png
@@ -14,7 +14,7 @@ WITH desired_assets AS (
     SELECT
         ct.id AS character_type_id,
         asset.asset_type,
-        'https://d24c6my56k1w5v.cloudfront.net/assets/characters/'
+        'assets/characters/'
             || LOWER(ct.code)
             || '/'
             || asset.asset_group
@@ -44,7 +44,7 @@ WITH desired_assets AS (
     SELECT
         ct.id AS character_type_id,
         asset.asset_type,
-        'https://d24c6my56k1w5v.cloudfront.net/assets/characters/'
+        'assets/characters/'
             || LOWER(ct.code)
             || '/'
             || asset.asset_group

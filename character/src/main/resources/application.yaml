@@ -45,7 +45,7 @@ cloud:
     region: ${AWS_REGION:ap-northeast-2}
     s3:
       bucket-name: ${S3_BUCKET_NAME:polaris-share-cards}
-      public-domain: ${S3_PUBLIC_DOMAIN:https://d24c6my56k1w5v.cloudfront.net}
+      public-domain: ${S3_PUBLIC_DOMAIN:https://cdn.p5laris.life}
 
 app:
   public-base-url: ${APP_PUBLIC_BASE_URL:https://p5laris.life}
