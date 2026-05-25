@@ -109,6 +109,7 @@ message GetMyCharacterResponse {
   int64 equipped_skin_id = 5; // Can be 0 if no skin is equipped
   CharacterStates states = 6;
   string current_asset_url = 7;
+  map<string, string> asset_urls = 8;
 }
 
 // UpdateCharacterName: updates character name

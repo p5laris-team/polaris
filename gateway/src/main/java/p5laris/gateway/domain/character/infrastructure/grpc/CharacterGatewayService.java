@@ -115,6 +115,7 @@ public class CharacterGatewayService {
                 .name(response.getName())
                 .characterTypeCode(response.getCharacterTypeCode())
                 .currentAssetUrl(response.getCurrentAssetUrl())
+                .assetUrls(response.getAssetUrlsMap())
                 .active(response.getActive())
                 .states(p5laris.gateway.domain.character.api.dto.MyCharacterResponse.States.builder()
                         .hunger(response.getStates().getHunger())
