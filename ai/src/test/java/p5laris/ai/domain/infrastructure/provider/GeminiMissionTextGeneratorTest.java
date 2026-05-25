@@ -99,6 +99,9 @@ class GeminiMissionTextGeneratorTest {
         assertThat(chatClient.systemPrompt)
                 .contains("\"무\"", "\"무무\"", "\"무우\"", "\"무...?\"", "\"무...!\"")
                 .contains("항상 \"(해석: ...)\"")
+                .contains("괄호 밖에는 \"무\", \"우\", 공백, \".\", \"?\", \"!\", \"…\"만 쓴다")
+                .contains("무우... 오래된 알림 하나 지우는 무우...?")
+                .contains("무우... 무...? (해석: 오래된 알림 하나를 지워볼까요?)")
                 .doesNotContain("반드시 \"무... 무무...\"");
     }
 
