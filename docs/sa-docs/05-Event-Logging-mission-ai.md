@@ -60,6 +60,9 @@ idempotencyKey 원문
 | `POST /api/mission/v1/missions/{missionId}/completion-sessions` | `MISSION_COMPLETION_SESSION_STARTED` | 완료 버튼 클릭 후 답변 제출 전 이탈률 분석 | 미션 `ANSWERING` 전환 및 완료 질문 row 생성 커밋 후 |
 | `POST /api/mission/v1/missions/{missionId}/completion-answers` | `MISSION_COMPLETED` | 미션 완료율, 완료까지 걸린 시간, 보상 지급 후보량 분석 | 답변 저장 및 미션 `COMPLETED` 전환 커밋 후 |
 
+미션 완료 이벤트 로그는 분석용 이벤트다.
+별조각 지급의 재시도/멱등성은 `mission_reward_outbox`가 담당하며, event-log 저장 실패가 보상 지급 성공 여부를 바꾸지 않는다.
+
 ---
 
 ## 3. MISSION payload 예시

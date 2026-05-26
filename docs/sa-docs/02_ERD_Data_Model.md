@@ -1,4 +1,7 @@
-# 07_ERD_Data_Model
+# 02_ERD_Data_Model
+
+> 기준일: 2026-05-26
+> 이 문서는 현재 backend migration 기준으로 정리한다. API 응답에서 URL로 조립되는 값이 있더라도 DB에는 식별자, asset key, object key를 우선 저장한다.
 
 ---
 
@@ -14,18 +17,11 @@
 | email | varchar unique | 이메일 |
 | nickname | varchar | 닉네임 |
 | provider | varchar | LOCAL / GOOGLE / KAKAO |
+| refresh_token | varchar(512) nullable | OAuth refresh token |
 | role | varchar | USER / ADMIN |
 | status | varchar | ACTIVE / WITHDRAWN / BLOCKED |
 | created_at | timestamp | 생성일 |
 | updated_at | timestamp | 수정일 |
-
-<aside>
-
-password_hash → 없앨까?
-status → 지금을 필요 없는데… 우선 둘까?
-`star_pieces`  보유 별조각 → Wallet 테이블로 분리? 혹은 User 테이블에 추가?
-
-</aside>
 
 ### 제약 / 인덱스
 
@@ -39,7 +35,8 @@ index(created_at)
 
 ```
 MVP에서는 사용자 프로필 상세값을 users에 모두 넣지 않는다.
-온보딩 설문 기반 개인화 데이터는 user_onboarding_profiles에서 관리한다.
+온보딩 설문 기반 개인화 데이터는 onboarding_profiles에서 관리한다.
+별조각 잔액은 wallets에서 관리한다.
 ```
 
 ---
@@ -105,7 +102,6 @@ Q5. 실내/실외 중 무엇이 편한가요?
 
 ```
 unique(user_id)
-index(region_code)
 index(completed)
 ```
 
@@ -132,15 +128,6 @@ MVP에서 제공하는 캐릭터 3종의 기본 정보를 저장한다.
 | created_at | timestamp | 생성일 |
 | updated_at | timestamp | 수정일 |
 
-## `character_assets`
-
-| 컬럼                | 타입 | 설명 |
-|-------------------| --- | --- |
-| id                | bigint PK | 캐릭터 타입 ID |
-| character_type_id | varchar unique | NOVA / MUMU / JJORY |
-| asset_type        | varchar | 이미지 타입 (기본, 기쁨, 슬픔..) |
-| asset_url         | text | 캐릭터 이미지 URL |
-
 ### MVP seed
 
 | code | name | summary |
@@ -154,6 +141,36 @@ MVP에서 제공하는 캐릭터 3종의 기본 정보를 저장한다.
 ```
 unique(code)
 index(active, sort_order)
+```
+
+## 1.3.1 `character_assets`
+
+| 컬럼                | 타입 | 설명 |
+|-------------------| --- | --- |
+| id                | bigint PK | 캐릭터 에셋 ID |
+| character_type_id | bigint FK | 캐릭터 타입 ID |
+| asset_type        | varchar | IDLE / HAPPY / SLEEPY / HUNGRY / LOW_ENERGY / LONELY |
+| asset_url         | text | 캐릭터 이미지 asset key |
+
+---
+
+## 1.3.2 `skin_assets`
+
+스킨 아이템을 장착했을 때 사용할 캐릭터별·상태별 에셋을 저장한다.
+
+| 컬럼 | 타입 | 설명 |
+| --- | --- | --- |
+| id | bigint PK | 스킨 에셋 ID |
+| item_id | bigint | 스킨 아이템 ID |
+| character_type_id | bigint FK | 캐릭터 타입 ID |
+| asset_type | varchar | IDLE / HAPPY / SLEEPY / HUNGRY / LOW_ENERGY / LONELY |
+| asset_url | text | 스킨 이미지 asset key |
+
+### 제약 / 인덱스
+
+```
+unique(item_id, character_type_id, asset_type)
+index(item_id, character_type_id)
 ```
 
 ---
@@ -172,11 +189,12 @@ MVP에서는 사용자가 활성 캐릭터 1개를 키우는 구조로 시작한
 | name | varchar(10) | 캐릭터 이름                 |
 | level | int         | 레벨                     |
 | exp | int         | 누적 경험치                 |
-| hunger_status | int         | 0 ~ 100                |
-| energy_status | int         | 0 ~ 100 |
-| affection_status | int     | 0 ~ 100 |
+| fullness | int | 포만감, 0 ~ 100 |
+| energy | int | 에너지, 0 ~ 100 |
+| affection | int | 애정도, 0 ~ 100 |
 | active | boolean     | 현재 활성 캐릭터 여부           |
-| eqquipped_skin_id | bigint      | 장착한 스킨 ID              |
+| equipped_skin_id | bigint nullable | 장착한 스킨 아이템 ID |
+| last_stat_decreased_at | timestamp nullable | 마지막 자동 스탯 감소 처리 시각 |
 | created_at | timestamp   | 생성일                    |
 | updated_at | timestamp   | 수정일                    |
 
@@ -184,14 +202,17 @@ MVP에서는 사용자가 활성 캐릭터 1개를 키우는 구조로 시작한
 
 | 상태 | 의미 |
 | --- | --- |
-| hunger_status | 허기 → 먹이 |
-| energy_status | 피로/졸림 → 배게 |
-| affection_status | 애정 → 장난감 |
+| fullness | 포만감. FEED / 별사탕밥으로 회복 |
+| energy | 에너지. SLEEP / 구름 베개로 회복 |
+| affection | 애정도. PLAY / 별 장난감으로 회복 |
 
 ### 제약 / 인덱스
 
 ```
 name length <= 10
+check(fullness between 0 and 100)
+check(energy between 0 and 100)
+check(affection between 0 and 100)
 index(user_id, active)
 index(character_type_id)
 partial unique(user_id) where active = true
@@ -200,16 +221,16 @@ partial unique(user_id) where active = true
 ### 비고
 
 ```
-boredom, affection 등 추가 상태는 MVP에서 제외한다.
-상태값은 0~100 숫자보다 GOOD/NORMAL/BAD 3단계 enum으로 시작한다.
-캐릭터 상태 수치화가 필요해지면 별도 character_status_snapshots 확장을 검토한다.
+사용자당 활성 캐릭터는 1개만 허용한다.
+스킨 장착 정보는 user_characters.equipped_skin_id가 단일 소스다.
+현재 상태별 노출 이미지는 equipped_skin_id와 skin_assets 또는 character_assets를 조합해 결정한다.
 ```
 
 ---
 
 ## 1.5 `character_care_logs`
 
-밥 주기, 재우기, 씻기기 등 캐릭터 상태 관리 기록을 저장한다.
+밥 주기, 재우기, 놀아주기 등 캐릭터 상태 관리 기록을 저장한다.
 
 | 컬럼 | 타입              | 설명 |
 | --- |-----------------| --- |
@@ -218,11 +239,30 @@ boredom, affection 등 추가 상태는 MVP에서 제외한다.
 | character_id | bigint FK       | 캐릭터 ID |
 | item_id | bigint nullable | 사용한 소모성 아이템 ID |
 | action_type | varchar         | FEED / SLEEP / PLAY |
-| before_state_json | int             | 돌봄 전 상태 |
-| after_state_json | int             | 돌봄 후 상태 |
+| before_state_json | text nullable | 돌봄 전 상태 snapshot |
+| after_state_json | text nullable | 돌봄 후 상태 snapshot |
+| idempotency_key | varchar unique | 돌봄 액션 중복 처리 방지 키 |
 | created_at | timestamp       | 생성일 |
 
-## `share_cards`
+### MVP 돌봄 액션
+
+| action_type | 설명 |
+| --- | --- |
+| FEED | 밥 주기 |
+| SLEEP | 재우기 |
+| PLAY | 놀아주기 |
+
+### 제약 / 인덱스
+
+```
+unique(idempotency_key)
+index(user_id, created_at)
+index(character_id, created_at)
+```
+
+---
+
+## 1.5.1 `share_cards`
 
 내 캐릭터 공유 카드의 발급 이력을 저장한다.
 
@@ -231,24 +271,20 @@ boredom, affection 등 추가 상태는 MVP에서 제외한다.
 | id | bigint PK | 공유 카드 ID |
 | user_id | bigint FK | 사용자 ID |
 | character_id | bigint FK | 캐릭터 ID |
-| share_id | varchar unique | 단축 공유 고유 식별자 (예: sh_abc123) |
 | headline | varchar nullable | 카드에 삽입된 한 줄 각오/메시지 |
-| image_url | varchar nullable | 렌더링된 카드 이미지 URL |
-| share_url | varchar | 배포용 단축 공유 URL |
-| created_at | timestamp | 생성일 |
-| updated_at | timestamp | 수정일 |
+| image_url | text nullable | 렌더링된 카드 이미지 object key |
+| share_url | varchar | 공유 식별자. API에서는 shareId로 사용 |
 
 ### 제약 / 인덱스
 ```
-unique(share_id)
-index(user_id, created_at)
+partial unique(user_id, image_url) where image_url is not null
 ```
 
 ---
 
-## `share_events`
+## 1.5.2 `share_logs`
 
-사용자의 공유 시도 이벤트 및 일일 1회 보상 수령 여부를 관리한다. (기존 `share_logs`에서 테이블명 및 설계 고도화)
+사용자의 공유 시도 이벤트 및 일일 1회 보상 수령 여부를 관리한다.
 
 | 컬럼 | 타입 | 설명 |
 | --- | --- | --- |
@@ -258,57 +294,24 @@ index(user_id, created_at)
 | share_card_id | bigint FK | 공유 카드 ID |
 | share_type | varchar | 공유 타입 (WEB_SHARE_API, COPY_LINK 등) |
 | platform | varchar | 공유 플랫폼 (X, KAKAOTALK, ETC) |
+| shared_at | timestamp | 공유 시각 |
+| share_date | date | 공유 보상 기준일 |
 | reward_star_piece | int | 공유 보상 수량 |
 | reward_paid | boolean | 보상 수령 여부 |
 | idempotency_key | varchar unique | 공유 보상 중복 지급 방지 키 |
-| created_at | timestamp | 생성일 (공유 시각) |
-| updated_at | timestamp | 수정일 |
 
 ### 제약 / 인덱스
 ```
 unique(idempotency_key)
-index(user_id, created_at)
-index(user_id, share_card_id)
+index(user_id, share_date)
+partial unique(user_id, share_date) where reward_paid = true
 ```
 
----
-
-## `share_clicks`
-
-외부 유저가 공유 링크를 타고 들어온 유입 분석 로그를 수집한다.
-
-| 컬럼 | 타입 | 설명 |
-| --- | --- | --- |
-| id | bigint PK | 클릭 로그 ID |
-| share_id | varchar | 대상 공유 식별자 |
-| referrer | varchar nullable | 유입 이전 페이지 경로 |
-| utm_source | varchar nullable | 마케팅 소스 (예: x, kakaotalk) |
-| utm_medium | varchar nullable | 마케팅 매체 (예: social, chat) |
-| utm_campaign | varchar nullable | 마케팅 캠페인명 (예: character_card) |
-| ip_address | varchar nullable | 클라이언트 IP (어뷰징 방지용) |
-| created_at | timestamp | 생성일 (클릭 시각) |
-
-### 제약 / 인덱스
-```
-index(share_id, created_at)
-index(utm_source, created_at)
-```
-
----
-
-### MVP 돌봄 액션
-
-| action_type | 설명 |
-| --- | --- |
-| FEED | 밥 주기 |
-| SLEEP | 재우기 |
-| WASH | 씻기기 |
-
-### 제약 / 인덱스 (기타)
+### 비고
 
 ```
-index(user_id, created_at)
-index(character_id, created_at)
+공유 클릭 수집 API는 현재 DB 테이블을 만들지 않고 애플리케이션 로그만 남긴다.
+공유카드 이미지의 콘텐츠 자체는 신뢰하지 않고, share_logs와 보상 멱등키를 보상 기준으로 사용한다.
 ```
 
 ---
@@ -359,8 +362,9 @@ Mock 구매, Mock 지급, 테스트용 결제 버튼도 만들지 않는다.
 | reason | varchar | MISSION_REWARD / ITEM_PURCHASE / ATTENDANCE / ACHIEVEMENT / SHARE_REWARD / CARE_ACTION |
 | ref_type | varchar nullable | MISSION / ITEM / ATTENDANCE / ACHIEVEMENT / SHARE / CARE |
 | ref_id | bigint nullable | 참조 ID |
-| idempotency_key | varchar unique | 중복 방지 키 |
+| idempotency_key | varchar unique nullable | 중복 방지 키 |
 | created_at | timestamp | 생성일 |
+| updated_at | timestamp | 수정일 |
 
 ### reason
 
@@ -369,7 +373,7 @@ Mock 구매, Mock 지급, 테스트용 결제 버튼도 만들지 않는다.
 | MISSION_REWARD | 미션 완료 보상 |
 | ITEM_PURCHASE | 아이템 구매 |
 | ATTENDANCE | 출석 보상 |
-| ACHIEVEMENT | 업적 보상 |
+| ACHIEVEMENT | 업적 보상 (MVP 이후) |
 | SHARE_REWARD | SNS 공유 시도 보상 |
 | CARE_ACTION | 캐릭터 돌봄 액션 별조각 사용 |
 
@@ -457,8 +461,7 @@ AI 미션 생성과 캐릭터 말투 변환에 사용할 프롬프트 템플릿�
 | created_at | timestamp | 생성일 |
 | updated_at | timestamp | 수정일 |
 
-파일로 프롬프트를 관리 할지, DB로 관리 할지 선택해야함
-개발 진행 하면서 어떤게 좋을지 협의 필요
+프롬프트는 DB에 저장하고 category, active, version 기준으로 조회한다.
 
 ### 제약 / 인덱스
 
@@ -573,7 +576,7 @@ index(user_id, mission_date, status)
 하루 최대 미션 제안 수는 application에서 15개로 제한한다.
 현재 미션은 해당 날짜의 최신 OFFERED 또는 ANSWERING 상태 미션으로 조회한다.
 미션 완료 보상은 missionId 기준 1회만 지급한다.
-idempotency_key가 있으면 mission 관점에서는 wallet 보상 지급 완료로 본다.
+idempotency_key가 있으면 mission 관점에서는 wallet 보상 지급 요청이 성공했거나 outbox가 SUCCEEDED 상태로 확정된 것으로 본다.
 AI 문구 생성이 성공하면 ai_generation_id와 캐릭터 말투 문구를 저장하고, 실패하면 mission_templates fallback 문구를 유지한다.
 ```
 
@@ -619,13 +622,53 @@ unique(mission_id)
 ```
 mission_completion_answers.answer_text가 저장된다.
 user_missions.status를 COMPLETED로 변경한다.
-wallet 모듈에 미션 완료 별조각 보상을 요청한다.
-보상 지급 성공 후 user_missions.idempotency_key에 MISSION_REWARD:{missionId} marker를 저장한다.
+MISSION_REWARD:{missionId} 멱등키로 mission_reward_outbox를 생성하거나 기존 row를 재사용한다.
+wallet 모듈 보상 요청이 성공하면 user_missions.idempotency_key에 같은 marker를 저장한다.
+일시 실패하면 outbox status와 next_attempt_at을 갱신하고 스케줄러가 재처리한다.
 ```
 
 ---
 
-## 1.13 `mission_interactions`
+## 1.12.1 `mission_reward_outbox`
+
+미션 완료 보상 지급 실패를 재처리하기 위한 outbox 테이블이다.
+
+| 컬럼 | 타입 | 설명 |
+| --- | --- | --- |
+| id | bigint PK | outbox ID |
+| mission_id | bigint FK unique | 보상 대상 미션 ID |
+| user_id | bigint | 사용자 ID |
+| reward_star_piece | int | 지급할 별조각 수량 |
+| idempotency_key | varchar unique | `MISSION_REWARD:{missionId}` |
+| status | varchar | PENDING / PROCESSING / SUCCEEDED / FAILED |
+| attempt_count | int | 재시도 횟수 |
+| next_attempt_at | timestamp | 다음 처리 가능 시각 |
+| last_error_message | text nullable | 마지막 실패 메시지 |
+| created_at | timestamp | 생성일 |
+| updated_at | timestamp | 수정일 |
+
+### 제약 / 인덱스
+
+```
+unique(mission_id)
+unique(idempotency_key)
+check(reward_star_piece >= 0)
+check(attempt_count >= 0)
+check(status in ('PENDING', 'PROCESSING', 'SUCCEEDED', 'FAILED'))
+index(status, next_attempt_at)
+```
+
+### 정책
+
+```
+미션 보상 지급은 mission_id와 idempotency_key 기준으로 멱등 처리한다.
+일시 실패한 보상은 next_attempt_at 이후 스케줄러가 재처리한다.
+영구 실패는 attempt_count 상한 이후 FAILED로 남기고 운영자가 확인할 수 있게 로그를 남긴다.
+```
+
+---
+
+## 1.13 `mission_interactions` → MVP 이후
 
 미션 조회, 거절, 완료 등 사용자 반응 데이터를 저장한다.
 
@@ -640,20 +683,7 @@ wallet 모듈에 미션 완료 별조각 보상을 요청한다.
 | metadata_json | jsonb nullable | 날씨, 시간대, 캐릭터 상태 등 추가 context |
 | created_at | timestamp | 생성일 |
 
-<aside>
-
-user_missions와 1대1 매칭 되는 테이블이다
-interaction_type, metadata_json를 user_missions에 추가 해도 되지만
-지금처럼 테이블로 분리 할 수도 있다
-테이블로 분리 했을 때 어떤 이점이 있는지
-(개인화 추천, 거절률 분석, 완료율 분석 등에 왜 유리한지)
-알아볼 필요가 있다
-
-mission_rejection_logs 로 할지 아니면 전체 미션 반응 데이터로 쌓을지…
-
-mission_recommendation_logs → 이 테이블 필요한지? (미션 추천 로그)
-
-</aside>
+현재 migration에는 포함하지 않았다. 조회/거절/완료 이벤트를 별도 분석 테이블로 쌓아야 할 때 MVP 이후 확장한다.
 
 ### 제약 / 인덱스
 
@@ -707,7 +737,7 @@ index(status, created_at)
 | price             | int              | 별조각 가격             |
 | effect            | int              | 사용 효과              |
 | effect_type       | varchar          | FOOD / REST / PLAY |
-| image_url         | varchar nullable | 이미지 URL            |
+| image_url         | varchar nullable | 이미지 경로 또는 URL |
 | active            | boolean          | 판매 여부              |
 | created_at        | timestamp        | 생성일                |
 | updated_at        | timestamp        | 수정일                |
@@ -716,18 +746,17 @@ index(status, created_at)
 ### 정책
 
 ```
-SKIN/ACCESSORY/BACKGROUND은 장착형 아이템이다.
-FOOD/SOAP/REST는 소모성 아이템이다.
-모든 장착형 아이템은 MVP에서는 공통 아이템으로 간주한다.
-캐릭터별 전용 장비 제한은 MVP에서 제외한다.
+SKIN은 장착형 아이템이다.
+CONSUMABLE은 소모성 아이템이다.
+소모성 아이템의 effect_type은 FOOD / REST / PLAY를 사용한다.
+스킨은 character_type_id로 캐릭터별 전용 스킨을 구분할 수 있다.
 아이템 가격은 현금 가격이 아니라 별조각 가격이다.
 ```
 
 ### 제약 / 인덱스
 
 ```
-index(active, category)
-index(item_type)
+현재 items 테이블에는 별도 명시 인덱스를 두지 않는다.
 ```
 
 ---
@@ -755,7 +784,6 @@ index(item_type)
 
 ```
 unique(user_id, item_id)
-index(user_id)
 ```
 
 ### 정책
@@ -784,7 +812,7 @@ character 모듈이 돌봄 액션(FEED / SLEEP / PLAY) 수행 시 item 모듈의
 | quantity | int | 사용 수량 (MVP = 1) |
 | ref_type | varchar(50) | 사용 컨텍스트 (예: `CARE_ACTION`) |
 | ref_id | bigint | 컨텍스트 PK (예: `character_care_logs.id`) |
-| idempotency_key | varchar(100) UNIQUE | 중복 사용 방지 멱등키 |
+| idempotency_key | varchar(100) unique nullable | 중복 사용 방지 멱등키 |
 | created_at | timestamp | 사용 시각 |
 | updated_at | timestamp | 수정일 |
 
@@ -802,6 +830,42 @@ index(user_item_id)
 idempotency_key가 동일한 요청은 중복 처리하지 않고 기존 결과를 반환한다.
 character 모듈이 생성하는 멱등키 형식: "care-{careLogId}-item-{itemId}"
 아이템 소모 실패 시 돌봄 결과(스탯 변화)는 유지하고 에러 로그만 남긴다.
+```
+
+---
+
+## 1.16.2 `item_purchase_histories`
+
+아이템 구매 이력과 별조각 차감 거래 매핑을 저장한다.
+
+| 컬럼 | 타입 | 설명 |
+| --- | --- | --- |
+| id | bigint PK | 구매 이력 ID |
+| user_id | bigint | 사용자 ID |
+| user_item_id | bigint FK | 구매 후 보유 아이템 ID |
+| item_id | bigint FK | 구매한 아이템 ID |
+| quantity | int | 구매 수량 |
+| price | int | 구매 시점 단가 |
+| star_piece | int | 총 차감 별조각 |
+| transaction_id | bigint | star_piece_transactions ID |
+| idempotency_key | varchar unique nullable | 구매 요청 중복 처리 방지 키 |
+| created_at | timestamp | 생성일 |
+| updated_at | timestamp | 수정일 |
+
+### 제약 / 인덱스
+
+```
+unique(idempotency_key)
+check(quantity > 0)
+index(user_id)
+index(user_item_id)
+```
+
+### 정책
+
+```
+동일 idempotency_key로 들어온 구매 요청은 같은 구매 결과를 반환한다.
+아이템 구매와 별조각 차감은 하나의 트랜잭션으로 처리한다.
 ```
 
 ---
@@ -881,6 +945,7 @@ MVP에서는 'NONE' 문자열을 추천한다.
 | streak_count | int | 연속 출석 수 |
 | reward_star_piece | int | 출석 보상 |
 | created_at | timestamp | 생성일 |
+| updated_at | timestamp | 수정일 |
 
 ### 제약 / 인덱스
 
@@ -904,40 +969,106 @@ index(user_id, attendance_date)
 | message | text | 내용 |
 | target_type | varchar nullable | MISSION / CHARACTER / ITEM / ACHIEVEMENT / SHARE |
 | target_id | bigint nullable | 이동 대상 ID |
-| read | boolean | 읽음 여부 |
-| sent_at | timestamp nullable | 발송 시각 |
+| is_read | boolean | 읽음 여부 |
+| read_at | timestamp nullable | 읽은 시각 |
+| push_required | boolean | FCM 푸시 발송 대상 여부 |
 | created_at | timestamp | 생성일 |
+| updated_at | timestamp | 수정일 |
 
-### 제약 / 인덱스
+### 비고
 
 ```
-index(user_id, read, created_at)
-index(notification_type, created_at)
+현재 notifications migration에는 별도 명시 인덱스를 두지 않는다.
+목록 조회 성능이 필요해지면 user_id, is_read, created_at 조합 인덱스를 추가한다.
 ```
 
 ---
 
-## 1.21 `push_subscriptions`
+## 1.21 `fcm_device_tokens`
 
-Web Push 알림 구독 정보를 저장한다.
-
-푸시 알림이 일정상 밀리면 이 테이블은 migration 후순위로 둘 수 있다. 다만 알림 MVP를 포함한다면 필요한 최소 테이블이다.
+브라우저 또는 앱에서 발급한 FCM registration token을 저장한다.
 
 | 컬럼 | 타입 | 설명 |
 | --- | --- | --- |
-| id | bigint PK | 구독 ID |
+| id | bigint PK | FCM 토큰 ID |
 | user_id | bigint FK | 사용자 ID |
-| endpoint | text | Push endpoint |
-| p256dh | text | Push key |
-| auth | text | Auth secret |
+| fcm_token | text | FCM registration token 원문 |
+| token_hash | varchar unique | FCM token SHA-256 해시 |
+| platform | varchar | WEB / ANDROID / IOS |
 | active | boolean | 활성 여부 |
+| token_updated_at | timestamp | 토큰 갱신 시각 |
+| deactivated_at | timestamp nullable | 비활성화 시각 |
+| deactivated_reason | varchar nullable | LOGOUT / PERMISSION_DENIED / TOKEN_INVALID / USER_DISABLED / STALE / UNKNOWN |
 | created_at | timestamp | 생성일 |
 | updated_at | timestamp | 수정일 |
 
 ### 제약 / 인덱스
 
 ```
-index(user_id, active)
+unique(token_hash)
+```
+
+---
+
+## 1.21.1 `notification_push_deliveries`
+
+FCM 푸시 발송 시도와 결과를 저장한다.
+
+| 컬럼 | 타입 | 설명 |
+| --- | --- | --- |
+| id | bigint PK | 푸시 발송 이력 ID |
+| notification_id | bigint | 알림 ID |
+| user_id | bigint | 수신 사용자 ID |
+| fcm_device_token_id | bigint nullable | 발송 대상 FCM 토큰 ID |
+| delivery_status | varchar | PENDING / SENT / FAILED / SKIPPED |
+| fcm_message_id | varchar nullable | FCM 발송 성공 시 반환 message id |
+| error_code | varchar nullable | FCM 실패 코드 |
+| error_message | text nullable | FCM 실패 상세 메시지 |
+| attempted_at | timestamp nullable | 발송 시도 시각 |
+| sent_at | timestamp nullable | 발송 성공 시각 |
+| failed_at | timestamp nullable | 발송 실패 시각 |
+| created_at | timestamp | 생성일 |
+| updated_at | timestamp | 수정일 |
+
+### 비고
+
+```
+현재 notification_push_deliveries migration에는 FK 제약과 별도 명시 인덱스를 두지 않는다.
+FCM 실패 원인 분석과 운영 추적을 위한 이력 테이블로 사용한다.
+```
+
+---
+
+## 1.21.2 `notification_settings`
+
+사용자별 알림 수신 설정과 방해 금지 시간을 저장한다.
+
+| 컬럼 | 타입 | 설명 |
+| --- | --- | --- |
+| id | bigint PK | 알림 설정 ID |
+| user_id | bigint unique | 사용자 ID |
+| push_enabled | boolean | 전체 푸시 알림 허용 여부 |
+| daily_push_limit | int | 하루 푸시 최대 발송 수 |
+| mission_offer_enabled | boolean | 미션 제안 알림 허용 여부 |
+| character_state_enabled | boolean | 캐릭터 상태 알림 허용 여부 |
+| daily_reminder_enabled | boolean | 일일 리마인더 허용 여부 |
+| quiet_hours_enabled | boolean | 방해 금지 시간 사용 여부 |
+| quiet_hours_start | time | 방해 금지 시작 시각 |
+| quiet_hours_end | time | 방해 금지 종료 시각 |
+| created_at | timestamp | 생성일 |
+| updated_at | timestamp | 수정일 |
+
+### 제약 / 인덱스
+
+```
+unique(user_id)
+```
+
+### 정책
+
+```
+방해 금지 시간과 알림 종류별 수신 여부는 백엔드 발송 판단에서 사용한다.
+프론트는 설정 조회/수정 UI를 제공하고, 최종 발송 여부는 백엔드가 결정한다.
 ```
 
 ---
@@ -949,12 +1080,17 @@ index(user_id, active)
 | 컬럼 | 타입 | 설명 |
 | --- | --- | --- |
 | id | bigint PK | 이벤트 ID |
-| user_id | bigint nullable | 사용자 ID |
+| event_id | uuid unique | 이벤트 고유 식별자 |
 | event_type | varchar | 이벤트 타입 |
+| source_service | varchar nullable | 이벤트 발생 서비스 |
+| user_id | bigint nullable | 사용자 ID |
+| anonymous_id | varchar nullable | 비로그인/브라우저 식별자 |
 | ref_type | varchar nullable | 참조 타입 |
 | ref_id | bigint nullable | 참조 ID |
-| metadata_json | jsonb nullable | 추가 데이터 |
-| created_at | timestamp | 생성일 |
+| properties_json | jsonb nullable | 이벤트 상세 속성 |
+| context_json | jsonb nullable | 발생 환경 정보 |
+| occurred_at | timestamp | 실제 발생 시각 |
+| created_at | timestamp | DB 저장 시각 |
 
 ### 주요 event_type
 
@@ -984,9 +1120,7 @@ AI_FALLBACK_USED
 ### 제약 / 인덱스
 
 ```
-index(event_type, created_at)
-index(user_id, created_at)
-index(ref_type, ref_id)
+unique(event_id)
 ```
 
 ---
