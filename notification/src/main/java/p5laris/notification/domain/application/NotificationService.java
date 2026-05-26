@@ -130,6 +130,23 @@ public class NotificationService {
                 .build();
     }
 
+    @Transactional
+    public Notification createNotification(com.p5laris.proto.notification.v1.SendPushNotificationRequest request) {
+        validateUserId(request.getUserId());
+
+        Notification notification = Notification.builder()
+                .userId(request.getUserId())
+                .title(request.getTitle())
+                .message(request.getBody())
+                .notificationType(toDomainNotificationType(request.getNotificationType()))
+                .targetType(request.hasTargetType() ? toDomainTargetType(request.getTargetType()) : null)
+                .targetId(request.hasTargetId() ? request.getTargetId() : null)
+                .pushRequired(true) // 푸시 발송을 목적으로 호출되었으므로 true
+                .build();
+
+        return notificationRepository.save(notification);
+    }
+
     private List<Notification> findNotifications(
             Long userId,
             Boolean read,
@@ -207,6 +224,30 @@ public class NotificationService {
             case ITEM -> com.p5laris.proto.notification.v1.TargetType.TARGET_TYPE_ITEM;
             case ACHIEVEMENT -> com.p5laris.proto.notification.v1.TargetType.TARGET_TYPE_ACHIEVEMENT;
             case SHARE -> com.p5laris.proto.notification.v1.TargetType.TARGET_TYPE_SHARE;
+        };
+    }
+
+    private p5laris.notification.domain.domain.enums.NotificationType toDomainNotificationType(
+            com.p5laris.proto.notification.v1.NotificationType type
+    ) {
+        return switch (type) {
+            case NOTIFICATION_TYPE_MISSION -> p5laris.notification.domain.domain.enums.NotificationType.MISSION;
+            case NOTIFICATION_TYPE_CARE -> p5laris.notification.domain.domain.enums.NotificationType.CARE;
+            case NOTIFICATION_TYPE_ACHIEVEMENT -> p5laris.notification.domain.domain.enums.NotificationType.ACHIEVEMENT;
+            case NOTIFICATION_TYPE_ATTENDANCE -> p5laris.notification.domain.domain.enums.NotificationType.ATTENDANCE;
+            case NOTIFICATION_TYPE_SHARE -> p5laris.notification.domain.domain.enums.NotificationType.SHARE;
+            case NOTIFICATION_TYPE_SYSTEM, NOTIFICATION_TYPE_UNSPECIFIED, UNRECOGNIZED -> p5laris.notification.domain.domain.enums.NotificationType.SYSTEM;
+        };
+    }
+
+    private NotificationTargetType toDomainTargetType(com.p5laris.proto.notification.v1.TargetType type) {
+        return switch (type) {
+            case TARGET_TYPE_MISSION -> NotificationTargetType.MISSION;
+            case TARGET_TYPE_CHARACTER -> NotificationTargetType.CHARACTER;
+            case TARGET_TYPE_ITEM -> NotificationTargetType.ITEM;
+            case TARGET_TYPE_ACHIEVEMENT -> NotificationTargetType.ACHIEVEMENT;
+            case TARGET_TYPE_SHARE -> NotificationTargetType.SHARE;
+            case TARGET_TYPE_UNSPECIFIED, UNRECOGNIZED -> null;
         };
     }
 

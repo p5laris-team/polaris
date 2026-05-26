@@ -96,8 +96,12 @@ public class NotificationGrpcController extends NotificationServiceGrpc.Notifica
             StreamObserver<com.p5laris.proto.notification.v1.SendPushNotificationResponse> responseObserver
     ) {
         try {
-            // 비동기로 FCM 발송
+            // DB에 알림 이력 먼저 생성 및 저장 (동기)
+            p5laris.notification.domain.domain.entity.Notification notification = notificationService.createNotification(request);
+
+            // 비동기로 FCM 발송 이력 기록 및 실제 푸시 발송
             fcmSenderService.sendPushNotification(
+                    notification.getId(),
                     request.getUserId(),
                     request.getTitle(),
                     request.getBody()
