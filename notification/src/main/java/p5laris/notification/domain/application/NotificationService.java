@@ -8,6 +8,7 @@ import com.p5laris.proto.notification.v1.PageInfo;
 import com.p5laris.proto.notification.v1.RegisterFcmTokenResponse;
 import com.p5laris.proto.notification.v1.UpdateNotificationSettingRequest;
 import com.p5laris.proto.notification.v1.UpdateNotificationSettingResponse;
+import com.p5laris.proto.notification.v1.GetUnreadNotificationCountResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -83,6 +84,17 @@ public class NotificationService {
                                 .setSize(pageSize)
                                 .build()
                 )
+                .build();
+    }
+
+    @Transactional(readOnly = true)
+    public GetUnreadNotificationCountResponse getUnreadNotificationCount(Long userId) {
+        validateUserId(userId);
+        
+        long count = notificationRepository.countByUserIdAndReadFalse(userId);
+        
+        return GetUnreadNotificationCountResponse.newBuilder()
+                .setUnreadCount(count)
                 .build();
     }
 

@@ -11,6 +11,8 @@ import com.p5laris.proto.notification.v1.NotificationSettingSnapshot;
 import com.p5laris.proto.notification.v1.NotificationServiceGrpc;
 import com.p5laris.proto.notification.v1.RegisterFcmTokenRequest;
 import com.p5laris.proto.notification.v1.RegisterFcmTokenResponse;
+import com.p5laris.proto.notification.v1.GetUnreadNotificationCountRequest;
+import com.p5laris.proto.notification.v1.GetUnreadNotificationCountResponse;
 import com.p5laris.proto.notification.v1.UpdateNotificationSettingRequest;
 import com.p5laris.proto.notification.v1.UpdateNotificationSettingResponse;
 import io.grpc.Status;
@@ -75,6 +77,25 @@ public class NotificationGatewayService {
                             response.getPageInfo().getSize()
                     )
             );
+        } catch (StatusRuntimeException e) {
+            throw toGatewayException(e);
+        }
+    }
+
+    /**
+     * 로그인한 사용자의 안 읽은 알림 개수를 조회한다.
+     */
+    public int getUnreadNotificationCount(Long userId) {
+        validateUserId(userId);
+
+        try {
+            GetUnreadNotificationCountResponse response = notificationStub.getUnreadNotificationCount(
+                    GetUnreadNotificationCountRequest.newBuilder()
+                            .setUserId(userId)
+                            .build()
+            );
+
+            return (int) response.getUnreadCount();
         } catch (StatusRuntimeException e) {
             throw toGatewayException(e);
         }

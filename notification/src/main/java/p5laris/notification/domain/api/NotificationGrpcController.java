@@ -4,6 +4,8 @@ import com.p5laris.proto.notification.v1.GetNotificationsRequest;
 import com.p5laris.proto.notification.v1.GetNotificationsResponse;
 import com.p5laris.proto.notification.v1.GetNotificationSettingRequest;
 import com.p5laris.proto.notification.v1.GetNotificationSettingResponse;
+import com.p5laris.proto.notification.v1.GetUnreadNotificationCountRequest;
+import com.p5laris.proto.notification.v1.GetUnreadNotificationCountResponse;
 import com.p5laris.proto.notification.v1.MarkNotificationReadRequest;
 import com.p5laris.proto.notification.v1.MarkNotificationReadResponse;
 import com.p5laris.proto.notification.v1.NotificationServiceGrpc;
@@ -155,6 +157,23 @@ public class NotificationGrpcController extends NotificationServiceGrpc.Notifica
                     .setSuccess(true)
                     .build());
             responseObserver.onCompleted();
+        } catch (Exception e) {
+            responseObserver.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+        }
+    }
+
+    // 안 읽은 알림 개수를 조회한다.
+    @Override
+    public void getUnreadNotificationCount(
+            GetUnreadNotificationCountRequest request,
+            StreamObserver<GetUnreadNotificationCountResponse> responseObserver
+    ) {
+        try {
+            GetUnreadNotificationCountResponse response = notificationService.getUnreadNotificationCount(request.getUserId());
+            responseObserver.onNext(response);
+            responseObserver.onCompleted();
+        } catch (NotificationException e) {
+            responseObserver.onError(toStatus(e).withDescription(e.getMessage()).asRuntimeException());
         } catch (Exception e) {
             responseObserver.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
         }
