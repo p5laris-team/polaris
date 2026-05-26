@@ -13,6 +13,7 @@ service NotificationService {
   rpc GetNotificationSetting(GetNotificationSettingRequest) returns (GetNotificationSettingResponse);
   rpc UpdateNotificationSetting(UpdateNotificationSettingRequest) returns (UpdateNotificationSettingResponse);
   rpc SendPushNotification(SendPushNotificationRequest) returns (SendPushNotificationResponse);
+  rpc GetUnreadNotificationCount(GetUnreadNotificationCountRequest) returns (GetUnreadNotificationCountResponse);
 }
 
 message GetNotificationsRequest {
@@ -129,4 +130,12 @@ enum TargetType {
   TARGET_TYPE_ITEM = 3;
   TARGET_TYPE_ACHIEVEMENT = 4;
   TARGET_TYPE_SHARE = 5;
+}
+
+message GetUnreadNotificationCountRequest {
+  int64 user_id = 1;
+}
+
+message GetUnreadNotificationCountResponse {
+  int64 unread_count = 1;
 }
