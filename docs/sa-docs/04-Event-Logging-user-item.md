@@ -1,4 +1,9 @@
-# 각 모듈에서 로그 수집이 필요한 API 정리
+# USER / ITEM 이벤트 로그 수집 정의
+
+USER / ITEM 모듈의 이벤트 로그는 회원 가입/로그인, 온보딩, 출석, 별조각 지갑, 아이템 구매 흐름을 제품 지표로 분석하기 위해 수집한다.
+
+로그 저장은 각 도메인의 핵심 트랜잭션이 성공적으로 커밋된 뒤 비동기로 수행한다.
+event-log 모듈 호출에 실패해도 로그인, 출석, 아이템 구매 같은 메인 로직 실패로 전파하지 않는다.
 
 ---
 
@@ -20,6 +25,7 @@
 ```json
 {
   "eventType": "USER_SIGNED_UP",
+  "sourceService": "user",
   "userId": 1,
   "refType": "USER",
   "refId": 1,
@@ -35,6 +41,7 @@
 ```json
 {
   "eventType": "USER_LOGGED_IN",
+  "sourceService": "user",
   "userId": 1,
   "refType": "USER",
   "refId": 1,
@@ -48,6 +55,7 @@
 ```json
 {
   "eventType": "ONBOARDING_PROFILE_SAVED",
+  "sourceService": "user",
   "userId": 1,
   "refType": "ONBOARDING_PROFILE",
   "refId": 10,
@@ -68,6 +76,7 @@
 ```json
 {
   "eventType": "ONBOARDING_COMPLETED",
+  "sourceService": "user",
   "userId": 1,
   "refType": "ONBOARDING_PROFILE",
   "refId": 10,
@@ -87,6 +96,7 @@
 ```json
 {
   "eventType": "ATTENDANCE_CHECKED",
+  "sourceService": "user",
   "userId": 1,
   "refType": "ATTENDANCE_RECORD",
   "refId": 100,
@@ -102,6 +112,7 @@
 ```json
 {
   "eventType": "STAR_PIECE_EARNED",
+  "sourceService": "user",
   "userId": 1,
   "refType": "ATTENDANCE_RECORD",
   "refId": 100,
@@ -131,13 +142,14 @@
 ```json
 {
   "eventType": "ITEM_PURCHASED",
+  "sourceService": "item",
   "userId": 1,
   "refType": "ITEM",
   "refId": 3,
   "metadata": {
     "purchaseId": 700,
     "itemId": 3,
-    "itemName": "soft-star-skin",
+    "itemName": "말랑 별빛 스킨",
     "itemType": "SKIN",
     "quantity": 1,
     "totalPrice": 60,
@@ -151,6 +163,7 @@
 ```json
 {
   "eventType": "STAR_PIECE_SPENT",
+  "sourceService": "item",
   "userId": 1,
   "refType": "ITEM",
   "refId": 3,
