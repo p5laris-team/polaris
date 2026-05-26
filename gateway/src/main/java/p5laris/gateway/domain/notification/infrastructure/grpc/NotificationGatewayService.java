@@ -2,12 +2,17 @@ package p5laris.gateway.domain.notification.infrastructure.grpc;
 
 import com.p5laris.proto.notification.v1.GetNotificationsRequest;
 import com.p5laris.proto.notification.v1.GetNotificationsResponse;
+import com.p5laris.proto.notification.v1.GetNotificationSettingRequest;
+import com.p5laris.proto.notification.v1.GetNotificationSettingResponse;
 import com.p5laris.proto.notification.v1.MarkNotificationReadRequest;
 import com.p5laris.proto.notification.v1.MarkNotificationReadResponse;
 import com.p5laris.proto.notification.v1.Notification;
+import com.p5laris.proto.notification.v1.NotificationSettingSnapshot;
 import com.p5laris.proto.notification.v1.NotificationServiceGrpc;
 import com.p5laris.proto.notification.v1.RegisterFcmTokenRequest;
 import com.p5laris.proto.notification.v1.RegisterFcmTokenResponse;
+import com.p5laris.proto.notification.v1.UpdateNotificationSettingRequest;
+import com.p5laris.proto.notification.v1.UpdateNotificationSettingResponse;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import net.devh.boot.grpc.client.inject.GrpcClient;
@@ -133,6 +138,55 @@ public class NotificationGatewayService {
         }
     }
 
+    /**
+     * 로그인한 사용자의 알림 수신 설정을 조회한다.
+     */
+    public NotificationDto.NotificationSettingResponse getNotificationSetting(Long userId) {
+        validateUserId(userId);
+
+        try {
+            GetNotificationSettingResponse response = notificationStub.getNotificationSetting(
+                    GetNotificationSettingRequest.newBuilder()
+                            .setUserId(userId)
+                            .build()
+            );
+
+            return toNotificationSettingResponse(response.getSetting());
+        } catch (StatusRuntimeException e) {
+            throw toGatewayException(e);
+        }
+    }
+
+    /**
+     * 로그인한 사용자의 알림 수신 설정을 갱신한다.
+     */
+    public NotificationDto.NotificationSettingResponse updateNotificationSetting(
+            Long userId,
+            NotificationDto.UpdateNotificationSettingRequest request
+    ) {
+        validateUserId(userId);
+        validateSettingRequest(request);
+
+        try {
+            UpdateNotificationSettingResponse response = notificationStub.updateNotificationSetting(
+                    UpdateNotificationSettingRequest.newBuilder()
+                            .setUserId(userId)
+                            .setPushEnabled(request.pushEnabled())
+                            .setMissionOfferEnabled(request.missionOfferEnabled())
+                            .setCharacterStateEnabled(request.characterStateEnabled())
+                            .setDailyReminderEnabled(request.dailyReminderEnabled())
+                            .setQuietHoursEnabled(request.quietHoursEnabled())
+                            .setQuietHoursStart(request.quietHoursStart())
+                            .setQuietHoursEnd(request.quietHoursEnd())
+                            .build()
+            );
+
+            return toNotificationSettingResponse(response.getSetting());
+        } catch (StatusRuntimeException e) {
+            throw toGatewayException(e);
+        }
+    }
+
     private NotificationDto.NotificationItem toNotificationItem(Notification notification) {
         return new NotificationDto.NotificationItem(
                 notification.getId(),
@@ -147,6 +201,20 @@ public class NotificationGatewayService {
                         : null,
                 notification.getRead(),
                 emptyToNull(notification.getCreatedAt())
+        );
+    }
+
+    private NotificationDto.NotificationSettingResponse toNotificationSettingResponse(
+            NotificationSettingSnapshot setting
+    ) {
+        return new NotificationDto.NotificationSettingResponse(
+                setting.getPushEnabled(),
+                setting.getMissionOfferEnabled(),
+                setting.getCharacterStateEnabled(),
+                setting.getDailyReminderEnabled(),
+                setting.getQuietHoursEnabled(),
+                setting.getQuietHoursStart(),
+                setting.getQuietHoursEnd()
         );
     }
 
@@ -191,6 +259,19 @@ public class NotificationGatewayService {
     private void validateFcmTokenRequest(NotificationDto.RegisterFcmTokenRequest request) {
         if (request == null || request.token() == null || request.token().isBlank()) {
             throw new NotificationGatewayException(NotificationGatewayErrorCode.INVALID_FCM_TOKEN);
+        }
+    }
+
+    private void validateSettingRequest(NotificationDto.UpdateNotificationSettingRequest request) {
+        if (request == null
+                || request.pushEnabled() == null
+                || request.missionOfferEnabled() == null
+                || request.characterStateEnabled() == null
+                || request.dailyReminderEnabled() == null
+                || request.quietHoursEnabled() == null
+                || request.quietHoursStart() == null
+                || request.quietHoursEnd() == null) {
+            throw new NotificationGatewayException(NotificationGatewayErrorCode.INVALID_NOTIFICATION_REQUEST);
         }
     }
 
