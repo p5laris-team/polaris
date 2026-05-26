@@ -13,8 +13,6 @@ import p5laris.character.domain.domain.repository.ShareLogRepository;
 import p5laris.character.domain.domain.repository.UserCharacterRepository;
 import p5laris.character.domain.exception.CharacterErrorCode;
 import p5laris.character.domain.exception.CharacterException;
-import p5laris.character.domain.infrastructure.grpc.MissionShareStatsClient;
-import software.amazon.awssdk.core.exception.SdkException;
 
 import java.net.URI;
 import java.time.Instant;
@@ -45,8 +43,6 @@ public class ShareService {
     private final ShareCardRepository shareCardRepository;
     private final ShareLogRepository shareLogRepository;
     private final S3StorageService s3StorageService;
-    private final ShareCardImageGenerator shareCardImageGenerator;
-    private final MissionShareStatsClient missionShareStatsClient;
     private final UserCharacterRepository userCharacterRepository;
 
     @Value("${app.public-base-url:https://p5laris.life}")
@@ -64,7 +60,7 @@ public class ShareService {
             throw new CharacterException(CharacterErrorCode.NOT_CHARACTER_OWNER);
         }
 
-        String resolvedImageKey = resolveShareCardImageKey(userId, character, safeHeadline, imageUrl);
+        String resolvedImageKey = validateShareCardImageUrlAndExtractKey(userId, imageUrl);
 
         return shareCardRepository.findByUserIdAndImageUrl(userId, resolvedImageKey)
                 .map(card -> {
@@ -78,8 +74,6 @@ public class ShareService {
                 .orElseGet(() -> {
                     String shareId = "sh_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
                     
-                    // C 방식: 프론트가 전달한 URL 사용
-
                     ShareCard card = ShareCard.builder()
                             .userId(userId)
                             .characterId(characterId)
@@ -244,16 +238,10 @@ public class ShareService {
         return normalized;
     }
 
-    private String resolveShareCardImageKey(Long userId, UserCharacter character, String headline, String imageUrl) {
-        if (imageUrl != null && !imageUrl.isBlank()) {
-            return validateShareCardImageUrlAndExtractKey(userId, imageUrl);
-        }
-        log.warn("CreateShareCard called without imageUrl. Falling back to server-side image generation. userId={}, characterId={}",
-                userId, character.getId());
-        return generateAndUploadShareCardImage(userId, character, headline).key();
-    }
-
     private String validateShareCardImageUrlAndExtractKey(Long userId, String imageUrl) {
+        if (imageUrl == null || imageUrl.isBlank()) {
+            throw new CharacterException(CharacterErrorCode.INVALID_SHARE_CARD_IMAGE_URL);
+        }
         try {
             URI uri = URI.create(imageUrl.trim());
             String scheme = uri.getScheme();
@@ -280,24 +268,6 @@ public class ShareService {
                 || lowerPath.endsWith(".jpg")
                 || lowerPath.endsWith(".jpeg")
                 || lowerPath.endsWith(".webp");
-    }
-
-    private S3StorageService.S3UploadResult generateAndUploadShareCardImage(Long userId, UserCharacter character, String headline) {
-        var missionStats = missionShareStatsClient.getTodayStatsOrDefault(userId);
-        byte[] imageBytes = shareCardImageGenerator.generate(new ShareCardImageGenerator.ShareCardImageCommand(
-                character.getName(),
-                character.getCharacterType().getCode(),
-                headline,
-                missionStats.completedCount(),
-                missionStats.earnedStarPiece()
-        ));
-
-        try {
-            return s3StorageService.uploadShareCardImage(imageBytes, "image/png");
-        } catch (SdkException | IllegalStateException e) {
-            log.warn("Failed to upload generated share card image. userId={}, characterId={}", userId, character.getId(), e);
-            throw new CharacterException(CharacterErrorCode.SHARE_CARD_IMAGE_UPLOAD_FAILED);
-        }
     }
 
     private String extractShareId(String shareUrl) {
