@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 import p5laris.notification.domain.domain.entity.FcmDeviceToken;
 import p5laris.notification.domain.domain.entity.NotificationPushDelivery;
 import p5laris.notification.domain.domain.enums.FcmTokenDeactivatedReason;
+import p5laris.notification.domain.domain.enums.NotificationType;
 import p5laris.notification.domain.domain.repository.FcmDeviceTokenRepository;
 import p5laris.notification.domain.domain.repository.NotificationPushDeliveryRepository;
 import p5laris.notification.domain.domain.repository.NotificationSettingRepository;
@@ -26,17 +27,26 @@ public class FcmSenderService {
     private final FcmDeviceTokenRepository fcmDeviceTokenRepository;
     private final NotificationSettingRepository notificationSettingRepository;
     private final NotificationPushDeliveryRepository notificationPushDeliveryRepository;
+    private final NotificationDeliveryPolicy notificationDeliveryPolicy;
 
     @Async
     @Transactional
-    public void sendPushNotification(Long notificationId, Long userId, String title, String body) {
+    public void sendPushNotification(
+            Long notificationId,
+            Long userId,
+            String title,
+            String body,
+            NotificationType notificationType
+    ) {
         // 수신 동의 여부 확인
         p5laris.notification.domain.domain.entity.NotificationSetting setting = notificationSettingRepository.findByUserId(userId)
                 .orElseGet(() -> p5laris.notification.domain.domain.entity.NotificationSetting.defaultSetting(userId));
 
-        if (!setting.isPushEnabled()) {
-            log.info("Push notifications are disabled for user: {}", userId);
-            recordSkippedDelivery(notificationId, userId, "PUSH_DISABLED", "User disabled push notifications");
+        NotificationDeliveryDecision decision = notificationDeliveryPolicy.decide(setting, notificationType);
+        if (!decision.sendable()) {
+            log.info("Push notification skipped. userId={}, notificationId={}, reason={}",
+                    userId, notificationId, decision.skipCode());
+            recordSkippedDelivery(notificationId, userId, decision.skipCode(), decision.skipMessage());
             return;
         }
 

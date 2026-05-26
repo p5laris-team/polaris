@@ -3,6 +3,7 @@ package p5laris.gateway.domain.notification.api.dto;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 
 import java.util.List;
 
@@ -79,6 +80,49 @@ public class NotificationDto {
     public record RegisterFcmTokenResponse(
             Long id,
             String createdAt
+    ) {
+    }
+
+    /**
+     * 알림 수신 설정 응답이다.
+     */
+    public record NotificationSettingResponse(
+            Boolean pushEnabled,
+            Boolean missionOfferEnabled,
+            Boolean characterStateEnabled,
+            Boolean dailyReminderEnabled,
+            Boolean quietHoursEnabled,
+            String quietHoursStart,
+            String quietHoursEnd
+    ) {
+    }
+
+    /**
+     * 알림 수신 설정 수정 요청이다.
+     */
+    public record UpdateNotificationSettingRequest(
+            @NotNull
+            Boolean pushEnabled,
+
+            @NotNull
+            Boolean missionOfferEnabled,
+
+            @NotNull
+            Boolean characterStateEnabled,
+
+            @NotNull
+            Boolean dailyReminderEnabled,
+
+            @NotNull
+            Boolean quietHoursEnabled,
+
+            @NotBlank
+            @Pattern(regexp = "^([01]\\d|2[0-3]):[0-5]\\d$")
+            String quietHoursStart,
+
+            @NotBlank
+            @Pattern(regexp = "^([01]\\d|2[0-3]):[0-5]\\d$")
+            String quietHoursEnd
     ) {
     }
 }

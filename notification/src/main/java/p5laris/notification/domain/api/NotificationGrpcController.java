@@ -2,11 +2,15 @@ package p5laris.notification.domain.api;
 
 import com.p5laris.proto.notification.v1.GetNotificationsRequest;
 import com.p5laris.proto.notification.v1.GetNotificationsResponse;
+import com.p5laris.proto.notification.v1.GetNotificationSettingRequest;
+import com.p5laris.proto.notification.v1.GetNotificationSettingResponse;
 import com.p5laris.proto.notification.v1.MarkNotificationReadRequest;
 import com.p5laris.proto.notification.v1.MarkNotificationReadResponse;
 import com.p5laris.proto.notification.v1.NotificationServiceGrpc;
 import com.p5laris.proto.notification.v1.RegisterFcmTokenRequest;
 import com.p5laris.proto.notification.v1.RegisterFcmTokenResponse;
+import com.p5laris.proto.notification.v1.UpdateNotificationSettingRequest;
+import com.p5laris.proto.notification.v1.UpdateNotificationSettingResponse;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import lombok.RequiredArgsConstructor;
@@ -89,6 +93,45 @@ public class NotificationGrpcController extends NotificationServiceGrpc.Notifica
         }
     }
 
+    // 로그인한 사용자의 알림 수신 설정을 조회한다.
+    @Override
+    public void getNotificationSetting(
+            GetNotificationSettingRequest request,
+            StreamObserver<GetNotificationSettingResponse> responseObserver
+    ) {
+        try {
+            GetNotificationSettingResponse response = notificationService.getNotificationSetting(request.getUserId());
+
+            responseObserver.onNext(response);
+            responseObserver.onCompleted();
+        } catch (NotificationException e) {
+            responseObserver.onError(toStatus(e).withDescription(e.getMessage()).asRuntimeException());
+        } catch (Exception e) {
+            responseObserver.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+        }
+    }
+
+    // 로그인한 사용자의 알림 수신 설정을 갱신한다.
+    @Override
+    public void updateNotificationSetting(
+            UpdateNotificationSettingRequest request,
+            StreamObserver<UpdateNotificationSettingResponse> responseObserver
+    ) {
+        try {
+            UpdateNotificationSettingResponse response = notificationService.updateNotificationSetting(
+                    request.getUserId(),
+                    request
+            );
+
+            responseObserver.onNext(response);
+            responseObserver.onCompleted();
+        } catch (NotificationException e) {
+            responseObserver.onError(toStatus(e).withDescription(e.getMessage()).asRuntimeException());
+        } catch (Exception e) {
+            responseObserver.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+        }
+    }
+
     // 다른 모듈의 요청을 받아 FCM 푸시 알림을 비동기로 발송한다.
     @Override
     public void sendPushNotification(
@@ -104,7 +147,8 @@ public class NotificationGrpcController extends NotificationServiceGrpc.Notifica
                     notification.getId(),
                     request.getUserId(),
                     request.getTitle(),
-                    request.getBody()
+                    request.getBody(),
+                    notification.getNotificationType()
             );
 
             responseObserver.onNext(com.p5laris.proto.notification.v1.SendPushNotificationResponse.newBuilder()
