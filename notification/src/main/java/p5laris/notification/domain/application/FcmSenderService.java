@@ -21,10 +21,20 @@ import java.util.List;
 public class FcmSenderService {
 
     private final FcmDeviceTokenRepository fcmDeviceTokenRepository;
+    private final p5laris.notification.domain.domain.repository.NotificationSettingRepository notificationSettingRepository;
 
     @Async
     @Transactional
     public void sendPushNotification(Long userId, String title, String body) {
+        // 수신 동의 여부 확인
+        p5laris.notification.domain.domain.entity.NotificationSetting setting = notificationSettingRepository.findByUserId(userId)
+                .orElseGet(() -> p5laris.notification.domain.domain.entity.NotificationSetting.defaultSetting(userId));
+
+        if (!setting.isPushEnabled()) {
+            log.info("Push notifications are disabled for user: {}", userId);
+            return;
+        }
+
         List<FcmDeviceToken> activeTokens = fcmDeviceTokenRepository.findByUserIdAndActiveTrue(userId);
 
         if (activeTokens.isEmpty()) {
