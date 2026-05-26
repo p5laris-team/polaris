@@ -37,6 +37,7 @@ public class ShareService {
     private static final int SHARE_REWARD_STAR_PIECE = 10;
     private static final String PLACEHOLDER_HEADLINE = "Today, I shone a little.";
     private static final int HEADLINE_MAX_LENGTH = 100;
+    private static final String SHARE_CARD_IMAGE_HOST = "d24c6my56k1w5v.cloudfront.net";
     private static final ZoneId SHARE_DATE_ZONE = ZoneId.of("Asia/Seoul");
     private static final DateTimeFormatter SHARE_DATE_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE;
 
