@@ -8,10 +8,10 @@ spring:
     name: character
 
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/character}
+    url: ${DB_URL}
     driver-class-name: org.postgresql.Driver
-    username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:12345678}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
 
   jpa:
     hibernate:
@@ -28,29 +28,41 @@ flyway:
 
 grpc:
   server:
-    port: 9092
+    port: ${GRPC_SERVER_PORT}
     reflection-service-enabled: true
 
   client:
     user:
-      address: static://localhost:9091
+      address: ${USER_GRPC_ADDRESS}
       negotiationType: plaintext
     item:
-      address: static://localhost:9093
+      address: ${ITEM_GRPC_ADDRESS}
       negotiationType: plaintext
     ai:
-      address: static://localhost:9095
+      address: ${AI_GRPC_ADDRESS}
       negotiationType: plaintext
+    # notification 모듈에 앱 내부 알림 생성 및 FCM 발송을 위임할 때 사용하는 gRPC 주소입니다.
+    notification:
+      address: ${NOTIFICATION_GRPC_ADDRESS}
+      negotiationType: plaintext
+
+character:
+  state-notification:
+    # 활성 캐릭터의 상태 감소를 점검하고 CARE 알림을 요청할지 여부입니다.
+    enabled: ${CHARACTER_STATE_NOTIFICATION_ENABLED}
+    fixed-delay-ms: ${CHARACTER_STATE_NOTIFICATION_FIXED_DELAY_MS}
+    initial-delay-ms: ${CHARACTER_STATE_NOTIFICATION_INITIAL_DELAY_MS}
+    batch-size: ${CHARACTER_STATE_NOTIFICATION_BATCH_SIZE}
 
 cloud:
   aws:
-    region: ${AWS_REGION:ap-northeast-2}
+    region: ${AWS_REGION}
     s3:
-      bucket-name: ${S3_BUCKET_NAME:polaris-share-cards}
-      public-domain: ${S3_PUBLIC_DOMAIN:https://cdn.p5laris.life}
+      bucket-name: ${S3_BUCKET_NAME}
+      public-domain: ${S3_PUBLIC_DOMAIN}
       cors:
-        enabled: ${S3_CORS_AUTO_CONFIGURE:false}
-        allowed-origins: ${S3_CORS_ALLOWED_ORIGINS:http://127.0.0.1:5173,http://localhost:5173}
+        enabled: ${S3_CORS_AUTO_CONFIGURE}
+        allowed-origins: ${S3_CORS_ALLOWED_ORIGINS}
 
 app:
-  public-base-url: ${APP_PUBLIC_BASE_URL:https://p5laris.life}
+  public-base-url: ${APP_PUBLIC_BASE_URL}
