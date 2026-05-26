@@ -281,7 +281,10 @@ public class MissionService {
     }
 
     /**
-     * 유저가 제안받은 미션을 거절 처리한다.
+     * 유저가 제안받았거나 완료 질문에 진입한 미션을 거절 처리한다.
+     *
+     * ANSWERING은 아직 답변 제출과 보상 지급이 끝나지 않은 상태라 사용자가 인증을 포기하고
+     * 다른 미션을 받을 수 있게 REJECTED로 전환한다.
      *
      * 거절도 소유권 기준은 userId + missionId다.
      * characterId를 조건에 넣으면 같은 유저의 현재 미션을 다른 캐릭터 화면에서 처리할 때 실패할 수 있다.
@@ -291,7 +294,7 @@ public class MissionService {
         UserMission mission = userMissionRepository.findByIdAndUserId(missionId, userId)
                 .orElseThrow(() -> new MissionException(MissionErrorCode.MISSION_NOT_FOUND));
 
-        if (!mission.isOffered()) {
+        if (!mission.isOffered() && !mission.isAnswering()) {
             throw new MissionException(MissionErrorCode.MISSION_INVALID_STATUS);
         }
 
