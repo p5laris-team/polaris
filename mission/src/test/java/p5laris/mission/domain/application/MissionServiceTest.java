@@ -295,6 +295,31 @@ class MissionServiceTest {
     }
 
     @Test
+    void ANSWERING_미션은_거절한_뒤_다음_미션을_받을_수_있다() {
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        missionService.startCompletionSession(USER_ID, created.getMission().getId());
+
+        RejectMissionResponse rejected = missionService.rejectMission(
+                USER_ID,
+                created.getMission().getId()
+        );
+        GetCurrentMissionResponse current = missionService.getCurrentMission(USER_ID);
+        UserMission saved = userMissionRepository.findById(created.getMission().getId()).orElseThrow();
+        CreateNextMissionResponse next = missionService.createNextMission(
+                USER_ID,
+                CHARACTER_ID,
+                created.getMission().getId()
+        );
+
+        assertThat(rejected.getStatus()).isEqualTo(MissionStatus.MISSION_STATUS_REJECTED);
+        assertThat(current.hasMission()).isFalse();
+        assertThat(saved.getStatus()).isEqualTo(UserMissionStatus.REJECTED);
+        assertThat(saved.getRejectedAt()).isNotNull();
+        assertThat(next.getMission().getStatus()).isEqualTo(MissionStatus.MISSION_STATUS_OFFERED);
+        assertThat(next.getMission().getStackOrder()).isEqualTo(2);
+    }
+
+    @Test
     void REJECTED_미션은_완료_질문_세션을_시작할_수_없다() {
         CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
         missionService.rejectMission(USER_ID, created.getMission().getId());
