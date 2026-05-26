@@ -107,6 +107,9 @@ public record MissionEventLogEvent(
         metadata.put("aiGenerationId", mission.getAiGenerationId());
         metadata.put("missionDate", mission.getMissionDate().toString());
         metadata.put("stackOrder", mission.getStackOrder());
+        if (mission.getTitle() != null && !mission.getTitle().isBlank()) {
+            metadata.put("missionTitle", mission.getTitle());
+        }
         metadata.put("category", mission.getCategory());
         metadata.put("difficulty", mission.getDifficulty());
         return metadata;

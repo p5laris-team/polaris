@@ -28,6 +28,7 @@ import p5laris.mission.domain.exception.MissionException;
 import p5laris.mission.domain.infrastructure.grpc.AiMissionTextClient;
 import p5laris.mission.domain.infrastructure.grpc.AiMissionTextResult;
 import p5laris.mission.domain.infrastructure.grpc.CharacterProfileClient;
+import p5laris.mission.domain.infrastructure.grpc.NotificationPushClient;
 import p5laris.mission.domain.infrastructure.grpc.WalletRewardClient;
 import p5laris.mission.domain.infrastructure.grpc.WalletRewardResult;
 
@@ -47,6 +48,7 @@ import static org.mockito.Mockito.when;
 
 @SpringBootTest(properties = {
         "grpc.server.port=0",
+        "grpc.client.notification.address=static://localhost:9098",
         "mission.reward-outbox.enabled=false",
         "mission.reward-outbox.fixed-delay-ms=60000",
         "mission.reward-outbox.initial-delay-ms=60000",
@@ -89,12 +91,15 @@ class MissionServiceTest {
     @MockitoBean
     private CharacterProfileClient characterProfileClient;
 
+    @MockitoBean
+    private NotificationPushClient notificationPushClient;
+
     @BeforeEach
     void setUp() {
         missionRewardOutboxRepository.deleteAll();
         missionCompletionAnswerRepository.deleteAll();
         userMissionRepository.deleteAll();
-        reset(walletRewardClient, aiMissionTextClient, characterProfileClient);
+        reset(walletRewardClient, aiMissionTextClient, characterProfileClient, notificationPushClient);
         when(walletRewardClient.earnMissionReward(anyLong(), anyLong(), anyInt(), anyString()))
                 .thenReturn(new WalletRewardResult(110, 9001L));
         when(walletRewardClient.getWalletStarPiece(anyLong()))
