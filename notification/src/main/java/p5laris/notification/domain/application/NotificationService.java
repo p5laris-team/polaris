@@ -1,19 +1,25 @@
 package p5laris.notification.domain.application;
 
 import com.p5laris.proto.notification.v1.GetNotificationsResponse;
+import com.p5laris.proto.notification.v1.GetNotificationSettingResponse;
 import com.p5laris.proto.notification.v1.MarkNotificationReadResponse;
+import com.p5laris.proto.notification.v1.NotificationSettingSnapshot;
 import com.p5laris.proto.notification.v1.PageInfo;
 import com.p5laris.proto.notification.v1.RegisterFcmTokenResponse;
+import com.p5laris.proto.notification.v1.UpdateNotificationSettingRequest;
+import com.p5laris.proto.notification.v1.UpdateNotificationSettingResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import p5laris.notification.domain.domain.entity.FcmDeviceToken;
 import p5laris.notification.domain.domain.entity.Notification;
+import p5laris.notification.domain.domain.entity.NotificationSetting;
 import p5laris.notification.domain.domain.enums.FcmPlatform;
 import p5laris.notification.domain.domain.enums.NotificationTargetType;
 import p5laris.notification.domain.domain.repository.FcmDeviceTokenRepository;
 import p5laris.notification.domain.domain.repository.NotificationRepository;
+import p5laris.notification.domain.domain.repository.NotificationSettingRepository;
 import p5laris.notification.domain.exception.NotificationErrorCode;
 import p5laris.notification.domain.exception.NotificationException;
 
@@ -21,6 +27,9 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.HexFormat;
 import java.util.List;
 
@@ -31,9 +40,11 @@ public class NotificationService {
     private static final int DEFAULT_PAGE_SIZE = 20;
     private static final int MAX_PAGE_SIZE = 50;
     private static final long EMPTY_CURSOR = 0L;
+    private static final DateTimeFormatter QUIET_HOURS_FORMATTER = DateTimeFormatter.ofPattern("HH:mm");
 
     private final NotificationRepository notificationRepository;
     private final FcmDeviceTokenRepository fcmDeviceTokenRepository;
+    private final NotificationSettingRepository notificationSettingRepository;
 
     @Transactional(readOnly = true)
     public GetNotificationsResponse getNotifications(
@@ -130,6 +141,44 @@ public class NotificationService {
                 .build();
     }
 
+    @Transactional(readOnly = true)
+    public GetNotificationSettingResponse getNotificationSetting(Long userId) {
+        validateUserId(userId);
+
+        NotificationSetting setting = notificationSettingRepository.findByUserId(userId)
+                .orElseGet(() -> NotificationSetting.defaultSetting(userId));
+
+        return GetNotificationSettingResponse.newBuilder()
+                .setSetting(toSettingSnapshot(setting))
+                .build();
+    }
+
+    @Transactional
+    public UpdateNotificationSettingResponse updateNotificationSetting(
+            Long userId,
+            UpdateNotificationSettingRequest request
+    ) {
+        validateUserId(userId);
+
+        NotificationSetting setting = notificationSettingRepository.findByUserId(userId)
+                .orElseGet(() -> NotificationSetting.defaultSetting(userId));
+
+        setting.updateNotificationOptions(
+                request.getPushEnabled(),
+                request.getMissionOfferEnabled(),
+                request.getCharacterStateEnabled(),
+                request.getDailyReminderEnabled(),
+                request.getQuietHoursEnabled(),
+                parseQuietHours(request.getQuietHoursStart()),
+                parseQuietHours(request.getQuietHoursEnd())
+        );
+
+        NotificationSetting savedSetting = notificationSettingRepository.save(setting);
+        return UpdateNotificationSettingResponse.newBuilder()
+                .setSetting(toSettingSnapshot(savedSetting))
+                .build();
+    }
+
     @Transactional
     public Notification createNotification(com.p5laris.proto.notification.v1.SendPushNotificationRequest request) {
         validateUserId(request.getUserId());
@@ -145,6 +194,34 @@ public class NotificationService {
                 .build();
 
         return notificationRepository.save(notification);
+    }
+
+    private NotificationSettingSnapshot toSettingSnapshot(NotificationSetting setting) {
+        return NotificationSettingSnapshot.newBuilder()
+                .setPushEnabled(setting.isPushEnabled())
+                .setMissionOfferEnabled(setting.isMissionOfferEnabled())
+                .setCharacterStateEnabled(setting.isCharacterStateEnabled())
+                .setDailyReminderEnabled(setting.isDailyReminderEnabled())
+                .setQuietHoursEnabled(setting.isQuietHoursEnabled())
+                .setQuietHoursStart(formatQuietHours(setting.getQuietHoursStart()))
+                .setQuietHoursEnd(formatQuietHours(setting.getQuietHoursEnd()))
+                .build();
+    }
+
+    private LocalTime parseQuietHours(String value) {
+        if (value == null || value.isBlank()) {
+            throw new NotificationException(NotificationErrorCode.INVALID_NOTIFICATION_REQUEST);
+        }
+
+        try {
+            return LocalTime.parse(value, QUIET_HOURS_FORMATTER);
+        } catch (DateTimeParseException e) {
+            throw new NotificationException(NotificationErrorCode.INVALID_NOTIFICATION_REQUEST);
+        }
+    }
+
+    private String formatQuietHours(LocalTime value) {
+        return value == null ? "" : QUIET_HOURS_FORMATTER.format(value);
     }
 
     private List<Notification> findNotifications(
