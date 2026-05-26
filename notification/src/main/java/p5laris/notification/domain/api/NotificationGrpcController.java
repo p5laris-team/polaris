@@ -21,6 +21,7 @@ import p5laris.notification.domain.exception.NotificationException;
 public class NotificationGrpcController extends NotificationServiceGrpc.NotificationServiceImplBase {
 
     private final NotificationService notificationService;
+    private final p5laris.notification.domain.application.FcmSenderService fcmSenderService;
 
     // 로그인한 사용자의 앱 내부 알림 목록을 조회한다.
     @Override
@@ -83,6 +84,29 @@ public class NotificationGrpcController extends NotificationServiceGrpc.Notifica
             responseObserver.onCompleted();
         } catch (NotificationException e) {
             responseObserver.onError(toStatus(e).withDescription(e.getMessage()).asRuntimeException());
+        } catch (Exception e) {
+            responseObserver.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+        }
+    }
+
+    // 다른 모듈의 요청을 받아 FCM 푸시 알림을 비동기로 발송한다.
+    @Override
+    public void sendPushNotification(
+            com.p5laris.proto.notification.v1.SendPushNotificationRequest request,
+            StreamObserver<com.p5laris.proto.notification.v1.SendPushNotificationResponse> responseObserver
+    ) {
+        try {
+            // 비동기로 FCM 발송
+            fcmSenderService.sendPushNotification(
+                    request.getUserId(),
+                    request.getTitle(),
+                    request.getBody()
+            );
+
+            responseObserver.onNext(com.p5laris.proto.notification.v1.SendPushNotificationResponse.newBuilder()
+                    .setSuccess(true)
+                    .build());
+            responseObserver.onCompleted();
         } catch (Exception e) {
             responseObserver.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
         }
