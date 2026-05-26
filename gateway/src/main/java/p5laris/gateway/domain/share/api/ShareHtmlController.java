@@ -22,7 +22,7 @@ public class ShareHtmlController {
     @Value("${app.public-base-url:https://p5laris.life}")
     private String publicBaseUrl;
 
-    @Value("${app.default-share-image-url:https://d24c6my56k1w5v.cloudfront.net/assets/share-cards/placeholder.png}")
+    @Value("${app.default-share-image-url:https://cdn.p5laris.life/assets/share-cards/placeholder.png}")
     private String defaultShareImageUrl;
 
     @GetMapping(value = "/share/{shareId}", produces = MediaType.TEXT_HTML_VALUE)

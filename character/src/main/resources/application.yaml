@@ -1,4 +1,9 @@
 spring:
+  config:
+    import:
+      - optional:file:.env[.properties]
+      - optional:file:character/.env[.properties]
+
   application:
     name: character
 
@@ -33,9 +38,6 @@ grpc:
     item:
       address: static://localhost:9093
       negotiationType: plaintext
-    mission:
-      address: static://localhost:9094
-      negotiationType: plaintext
     ai:
       address: static://localhost:9095
       negotiationType: plaintext
@@ -45,7 +47,10 @@ cloud:
     region: ${AWS_REGION:ap-northeast-2}
     s3:
       bucket-name: ${S3_BUCKET_NAME:polaris-share-cards}
-      public-domain: ${S3_PUBLIC_DOMAIN:https://d24c6my56k1w5v.cloudfront.net}
+      public-domain: ${S3_PUBLIC_DOMAIN:https://cdn.p5laris.life}
+      cors:
+        enabled: ${S3_CORS_AUTO_CONFIGURE:false}
+        allowed-origins: ${S3_CORS_ALLOWED_ORIGINS:http://127.0.0.1:5173,http://localhost:5173}
 
 app:
   public-base-url: ${APP_PUBLIC_BASE_URL:https://p5laris.life}

@@ -57,11 +57,11 @@ public class AiMissionTextClient {
                     response.getFallbackUsed()
             ));
         } catch (StatusRuntimeException e) {
-            log.warn("Failed to generate mission texts. requestId={}, status={}",
+            log.warn("AI 미션 문구 생성 실패. requestId={}, status={}",
                     request.requestId(), e.getStatus().getCode(), e);
             return Optional.empty();
         } catch (Exception e) {
-            log.warn("Failed to generate mission texts. requestId={}", request.requestId(), e);
+            log.warn("AI 미션 문구 생성 실패. requestId={}", request.requestId(), e);
             return Optional.empty();
         }
     }

@@ -13,10 +13,14 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.util.ReflectionTestUtils;
 import p5laris.mission.domain.domain.entity.MissionCompletionAnswer;
+import p5laris.mission.domain.domain.entity.MissionRewardOutbox;
 import p5laris.mission.domain.domain.entity.UserMission;
+import p5laris.mission.domain.domain.enums.MissionRewardOutboxStatus;
 import p5laris.mission.domain.domain.enums.UserMissionStatus;
 import p5laris.mission.domain.domain.repository.MissionCompletionAnswerRepository;
+import p5laris.mission.domain.domain.repository.MissionRewardOutboxRepository;
 import p5laris.mission.domain.domain.repository.MissionTemplateRepository;
 import p5laris.mission.domain.domain.repository.UserMissionRepository;
 import p5laris.mission.domain.exception.MissionErrorCode;
@@ -27,6 +31,7 @@ import p5laris.mission.domain.infrastructure.grpc.CharacterProfileClient;
 import p5laris.mission.domain.infrastructure.grpc.WalletRewardClient;
 import p5laris.mission.domain.infrastructure.grpc.WalletRewardResult;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -40,7 +45,17 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-@SpringBootTest(properties = "grpc.server.port=0")
+@SpringBootTest(properties = {
+        "grpc.server.port=0",
+        "mission.reward-outbox.enabled=false",
+        "mission.reward-outbox.fixed-delay-ms=60000",
+        "mission.reward-outbox.initial-delay-ms=60000",
+        "mission.reward-outbox.batch-size=10",
+        "mission.reward-outbox.max-attempts=5",
+        "mission.reward-outbox.processing-timeout-seconds=60",
+        "mission.reward-outbox.retry-initial-delay-seconds=60",
+        "mission.reward-outbox.retry-max-delay-seconds=3600"
+})
 class MissionServiceTest {
 
     private static final Long USER_ID = 1001L;
@@ -51,10 +66,16 @@ class MissionServiceTest {
     private MissionService missionService;
 
     @Autowired
+    private MissionRewardDispatcher missionRewardDispatcher;
+
+    @Autowired
     private UserMissionRepository userMissionRepository;
 
     @Autowired
     private MissionCompletionAnswerRepository missionCompletionAnswerRepository;
+
+    @Autowired
+    private MissionRewardOutboxRepository missionRewardOutboxRepository;
 
     @Autowired
     private MissionTemplateRepository missionTemplateRepository;
@@ -70,6 +91,7 @@ class MissionServiceTest {
 
     @BeforeEach
     void setUp() {
+        missionRewardOutboxRepository.deleteAll();
         missionCompletionAnswerRepository.deleteAll();
         userMissionRepository.deleteAll();
         reset(walletRewardClient, aiMissionTextClient, characterProfileClient);
@@ -273,6 +295,31 @@ class MissionServiceTest {
     }
 
     @Test
+    void ANSWERING_미션은_거절한_뒤_다음_미션을_받을_수_있다() {
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        missionService.startCompletionSession(USER_ID, created.getMission().getId());
+
+        RejectMissionResponse rejected = missionService.rejectMission(
+                USER_ID,
+                created.getMission().getId()
+        );
+        GetCurrentMissionResponse current = missionService.getCurrentMission(USER_ID);
+        UserMission saved = userMissionRepository.findById(created.getMission().getId()).orElseThrow();
+        CreateNextMissionResponse next = missionService.createNextMission(
+                USER_ID,
+                CHARACTER_ID,
+                created.getMission().getId()
+        );
+
+        assertThat(rejected.getStatus()).isEqualTo(MissionStatus.MISSION_STATUS_REJECTED);
+        assertThat(current.hasMission()).isFalse();
+        assertThat(saved.getStatus()).isEqualTo(UserMissionStatus.REJECTED);
+        assertThat(saved.getRejectedAt()).isNotNull();
+        assertThat(next.getMission().getStatus()).isEqualTo(MissionStatus.MISSION_STATUS_OFFERED);
+        assertThat(next.getMission().getStackOrder()).isEqualTo(2);
+    }
+
+    @Test
     void REJECTED_미션은_완료_질문_세션을_시작할_수_없다() {
         CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
         missionService.rejectMission(USER_ID, created.getMission().getId());
@@ -297,6 +344,9 @@ class MissionServiceTest {
         MissionCompletionAnswer savedAnswer = missionCompletionAnswerRepository
                 .findByMissionId(created.getMission().getId())
                 .orElseThrow();
+        MissionRewardOutbox savedOutbox = missionRewardOutboxRepository
+                .findByMissionId(created.getMission().getId())
+                .orElseThrow();
 
         assertThat(response.getMissionId()).isEqualTo(created.getMission().getId());
         assertThat(response.getStatus()).isEqualTo(MissionStatus.MISSION_STATUS_COMPLETED);
@@ -310,6 +360,9 @@ class MissionServiceTest {
         assertThat(savedMission.getIdempotencyKey()).isEqualTo("MISSION_REWARD:" + created.getMission().getId());
         assertThat(savedAnswer.getAnswerText()).isEqualTo("물 한 컵을 마셨어");
         assertThat(savedAnswer.getAnsweredAt()).isNotNull();
+        assertThat(savedOutbox.getStatus()).isEqualTo(MissionRewardOutboxStatus.SUCCEEDED);
+        assertThat(savedOutbox.getAttemptCount()).isZero();
+        assertThat(savedOutbox.getIdempotencyKey()).isEqualTo("MISSION_REWARD:" + created.getMission().getId());
         verify(walletRewardClient).earnMissionReward(
                 USER_ID,
                 created.getMission().getId(),
@@ -357,6 +410,11 @@ class MissionServiceTest {
         assertThat(response.getStatus()).isEqualTo(MissionStatus.MISSION_STATUS_COMPLETED);
         assertThat(response.getAnswer().getText()).isEqualTo("완료했어");
         assertThat(response.getWallet().getStarPiece()).isEqualTo(110);
+        assertThat(missionRewardOutboxRepository.findByMissionId(created.getMission().getId()))
+                .isPresent()
+                .get()
+                .extracting(MissionRewardOutbox::getStatus)
+                .isEqualTo(MissionRewardOutboxStatus.SUCCEEDED);
         verify(walletRewardClient, times(1)).earnMissionReward(
                 USER_ID,
                 created.getMission().getId(),
@@ -402,10 +460,16 @@ class MissionServiceTest {
         MissionCompletionAnswer savedAnswer = missionCompletionAnswerRepository
                 .findByMissionId(created.getMission().getId())
                 .orElseThrow();
+        MissionRewardOutbox savedOutbox = missionRewardOutboxRepository
+                .findByMissionId(created.getMission().getId())
+                .orElseThrow();
 
         assertThat(savedMission.getStatus()).isEqualTo(UserMissionStatus.COMPLETED);
         assertThat(savedMission.getIdempotencyKey()).isNull();
         assertThat(savedAnswer.getAnswerText()).isEqualTo("완료했어");
+        assertThat(savedOutbox.getStatus()).isEqualTo(MissionRewardOutboxStatus.PENDING);
+        assertThat(savedOutbox.getAttemptCount()).isEqualTo(1);
+        assertThat(savedOutbox.getLastErrorMessage()).isNotBlank();
     }
 
     @Test
@@ -431,10 +495,56 @@ class MissionServiceTest {
                 "완료했어"
         );
         UserMission savedMission = userMissionRepository.findById(created.getMission().getId()).orElseThrow();
+        MissionRewardOutbox savedOutbox = missionRewardOutboxRepository
+                .findByMissionId(created.getMission().getId())
+                .orElseThrow();
 
         assertThat(retried.getStatus()).isEqualTo(MissionStatus.MISSION_STATUS_COMPLETED);
         assertThat(retried.getWallet().getStarPiece()).isEqualTo(110);
         assertThat(savedMission.getIdempotencyKey()).isEqualTo("MISSION_REWARD:" + created.getMission().getId());
+        assertThat(savedOutbox.getStatus()).isEqualTo(MissionRewardOutboxStatus.SUCCEEDED);
+        assertThat(savedOutbox.getAttemptCount()).isEqualTo(1);
+        verify(walletRewardClient, times(2)).earnMissionReward(
+                USER_ID,
+                created.getMission().getId(),
+                10,
+                "MISSION_REWARD:" + created.getMission().getId()
+        );
+    }
+
+    @Test
+    void 보상_outbox_스케줄러는_PENDING_보상을_같은_멱등키로_재처리한다() {
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        missionService.startCompletionSession(USER_ID, created.getMission().getId());
+        when(walletRewardClient.earnMissionReward(anyLong(), anyLong(), anyInt(), anyString()))
+                .thenThrow(new MissionException(MissionErrorCode.MISSION_REWARD_FAILED))
+                .thenReturn(new WalletRewardResult(110, 9001L));
+
+        assertThatThrownBy(() -> missionService.submitCompletionAnswer(
+                USER_ID,
+                created.getMission().getId(),
+                "완료했어"
+        ))
+                .isInstanceOf(MissionException.class)
+                .extracting("errorCode")
+                .isEqualTo(MissionErrorCode.MISSION_REWARD_FAILED);
+
+        MissionRewardOutbox pendingOutbox = missionRewardOutboxRepository
+                .findByMissionId(created.getMission().getId())
+                .orElseThrow();
+        ReflectionTestUtils.setField(pendingOutbox, "nextAttemptAt", LocalDateTime.now().minusSeconds(1));
+        missionRewardOutboxRepository.saveAndFlush(pendingOutbox);
+
+        int succeededCount = missionRewardDispatcher.dispatchDue(10);
+
+        UserMission savedMission = userMissionRepository.findById(created.getMission().getId()).orElseThrow();
+        MissionRewardOutbox savedOutbox = missionRewardOutboxRepository
+                .findByMissionId(created.getMission().getId())
+                .orElseThrow();
+        assertThat(succeededCount).isEqualTo(1);
+        assertThat(savedMission.getIdempotencyKey()).isEqualTo("MISSION_REWARD:" + created.getMission().getId());
+        assertThat(savedOutbox.getStatus()).isEqualTo(MissionRewardOutboxStatus.SUCCEEDED);
+        assertThat(savedOutbox.getAttemptCount()).isEqualTo(1);
         verify(walletRewardClient, times(2)).earnMissionReward(
                 USER_ID,
                 created.getMission().getId(),

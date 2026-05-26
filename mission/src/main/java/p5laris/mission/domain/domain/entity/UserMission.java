@@ -140,7 +140,7 @@ public class UserMission extends BaseEntity {
         this.completionCharacterResponse = completionCharacterResponse;
     }
 
-    // OFFERED 상태 미션을 REJECTED로 바꾸고 거절 시각을 기록한다.
+    // OFFERED/ANSWERING 상태 미션을 REJECTED로 바꾸고 거절 시각을 기록한다.
     public void reject(LocalDateTime rejectedAt) {
         this.status = UserMissionStatus.REJECTED;
         this.rejectedAt = rejectedAt;

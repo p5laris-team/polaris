@@ -39,7 +39,7 @@ public class GeminiMissionTextGenerator implements ExternalMissionTextGenerator 
         } catch (FallbackRequiredException e) {
             throw e;
         } catch (Exception e) {
-            log.warn("Gemini provider call failed. errorClass={}, message={}",
+            log.warn("Gemini provider 호출 실패. 예외클래스={}, 메시지={}",
                     e.getClass().getSimpleName(), e.getMessage());
             throw new FallbackRequiredException(toErrorType(e), "Gemini 문구 생성에 실패했습니다.");
         }
@@ -111,9 +111,12 @@ public class GeminiMissionTextGenerator implements ExternalMissionTextGenerator 
                 미션 설명에 없는 시간대, 장소, 감정 상태를 단정하지 않는다.
                 온보딩 context와 최근 미션 context는 말투와 난이도 조절에만 참고하고, 미션 의미를 새로 만들지 않는다.
                 NOVA는 느리고 조심스럽고 다정한 별알 말투로 말하며, 작은 빛/별조각 같은 부드러운 이미지를 짧게 쓸 수 있다.
-                MUMU는 반드시 "무... 무무..." 발화와 "(해석: ...)"을 함께 쓴다.
-                MUMU의 각 value는 "무... 무무... (해석: ...)" 한 문장으로 끝내고, 해석을 반복하지 않는다.
-                MUMU의 completionQuestion은 "무...? 무무... (해석: ...?)" 형식을 따른다.
+                MUMU는 "무", "무무", "무우", "무...?", "무...!" 같은 짧은 발화를 섞고, 항상 "(해석: ...)"을 함께 쓴다.
+                MUMU의 각 value는 무무 발화 한 덩어리와 "(해석: ...)" 한 번으로 끝내고, 같은 발화를 세 value에 반복하지 않는다.
+                MUMU는 괄호 밖에 미션 제목이나 한국어 의미 문장을 절대 쓰지 않는다. 괄호 밖에는 "무", "우", 공백, ".", "?", "!", "…"만 쓴다.
+                MUMU 나쁜 예: "무우... 오래된 알림 하나 지우는 무우...?"처럼 괄호 밖에 미션 내용을 섞으면 안 된다.
+                MUMU 좋은 예: "무우... 무...? (해석: 오래된 알림 하나를 지워볼까요?)"
+                MUMU의 completionQuestion도 무무 발화로 시작하되 해석은 사용자가 짧게 답할 수 있는 질문형으로 쓴다.
                 JJORY는 건조하고 짧은 반말 농담 말투를 사용한다. 존댓말보다 "~임", "~됨", "인정" 같은 짧은 표현을 선호한다.
                 JJORY도 무례하거나 사용자를 비난하면 안 된다.
                 비난, 죄책감 유발, 낙인, 협박, 과도한 자기비하 표현은 쓰지 않는다.

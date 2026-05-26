@@ -15,7 +15,6 @@ public enum CharacterErrorCode {
     NOT_SHARE_CARD_OWNER("CH007", "해당 공유 카드의 소유자가 아닙니다."),
     SHARE_LINK_NOT_FOUND("CH008", "공유 링크를 찾을 수 없습니다."),
     INVALID_SHARE_HEADLINE("CH009", "공유 카드 문구가 유효하지 않습니다."),
-    SHARE_CARD_IMAGE_UPLOAD_FAILED("CH010", "공유 카드 이미지 업로드에 실패했습니다."),
     ITEM_NOT_OWNED("CH011", "보유하지 않은 아이템입니다."),
     INVALID_CARE_ITEM("CH012", "돌봄 액션에 사용할 수 없는 아이템입니다."),
     ITEM_QUANTITY_NOT_ENOUGH("CH013", "아이템 수량이 부족합니다."),

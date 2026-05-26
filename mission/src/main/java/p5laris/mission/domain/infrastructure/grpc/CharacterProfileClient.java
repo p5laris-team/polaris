@@ -44,11 +44,11 @@ public class CharacterProfileClient {
             }
             return Optional.of(response.getCharacterTypeCode());
         } catch (StatusRuntimeException e) {
-            log.warn("Failed to get active character profile. userId={}, status={}",
+            log.warn("활성 캐릭터 프로필 조회 실패. userId={}, status={}",
                     userId, e.getStatus().getCode(), e);
             return Optional.empty();
         } catch (Exception e) {
-            log.warn("Failed to get active character profile. userId={}", userId, e);
+            log.warn("활성 캐릭터 프로필 조회 실패. userId={}", userId, e);
             return Optional.empty();
         }
     }

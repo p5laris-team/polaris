@@ -19,25 +19,25 @@ import java.util.Map;
 /**
  * AI provider 선택을 담당하는 generator 라우터다.
  *
- * AiMissionTextService는 이 클래스만 바라보고, 실제 local/Gemini/OpenAI 분기는 여기서 처리한다.
+ * AiMissionTextService는 이 클래스만 바라보고, 실제 rule-based/Gemini/OpenAI 분기는 여기서 처리한다.
  */
 @Primary
 @Component
 public class DelegatingMissionTextGenerator implements MissionTextGenerator {
 
     private final AiProviderProperties aiProviderProperties;
-    private final LocalMissionTextGenerator localMissionTextGenerator;
+    private final RuleBasedMissionTextGenerator ruleBasedMissionTextGenerator;
     private final AiRateLimiter aiRateLimiter;
     private final Map<AiProviderType, ExternalMissionTextGenerator> externalGenerators;
 
     public DelegatingMissionTextGenerator(
             AiProviderProperties aiProviderProperties,
-            LocalMissionTextGenerator localMissionTextGenerator,
+            RuleBasedMissionTextGenerator ruleBasedMissionTextGenerator,
             AiRateLimiter aiRateLimiter,
             List<ExternalMissionTextGenerator> externalGenerators
     ) {
         this.aiProviderProperties = aiProviderProperties;
-        this.localMissionTextGenerator = localMissionTextGenerator;
+        this.ruleBasedMissionTextGenerator = ruleBasedMissionTextGenerator;
         this.aiRateLimiter = aiRateLimiter;
         this.externalGenerators = toGeneratorMap(externalGenerators);
     }
@@ -47,7 +47,7 @@ public class DelegatingMissionTextGenerator implements MissionTextGenerator {
         AiProviderType providerType = aiProviderProperties.providerType();
 
         if (!aiProviderProperties.isExternalEnabled()) {
-            return localMissionTextGenerator.generate(command);
+            return ruleBasedMissionTextGenerator.generate(command);
         }
 
         ExternalMissionTextGenerator externalGenerator = externalGenerators.get(providerType);

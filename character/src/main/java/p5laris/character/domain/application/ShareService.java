@@ -13,8 +13,6 @@ import p5laris.character.domain.domain.repository.ShareLogRepository;
 import p5laris.character.domain.domain.repository.UserCharacterRepository;
 import p5laris.character.domain.exception.CharacterErrorCode;
 import p5laris.character.domain.exception.CharacterException;
-import p5laris.character.domain.infrastructure.grpc.MissionShareStatsClient;
-import software.amazon.awssdk.core.exception.SdkException;
 
 import java.net.URI;
 import java.time.Instant;
@@ -46,8 +44,6 @@ public class ShareService {
     private final ShareCardRepository shareCardRepository;
     private final ShareLogRepository shareLogRepository;
     private final S3StorageService s3StorageService;
-    private final ShareCardImageGenerator shareCardImageGenerator;
-    private final MissionShareStatsClient missionShareStatsClient;
     private final UserCharacterRepository userCharacterRepository;
 
     @Value("${app.public-base-url:https://p5laris.life}")
@@ -65,33 +61,34 @@ public class ShareService {
             throw new CharacterException(CharacterErrorCode.NOT_CHARACTER_OWNER);
         }
 
-        String resolvedImageUrl = resolveShareCardImageUrl(userId, character, safeHeadline, imageUrl);
+        String resolvedImageKey = validateShareCardImageUrlAndExtractKey(userId, imageUrl);
 
-        return shareCardRepository.findByUserIdAndCharacterId(userId, characterId)
+        return shareCardRepository.findByUserIdAndImageUrl(userId, resolvedImageKey)
                 .map(card -> {
-                    card.updateGeneratedCard(resolvedImageUrl, safeHeadline);
+                    String shareId = extractShareId(card.getShareUrl());
                     return new ShareCardResult(
                         card.getId(),
-                        extractShareId(card.getShareUrl()),
-                        card.getImageUrl(),
-                        card.getShareUrl());
+                        shareId,
+                        s3StorageService.toPublicUrl(card.getImageUrl()),
+                        buildShareUrl(shareId));
                 })
                 .orElseGet(() -> {
                     String shareId = "sh_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
-                    String shareUrl = buildShareUrl(shareId);
                     
-                    // C 방식: 프론트가 전달한 URL 사용
-
                     ShareCard card = ShareCard.builder()
                             .userId(userId)
                             .characterId(characterId)
-                            .imageUrl(resolvedImageUrl)
+                            .imageUrl(resolvedImageKey)
                             .headline(safeHeadline)
-                            .shareUrl(shareUrl)
+                            .shareUrl(shareId)
                             .build();
                     shareCardRepository.save(card);
 
-                    return new ShareCardResult(card.getId(), shareId, resolvedImageUrl, shareUrl);
+                    return new ShareCardResult(
+                            card.getId(),
+                            shareId,
+                            s3StorageService.toPublicUrl(resolvedImageKey),
+                            buildShareUrl(shareId));
                 });
     }
 
@@ -115,8 +112,8 @@ public class ShareService {
         return new ShareCardDetailResult(
                 card.getId(),
                 character.getName(),
-                card.getImageUrl(),
-                card.getShareUrl());
+                s3StorageService.toPublicUrl(card.getImageUrl()),
+                buildShareUrl(extractShareId(card.getShareUrl())));
     }
 
     // ---------- §9.3 CreateShareEvent ----------
@@ -191,8 +188,8 @@ public class ShareService {
      */
     @Transactional(readOnly = true)
     public ShareLinkResult getShareLink(String shareId) {
-        String shareUrl = buildShareUrl(shareId);
-        ShareCard card = shareCardRepository.findByShareUrl(shareUrl)
+        ShareCard card = shareCardRepository.findByShareUrl(shareId)
+                .or(() -> shareCardRepository.findByShareUrl(buildShareUrl(shareId)))
                 .orElseThrow(() -> new CharacterException(CharacterErrorCode.SHARE_LINK_NOT_FOUND));
 
         UserCharacter character = userCharacterRepository.findById(card.getCharacterId())
@@ -201,7 +198,7 @@ public class ShareService {
         return new ShareLinkResult(
                 shareId,
                 character.getName(),
-                card.getImageUrl(),
+                s3StorageService.toPublicUrl(card.getImageUrl()),
                 card.getHeadline() != null ? card.getHeadline() : PLACEHOLDER_HEADLINE,
                 buildSignupUrl(shareId));
     }
@@ -242,29 +239,25 @@ public class ShareService {
         return normalized;
     }
 
-    private String resolveShareCardImageUrl(Long userId, UserCharacter character, String headline, String imageUrl) {
-        if (imageUrl != null && !imageUrl.isBlank()) {
-            return validateShareCardImageUrl(imageUrl);
+    private String validateShareCardImageUrlAndExtractKey(Long userId, String imageUrl) {
+        if (imageUrl == null || imageUrl.isBlank()) {
+            throw new CharacterException(CharacterErrorCode.INVALID_SHARE_CARD_IMAGE_URL);
         }
-        log.warn("CreateShareCard called without imageUrl. Falling back to server-side image generation. userId={}, characterId={}",
-                userId, character.getId());
-        return generateAndUploadShareCardImage(userId, character, headline);
-    }
-
-    private String validateShareCardImageUrl(String imageUrl) {
         try {
             URI uri = URI.create(imageUrl.trim());
             String scheme = uri.getScheme();
             String host = uri.getHost();
             String path = uri.getPath();
+            String expectedUserPrefix = "/share-cards/" + userId + "/";
             if (!"https".equalsIgnoreCase(scheme)
-                    || !SHARE_CARD_IMAGE_HOST.equalsIgnoreCase(host)
+                    || s3StorageService.publicHost() == null
+                    || !s3StorageService.publicHost().equalsIgnoreCase(host)
                     || path == null
-                    || !(path.startsWith("/share-cards/") || path.startsWith("/assets/share-cards/"))
+                    || !path.startsWith(expectedUserPrefix)
                     || !hasAllowedImageExtension(path)) {
                 throw new CharacterException(CharacterErrorCode.INVALID_SHARE_CARD_IMAGE_URL);
             }
-            return uri.toString();
+            return s3StorageService.toObjectKey(uri.toString());
         } catch (IllegalArgumentException e) {
             throw new CharacterException(CharacterErrorCode.INVALID_SHARE_CARD_IMAGE_URL);
         }
@@ -276,24 +269,6 @@ public class ShareService {
                 || lowerPath.endsWith(".jpg")
                 || lowerPath.endsWith(".jpeg")
                 || lowerPath.endsWith(".webp");
-    }
-
-    private String generateAndUploadShareCardImage(Long userId, UserCharacter character, String headline) {
-        var missionStats = missionShareStatsClient.getTodayStatsOrDefault(userId);
-        byte[] imageBytes = shareCardImageGenerator.generate(new ShareCardImageGenerator.ShareCardImageCommand(
-                character.getName(),
-                character.getCharacterType().getCode(),
-                headline,
-                missionStats.completedCount(),
-                missionStats.earnedStarPiece()
-        ));
-
-        try {
-            return s3StorageService.uploadShareCardImage(imageBytes, "image/png").imageUrl();
-        } catch (SdkException | IllegalStateException e) {
-            log.warn("Failed to upload generated share card image. userId={}, characterId={}", userId, character.getId(), e);
-            throw new CharacterException(CharacterErrorCode.SHARE_CARD_IMAGE_UPLOAD_FAILED);
-        }
     }
 
     private String extractShareId(String shareUrl) {

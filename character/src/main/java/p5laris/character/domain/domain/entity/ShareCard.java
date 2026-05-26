@@ -45,12 +45,12 @@ public class ShareCard {
         this.shareUrl = shareUrl;
     }
 
-    public void updateImageUrl(String imageUrl) {
-        this.imageUrl = imageUrl;
+    public void updateImageKey(String imageKey) {
+        this.imageUrl = imageKey;
     }
 
-    public void updateGeneratedCard(String imageUrl, String headline) {
-        this.imageUrl = imageUrl;
+    public void updateGeneratedCard(String imageKey, String headline) {
+        this.imageUrl = imageKey;
         this.headline = headline;
     }
 }

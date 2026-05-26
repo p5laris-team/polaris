@@ -44,6 +44,9 @@ class CharacterServiceTest {
     private CharacterCareLogRepository characterCareLogRepository;
 
     @Mock
+    private S3StorageService s3StorageService;
+
+    @Mock
     private com.p5laris.proto.item.v1.ItemServiceGrpc.ItemServiceBlockingStub itemStub;
 
     @Spy
@@ -57,6 +60,7 @@ class CharacterServiceTest {
     @BeforeEach
     void setUp() {
         org.springframework.test.util.ReflectionTestUtils.setField(characterService, "itemStub", itemStub);
+        lenient().when(s3StorageService.toPublicUrl(any())).thenAnswer(invocation -> invocation.getArgument(0));
         CharacterType characterType = CharacterType.builder()
                 .code("NOVA")
                 .name("Nova")
@@ -264,6 +268,7 @@ class CharacterServiceTest {
         // then
         assertNotNull(response);
         assertEquals("http://cdn/idle.png", response.currentAssetUrl());
+        assertEquals("http://cdn/idle.png", response.assetUrls().get("idle"));
         assertEquals("Nova", response.name());
     }
 
@@ -338,5 +343,7 @@ class CharacterServiceTest {
         // then
         assertNotNull(response);
         assertEquals("http://cdn/skin-hungry.png", response.currentAssetUrl());
+        assertEquals("http://cdn/skin-hungry.png", response.assetUrls().get("hungry"));
+        assertEquals("http://cdn/skin-idle.png", response.assetUrls().get("idle"));
     }
 }

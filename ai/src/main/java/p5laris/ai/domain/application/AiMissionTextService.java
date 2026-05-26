@@ -23,6 +23,7 @@ import p5laris.ai.domain.exception.AiErrorCode;
 import p5laris.ai.domain.exception.AiException;
 import p5laris.ai.domain.exception.FallbackRequiredException;
 import p5laris.ai.domain.infrastructure.config.AiProviderProperties;
+import p5laris.ai.domain.infrastructure.provider.RuleBasedMissionTextGenerator;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -47,6 +48,7 @@ import java.util.TreeMap;
 public class AiMissionTextService {
 
     private final MissionTextGenerator missionTextGenerator;
+    private final RuleBasedMissionTextGenerator ruleBasedMissionTextGenerator;
     private final MissionTextValidationPolicy missionTextValidationPolicy;
     private final AiMissionTextPersistenceService aiMissionTextPersistenceService;
     private final PromptTemplateRepository promptTemplateRepository;
@@ -85,14 +87,14 @@ public class AiMissionTextService {
 
         try {
             candidate = missionTextGenerator.generate(command);
-            missionTextValidationPolicy.validate(candidate);
+            missionTextValidationPolicy.validate(candidate, command.characterType());
             status = AiGenerationStatus.SUCCESS;
             usageStatus = AiUsageStatus.SUCCESS;
             fallbackUsed = false;
         } catch (FallbackRequiredException e) {
             errorType = e.getErrorType();
             candidate = fallbackCandidate(command);
-            validateFallbackCandidate(candidate);
+            validateFallbackCandidate(command, candidate);
             status = AiGenerationStatus.FALLBACK;
             usageStatus = errorType.isRateLimitFailure()
                     ? AiUsageStatus.RATE_LIMITED
@@ -165,8 +167,14 @@ public class AiMissionTextService {
                 .orElse(null);
     }
 
-    // provider 또는 local generator 결과가 정책 검증에 실패하면 mission template의 fallback 문구를 그대로 사용한다.
+    // provider 결과가 실패하면 캐릭터별 rule-based 문구를 먼저 쓰고, 캐릭터 타입 자체가 알 수 없을 때만 seed fallback을 사용한다.
     private MissionTextCandidate fallbackCandidate(MissionTextGenerationCommand command) {
+        try {
+            return ruleBasedMissionTextGenerator.generate(command);
+        } catch (FallbackRequiredException e) {
+            // 지원하지 않는 캐릭터 타입이면 캐릭터별 rule-based 문구를 만들 수 없으므로 seed fallback을 사용한다.
+        }
+
         return new MissionTextCandidate(
                 command.fallbackCharacterMessage(),
                 command.fallbackQuestion(),
@@ -175,9 +183,9 @@ public class AiMissionTextService {
     }
 
     // fallback 문구도 사용자에게 그대로 노출되므로 동일한 안전 검증을 통과해야 한다.
-    private void validateFallbackCandidate(MissionTextCandidate candidate) {
+    private void validateFallbackCandidate(MissionTextGenerationCommand command, MissionTextCandidate candidate) {
         try {
-            missionTextValidationPolicy.validate(candidate);
+            missionTextValidationPolicy.validate(candidate, command.characterType());
         } catch (FallbackRequiredException e) {
             throw new AiException(AiErrorCode.AI_FALLBACK_INVALID);
         }

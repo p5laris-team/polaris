@@ -2,6 +2,8 @@ package p5laris.gateway.domain.character.api.dto;
 
 import lombok.Builder;
 
+import java.util.Map;
+
 
 /**
  * Gateway response DTO for API spec 4.4.
@@ -12,6 +14,7 @@ public record MyCharacterResponse(
         String name,
         String characterTypeCode,
         String currentAssetUrl,
+        Map<String, String> assetUrls,
         boolean active,
         States states,
         EquippedSkin equippedSkin

@@ -45,3 +45,14 @@ grpc:
     event-log:
       address: ${EVENT_LOG_GRPC_ADDRESS}
       negotiationType: plaintext
+
+mission:
+  reward-outbox:
+    enabled: ${MISSION_REWARD_OUTBOX_ENABLED}
+    fixed-delay-ms: ${MISSION_REWARD_OUTBOX_FIXED_DELAY_MS}
+    initial-delay-ms: ${MISSION_REWARD_OUTBOX_INITIAL_DELAY_MS}
+    batch-size: ${MISSION_REWARD_OUTBOX_BATCH_SIZE}
+    max-attempts: ${MISSION_REWARD_OUTBOX_MAX_ATTEMPTS}
+    processing-timeout-seconds: ${MISSION_REWARD_OUTBOX_PROCESSING_TIMEOUT_SECONDS}
+    retry-initial-delay-seconds: ${MISSION_REWARD_OUTBOX_RETRY_INITIAL_DELAY_SECONDS}
+    retry-max-delay-seconds: ${MISSION_REWARD_OUTBOX_RETRY_MAX_DELAY_SECONDS}

@@ -38,7 +38,7 @@ public class AiEventLogEventListener {
         try {
             eventLogStub.recordEventLog(toRequest(event));
         } catch (Exception e) {
-            log.warn("Failed to send ai event log. eventType={}, userId={}",
+            log.warn("AI 이벤트 로그 전송 실패. eventType={}, userId={}",
                     event.eventType(), event.userId(), e);
         }
     }
