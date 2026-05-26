@@ -10,6 +10,7 @@ service NotificationService {
   rpc GetNotifications(GetNotificationsRequest) returns (GetNotificationsResponse);
   rpc MarkNotificationRead(MarkNotificationReadRequest) returns (MarkNotificationReadResponse);
   rpc RegisterFcmToken(RegisterFcmTokenRequest) returns (RegisterFcmTokenResponse);
+  rpc SendPushNotification(SendPushNotificationRequest) returns (SendPushNotificationResponse);
 }
 
 message GetNotificationsRequest {
@@ -44,6 +45,19 @@ message RegisterFcmTokenRequest {
 message RegisterFcmTokenResponse {
   int64 id = 1;
   string created_at = 2;
+}
+
+message SendPushNotificationRequest {
+  int64 user_id = 1;
+  string title = 2;
+  string body = 3;
+  NotificationType notification_type = 4;
+  optional TargetType target_type = 5;
+  optional int64 target_id = 6;
+}
+
+message SendPushNotificationResponse {
+  bool success = 1;
 }
 
 message Notification {
