@@ -13,6 +13,7 @@ import p5laris.character.domain.domain.repository.ShareLogRepository;
 import p5laris.character.domain.domain.repository.UserCharacterRepository;
 import p5laris.character.domain.exception.CharacterErrorCode;
 import p5laris.character.domain.exception.CharacterException;
+import p5laris.character.domain.infrastructure.grpc.ShareRewardWalletClient;
 
 import java.net.URI;
 import java.time.Instant;
@@ -26,8 +27,7 @@ import java.util.UUID;
  * Share service handling §9 share APIs.
  *
  * ShareCard / ShareLog entities live in the character module.
- * Wallet reward (star piece) is handled via:
- * TODO [Wallet Domain Integration]: call wallet service to credit star pieces on share reward.
+ * Wallet reward (star piece) is credited through the user wallet gRPC service.
  */
 @Slf4j
 @Service
@@ -44,6 +44,7 @@ public class ShareService {
     private final ShareLogRepository shareLogRepository;
     private final S3StorageService s3StorageService;
     private final UserCharacterRepository userCharacterRepository;
+    private final ShareRewardWalletClient shareRewardWalletClient;
 
     @Value("${app.public-base-url}")
     private String publicBaseUrl;
@@ -122,8 +123,8 @@ public class ShareService {
      * API spec 9.3 POST /api/share/v1/share-events
      *
      * Wallet credit:
-     * TODO [Wallet Domain Integration]: call wallet service to credit rewardStarPiece if rewardPaid=true.
-     * Currently rewardPaid is determined and stored, but no actual credit is made.
+     * If this is today's first rewarded share, credit star pieces through the user wallet service
+     * using the server-generated daily reward idempotency key.
      */
     @Transactional
     public ShareEventResult createShareEvent(Long userId, Long shareCardId,
@@ -143,7 +144,8 @@ public class ShareService {
         var existingRewardLog = shareLogRepository.findByIdempotencyKey(rewardIdempotencyKey);
         if (existingRewardLog.isPresent()) {
             ShareLog log = existingRewardLog.get();
-            return new ShareEventResult(log.getId(), log.isRewardPaid(), log.getRewardStarPiece(), 0);
+            int walletStarPiece = shareRewardWalletClient.getWalletStarPiece(userId);
+            return new ShareEventResult(log.getId(), log.isRewardPaid(), log.getRewardStarPiece(), walletStarPiece);
         }
 
         boolean alreadyRewarded = shareLogRepository.existsByUserIdAndShareDateAndRewardPaidTrue(userId, today);
@@ -168,15 +170,18 @@ public class ShareService {
                 .rewardPaid(rewardPaid)
                 .idempotencyKey(finalIdempotencyKey)
                 .build();
-        shareLogRepository.save(shareLog);
+        shareLogRepository.saveAndFlush(shareLog);
 
-        // TODO [Wallet Domain Integration]: if rewardPaid, call walletService.credit(userId, rewardAmount).
-        // Example (uncomment after wallet domain is ready):
-        // if (rewardPaid) {
-        //     walletService.credit(userId, rewardAmount, "SHARE_REWARD");
-        // }
+        int walletStarPiece = rewardPaid
+                ? shareRewardWalletClient.earnShareReward(
+                        userId,
+                        shareLog.getId(),
+                        rewardAmount,
+                        rewardIdempotencyKey
+                ).starPiece()
+                : shareRewardWalletClient.getWalletStarPiece(userId);
 
-        return new ShareEventResult(shareLog.getId(), rewardPaid, rewardAmount, 0);
+        return new ShareEventResult(shareLog.getId(), rewardPaid, rewardAmount, walletStarPiece);
     }
 
     // ---------- §9.4 GetShareLink (Public) ----------
