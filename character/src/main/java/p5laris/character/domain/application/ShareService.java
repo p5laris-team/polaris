@@ -42,6 +42,7 @@ public class ShareService {
 
     private final ShareCardRepository shareCardRepository;
     private final ShareLogRepository shareLogRepository;
+    private final org.springframework.context.ApplicationEventPublisher eventPublisher;
     private final S3StorageService s3StorageService;
     private final UserCharacterRepository userCharacterRepository;
 
@@ -82,6 +83,7 @@ public class ShareService {
                             .shareUrl(shareId)
                             .build();
                     shareCardRepository.save(card);
+                    eventPublisher.publishEvent(p5laris.character.domain.application.event.ShareEventLogEvent.shareCardCreated(card));
 
                     return new ShareCardResult(
                             card.getId(),
@@ -175,6 +177,8 @@ public class ShareService {
         // if (rewardPaid) {
         //     walletService.credit(userId, rewardAmount, "SHARE_REWARD");
         // }
+
+        eventPublisher.publishEvent(p5laris.character.domain.application.event.ShareEventLogEvent.shareCompleted(shareLog));
 
         return new ShareEventResult(shareLog.getId(), rewardPaid, rewardAmount, 0);
     }

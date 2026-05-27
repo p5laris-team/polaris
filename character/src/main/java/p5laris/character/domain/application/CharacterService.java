@@ -31,6 +31,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.springframework.context.ApplicationEventPublisher;
+import p5laris.character.domain.application.event.CharacterEventLogEvent;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -44,6 +47,7 @@ public class CharacterService {
     private final CharacterCareLogRepository characterCareLogRepository;
     private final S3StorageService s3StorageService;
     private final ObjectMapper objectMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
     @GrpcClient("item")
     private ItemServiceGrpc.ItemServiceBlockingStub itemStub;
@@ -106,6 +110,8 @@ public class CharacterService {
                 .build();
 
         userCharacterRepository.save(newCharacter);
+        
+        eventPublisher.publishEvent(CharacterEventLogEvent.characterCreated(newCharacter));
 
         return p5laris.character.domain.application.dto.UserCharacterResponse.builder()
                 .id(newCharacter.getId())
