@@ -45,6 +45,7 @@ public class AttendanceNotificationScheduler {
             }
 
             for (User user : activeUsersPage.getContent()) {
+                try {
                     NotificationRequestEvent event = new NotificationRequestEvent(
                             user.getId(),
                             "출석 체크 시간!",
