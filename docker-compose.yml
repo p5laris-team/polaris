@@ -34,6 +34,20 @@ services:
     networks:
       - spring-net
 
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus-compose
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus:/etc/prometheus
+      - prometheus_data:/prometheus
+    networks:
+      - spring-net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
   grafana:
     image: grafana/grafana-oss:latest
     container_name: grafana-compose
@@ -50,10 +64,13 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      prometheus:
+        condition: service_started
 
 volumes:
   postgres_data:
   grafana_data:
+  prometheus_data:
 
 networks:
   spring-net:

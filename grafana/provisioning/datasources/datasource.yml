@@ -57,3 +57,10 @@ datasources:
       sslmode: disable
       postgresVersion: 16
     editable: true
+
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus-compose:9090
+    isDefault: false
+    editable: true
