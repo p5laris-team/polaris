@@ -9,6 +9,17 @@ service WalletService {
     rpc SpendStarPiece(SpendStarPieceRequest) returns (SpendStarPieceResponse);
     rpc EarnStarPiece(EarnStarPieceRequest) returns (EarnStarPieceResponse);
     rpc GetTransactions(GetTransactionsRequest) returns (GetTransactionsResponse);
+    rpc CheckTransaction(CheckTransactionRequest) returns (CheckTransactionResponse);
+}
+
+message CheckTransactionRequest {
+    string idempotency_key = 1;
+}
+
+message CheckTransactionResponse {
+    bool exists = 1;
+    int32 amount = 2;
+    int64 transaction_id = 3;
 }
 
 message GetMyWalletRequest {

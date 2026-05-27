@@ -192,4 +192,12 @@ public class WalletService {
         if (id == null) return "";
         return java.util.Base64.getEncoder().encodeToString(String.valueOf(id).getBytes());
     }
+
+    @Transactional(readOnly = true)
+    public Optional<StarPieceTransaction> findTransactionByIdempotencyKey(String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            return Optional.empty();
+        }
+        return transactionRepository.findByIdempotencyKey(idempotencyKey);
+    }
 }

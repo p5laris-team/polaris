@@ -111,4 +111,25 @@ public class WalletGrpcController extends WalletServiceGrpc.WalletServiceImplBas
             responseObserver.onError(io.grpc.Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
         }
     }
+
+    @Override
+    public void checkTransaction(com.p5laris.proto.user.v1.CheckTransactionRequest request, io.grpc.stub.StreamObserver<com.p5laris.proto.user.v1.CheckTransactionResponse> responseObserver) {
+        try {
+            java.util.Optional<StarPieceTransaction> txOpt = walletService.findTransactionByIdempotencyKey(request.getIdempotencyKey());
+            
+            com.p5laris.proto.user.v1.CheckTransactionResponse.Builder builder = com.p5laris.proto.user.v1.CheckTransactionResponse.newBuilder();
+            if (txOpt.isPresent()) {
+                builder.setExists(true)
+                       .setAmount(txOpt.get().getAmount())
+                       .setTransactionId(txOpt.get().getId());
+            } else {
+                builder.setExists(false);
+            }
+            
+            responseObserver.onNext(builder.build());
+            responseObserver.onCompleted();
+        } catch (Exception e) {
+            responseObserver.onError(io.grpc.Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+        }
+    }
 }

@@ -38,6 +38,7 @@ public class ItemService {
     private final UserItemUsageRepository userItemUsageRepository;
     private final UserItemPurchaseRepository userItemPurchaseRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final org.springframework.transaction.support.TransactionTemplate transactionTemplate;
 
     @Value("${asset.cdn-base-url}")
     private String cdnBaseUrl;
@@ -145,14 +146,14 @@ public class ItemService {
         return responseBuilder.build();
     }
 
-    @Transactional
+    // @Transactional 제거 (내부에서 트랜잭션을 분리하여 처리)
     public PurchaseItemResponse purchaseItem(PurchaseItemRequest request) {
         Long userId = request.getUserId();
         Long itemId = request.getItemId();
         int quantity = request.getQuantity() > 0 ? request.getQuantity() : 1;
         String idempotencyKey = request.getIdempotencyKey().isEmpty() ? null : request.getIdempotencyKey();
 
-        // 멱등성 검사: 이미 처리된 요청이면 기존 결과를 그대로 반환한다.
+        // 멱등성 검사 (Transaction 밖에서도 안전)
         if (idempotencyKey != null) {
             Optional<UserItemPurchase> existing = userItemPurchaseRepository.findByIdempotencyKey(idempotencyKey);
             if (existing.isPresent()) {
@@ -172,7 +173,6 @@ public class ItemService {
         Item item = itemRepository.findById(itemId)
                 .orElseThrow(() -> new ItemException(ItemErrorCode.ITEM_NOT_FOUND));
         
-        // 스킨 중복 구매 검증
         if ("SKIN".equals(item.getItemType())) {
             Optional<UserItem> existingSkin = userItemRepository.findByUserIdAndItemId(userId, itemId);
             if (existingSkin.isPresent()) {
@@ -182,10 +182,32 @@ public class ItemService {
         }
         
         int totalPrice = item.getPrice() * quantity;
-        
-        // 지갑 별조각 차감
-        SpendStarPieceResponse spendResponse;
+        final int finalQuantity = quantity;
+
+        // Transaction 1: PENDING 상태로 구매 기록 생성
+        UserItemPurchase pendingPurchase = transactionTemplate.execute(status -> {
+            UserItem tmpUserItem = userItemRepository.findByUserIdAndItemId(userId, itemId).orElse(null);
+            if (tmpUserItem == null) {
+                tmpUserItem = UserItem.builder().userId(userId).item(item).quantity(0).build();
+                tmpUserItem = userItemRepository.save(tmpUserItem);
+            }
+            UserItemPurchase purchase = UserItemPurchase.builder()
+                    .userId(userId)
+                    .userItem(tmpUserItem)
+                    .itemId(itemId)
+                    .quantity(finalQuantity)
+                    .price(totalPrice)
+                    .starPiece(0) // 아직 모름
+                    .transactionId(0L) // 아직 모름
+                    .idempotencyKey(idempotencyKey)
+                    .status("PENDING")
+                    .build();
+            return userItemPurchaseRepository.save(purchase);
+        });
+
+        SpendStarPieceResponse spendResponse = null;
         try {
+            // 외부 gRPC 호출 (트랜잭션 밖에서 실행)
             spendResponse = walletStub.spendStarPiece(
                 SpendStarPieceRequest.newBuilder()
                     .setUserId(userId)
@@ -199,66 +221,61 @@ public class ItemService {
         } catch (Exception e) {
             log.error("Failed to spend star piece for userId: {}, amount: {}, itemId: {}", userId, totalPrice, itemId, e);
             String errMsg = e.getMessage();
+            
             if (errMsg != null && (errMsg.contains("STAR_PIECE_NOT_ENOUGH") || errMsg.contains("별조각이 부족합니다."))) {
+                // 비즈니스 예외: FAILED 마킹
+                transactionTemplate.execute(status -> {
+                    UserItemPurchase p = userItemPurchaseRepository.findById(pendingPurchase.getId()).orElseThrow();
+                    p.updateStatus("FAILED");
+                    return userItemPurchaseRepository.save(p);
+                });
                 throw new ItemException(ItemErrorCode.STAR_PIECE_NOT_ENOUGH);
             }
+            
+            // 네트워크/서버 에러 등: UNKNOWN 마킹 (스케줄러가 재처리)
+            transactionTemplate.execute(status -> {
+                UserItemPurchase p = userItemPurchaseRepository.findById(pendingPurchase.getId()).orElseThrow();
+                p.updateStatusWithRetry("UNKNOWN", java.time.LocalDateTime.now().plusMinutes(1));
+                return userItemPurchaseRepository.save(p);
+            });
             throw new ItemException(ItemErrorCode.WALLET_SERVICE_CALL_FAILED);
         }
         
-        // UserItem 적재
-        UserItem userItem = userItemRepository.findByUserIdAndItemId(userId, itemId)
-                .orElse(null);
-                
-        if (userItem != null) {
-            userItem.addQuantity(quantity);
-        } else {
-            userItem = UserItem.builder()
-                    .userId(userId)
-                    .item(item)
-                    .quantity(quantity)
-                    .build();
-        }
-        UserItem savedUserItem = userItemRepository.save(userItem);
+        final SpendStarPieceResponse finalSpendResponse = spendResponse;
 
-        // 구매 이력 저장
-        UserItemPurchase purchaseHistory = UserItemPurchase.builder()
-                .userId(userId)
-                .userItem(savedUserItem)
-                .itemId(itemId)
-                .quantity(quantity)
-                .price(totalPrice)
-                .starPiece(spendResponse.getStarPiece())
-                .transactionId(spendResponse.getTransactionId())
-                .idempotencyKey(idempotencyKey)
-                .build();
-        UserItemPurchase savedPurchase = userItemPurchaseRepository.save(purchaseHistory);
+        // Transaction 2: 성공 처리 및 유저 인벤토리 지급
+        UserItemPurchase completedPurchase = transactionTemplate.execute(status -> {
+            UserItemPurchase p = userItemPurchaseRepository.findById(pendingPurchase.getId()).orElseThrow();
+            
+            // starPiece, transactionId 등 업데이트 불가하므로 Reflection이나 새 엔티티 복사가 필요하지만, 엔티티 Setter가 없다면?
+            // 실제 구현상 UserItemPurchase 엔티티에 필드 갱신 메서드가 필요함 (아래에서 엔티티 수정 필요)
+            p.updateStatus("COMPLETED");
+            p.updateSuccessData(finalSpendResponse.getStarPiece(), finalSpendResponse.getTransactionId());
+            
+            UserItem uItem = p.getUserItem();
+            uItem.addQuantity(finalQuantity);
+            userItemRepository.save(uItem);
 
-        eventPublisher.publishEvent(ItemEventLogEvent.itemPurchased(
-                userId,
-                savedUserItem,
-                item,
-                quantity,
-                totalPrice,
-                spendResponse.getTransactionId(),
-                spendResponse.getStarPiece()
-        ));
-        eventPublisher.publishEvent(ItemEventLogEvent.starPieceSpent(
-                userId,
-                item,
-                totalPrice,
-                spendResponse.getTransactionId(),
-                spendResponse.getStarPiece(),
-                idempotencyKey != null ? idempotencyKey : ""
-        ));
+            eventPublisher.publishEvent(ItemEventLogEvent.itemPurchased(
+                    userId, uItem, item, finalQuantity, totalPrice, 
+                    finalSpendResponse.getTransactionId(), finalSpendResponse.getStarPiece()
+            ));
+            eventPublisher.publishEvent(ItemEventLogEvent.starPieceSpent(
+                    userId, item, totalPrice, finalSpendResponse.getTransactionId(), 
+                    finalSpendResponse.getStarPiece(), idempotencyKey != null ? idempotencyKey : ""
+            ));
+            
+            return userItemPurchaseRepository.save(p);
+        });
         
         return PurchaseItemResponse.newBuilder()
-                .setPurchaseId(savedPurchase.getId())
+                .setPurchaseId(completedPurchase.getId())
                 .setItemId(itemId)
                 .setName(item.getName())
-                .setQuantity(quantity)
+                .setQuantity(finalQuantity)
                 .setPrice(totalPrice)
-                .setStarPiece(spendResponse.getStarPiece())
-                .setTransactionId(spendResponse.getTransactionId())
+                .setStarPiece(finalSpendResponse.getStarPiece())
+                .setTransactionId(finalSpendResponse.getTransactionId())
                 .build();
     }
 
