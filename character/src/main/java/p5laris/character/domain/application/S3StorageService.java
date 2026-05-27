@@ -40,11 +40,11 @@ public class S3StorageService {
     private final AtomicBoolean corsConfigurationAttempted = new AtomicBoolean(false);
 
     public S3StorageService(
-            @Value("${cloud.aws.region:ap-northeast-2}") String region,
-            @Value("${cloud.aws.s3.bucket-name:polaris-share-cards}") String bucketName,
-            @Value("${cloud.aws.s3.public-domain:https://cdn.p5laris.life}") String publicDomain,
-            @Value("${cloud.aws.s3.cors.enabled:true}") boolean corsAutoConfigureEnabled,
-            @Value("${cloud.aws.s3.cors.allowed-origins:http://127.0.0.1:5173,http://localhost:5173}") String corsAllowedOrigins) {
+            @Value("${cloud.aws.region}") String region,
+            @Value("${cloud.aws.s3.bucket-name}") String bucketName,
+            @Value("${cloud.aws.s3.public-domain}") String publicDomain,
+            @Value("${cloud.aws.s3.cors.enabled}") boolean corsAutoConfigureEnabled,
+            @Value("${cloud.aws.s3.cors.allowed-origins}") String corsAllowedOrigins) {
 
         this.bucketName = bucketName;
         this.publicDomain = publicDomain.endsWith("/")

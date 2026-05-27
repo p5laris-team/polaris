@@ -8,4 +8,6 @@ import java.util.Optional;
 public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByEmail(String email);
     Optional<User> findByRefreshToken(String refreshToken);
+
+    org.springframework.data.domain.Page<User> findByStatus(String status, org.springframework.data.domain.Pageable pageable);
 }

@@ -13,6 +13,7 @@ import p5laris.gateway.domain.character.api.dto.MyCharacterResponse;
 import p5laris.gateway.domain.character.api.dto.CharacterStatusResponse;
 import p5laris.gateway.domain.mission.infrastructure.grpc.MissionGatewayService;
 import p5laris.gateway.domain.mission.api.dto.MissionDto;
+import p5laris.gateway.domain.notification.infrastructure.grpc.NotificationGatewayService;
 
 @Slf4j
 @Service
@@ -23,6 +24,7 @@ public class HomeGatewayService {
     private final WalletGatewayService walletGatewayService;
     private final CharacterGatewayService characterGatewayService;
     private final MissionGatewayService missionGatewayService;
+    private final NotificationGatewayService notificationGatewayService;
 
     public HomeDto.Response getHomeData(Long userId) {
         // 1. User 정보 조회 (필수)
@@ -102,9 +104,16 @@ public class HomeGatewayService {
             log.warn("Failed to get current mission for userId: {}. Mission will be null in home response. Error: {}", userId, e.getMessage());
         }
 
-        // 5. Notifications 정보 (미구현 상태이므로 unreadCount = 0 설정)
+        // 5. Notifications 정보 조회
+        int unreadCount = 0;
+        try {
+            unreadCount = notificationGatewayService.getUnreadNotificationCount(userId);
+        } catch (Exception e) {
+            log.warn("Failed to get unread notification count for userId: {}. unreadCount will be 0. Error: {}", userId, e.getMessage());
+        }
+
         HomeDto.NotificationSummary notificationSummary = HomeDto.NotificationSummary.builder()
-                .unreadCount(0)
+                .unreadCount(unreadCount)
                 .build();
 
         return HomeDto.Response.builder()

@@ -45,7 +45,7 @@ public class ShareService {
     private final S3StorageService s3StorageService;
     private final UserCharacterRepository userCharacterRepository;
 
-    @Value("${app.public-base-url:https://p5laris.life}")
+    @Value("${app.public-base-url}")
     private String publicBaseUrl;
 
     // ---------- §9.1 CreateShareCard ----------
@@ -284,9 +284,11 @@ public class ShareService {
     }
 
     private String normalizedPublicBaseUrl() {
-        String normalized = publicBaseUrl == null || publicBaseUrl.isBlank()
-                ? "https://p5laris.life"
-                : publicBaseUrl.trim();
+        if (publicBaseUrl == null || publicBaseUrl.isBlank()) {
+            throw new IllegalStateException("app.public-base-url 설정이 필요합니다.");
+        }
+
+        String normalized = publicBaseUrl.trim();
         return normalized.endsWith("/")
                 ? normalized.substring(0, normalized.length() - 1)
                 : normalized;
