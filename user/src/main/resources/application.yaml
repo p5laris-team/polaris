@@ -48,6 +48,9 @@ grpc:
     event-log:
       address: ${EVENT_LOG_GRPC_ADDRESS}
       negotiationType: plaintext
+    notification:
+      address: ${NOTIFICATION_GRPC_ADDRESS}
+      negotiationType: plaintext
 
 jwt:
   secret: ${JWT_SECRET}

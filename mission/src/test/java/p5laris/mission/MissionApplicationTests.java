@@ -5,6 +5,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 
 @SpringBootTest(properties = {
         "grpc.server.port=0",
+        "grpc.client.notification.address=static://localhost:9098",
         "mission.reward-outbox.enabled=false",
         "mission.reward-outbox.fixed-delay-ms=60000",
         "mission.reward-outbox.initial-delay-ms=60000",

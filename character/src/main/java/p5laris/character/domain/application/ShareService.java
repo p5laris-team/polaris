@@ -37,7 +37,6 @@ public class ShareService {
     private static final int SHARE_REWARD_STAR_PIECE = 10;
     private static final String PLACEHOLDER_HEADLINE = "Today, I shone a little.";
     private static final int HEADLINE_MAX_LENGTH = 100;
-    private static final String SHARE_CARD_IMAGE_HOST = "d24c6my56k1w5v.cloudfront.net";
     private static final ZoneId SHARE_DATE_ZONE = ZoneId.of("Asia/Seoul");
     private static final DateTimeFormatter SHARE_DATE_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE;
 
@@ -46,7 +45,7 @@ public class ShareService {
     private final S3StorageService s3StorageService;
     private final UserCharacterRepository userCharacterRepository;
 
-    @Value("${app.public-base-url:https://p5laris.life}")
+    @Value("${app.public-base-url}")
     private String publicBaseUrl;
 
     // ---------- §9.1 CreateShareCard ----------
@@ -285,9 +284,11 @@ public class ShareService {
     }
 
     private String normalizedPublicBaseUrl() {
-        String normalized = publicBaseUrl == null || publicBaseUrl.isBlank()
-                ? "https://p5laris.life"
-                : publicBaseUrl.trim();
+        if (publicBaseUrl == null || publicBaseUrl.isBlank()) {
+            throw new IllegalStateException("app.public-base-url 설정이 필요합니다.");
+        }
+
+        String normalized = publicBaseUrl.trim();
         return normalized.endsWith("/")
                 ? normalized.substring(0, normalized.length() - 1)
                 : normalized;

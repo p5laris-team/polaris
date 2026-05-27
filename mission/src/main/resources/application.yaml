@@ -45,6 +45,10 @@ grpc:
     event-log:
       address: ${EVENT_LOG_GRPC_ADDRESS}
       negotiationType: plaintext
+    # notification 모듈에 알림 저장 및 푸시 발송을 요청할 때 사용하는 gRPC 주소입니다.
+    notification:
+      address: ${NOTIFICATION_GRPC_ADDRESS}
+      negotiationType: plaintext
 
 mission:
   reward-outbox:

@@ -72,4 +72,25 @@ public class NotificationController {
     ) {
         return ApiResponse.success(notificationGatewayService.registerFcmToken(userId, request));
     }
+
+    /**
+     * 로그인한 사용자의 알림 수신 설정을 조회한다.
+     */
+    @GetMapping("/v1/settings")
+    public ApiResponse<NotificationDto.NotificationSettingResponse> getNotificationSetting(
+            @LoginUserId Long userId
+    ) {
+        return ApiResponse.success(notificationGatewayService.getNotificationSetting(userId));
+    }
+
+    /**
+     * 로그인한 사용자의 알림 수신 설정을 갱신한다.
+     */
+    @PatchMapping("/v1/settings")
+    public ApiResponse<NotificationDto.NotificationSettingResponse> updateNotificationSetting(
+            @LoginUserId Long userId,
+            @Valid @RequestBody NotificationDto.UpdateNotificationSettingRequest request
+    ) {
+        return ApiResponse.success(notificationGatewayService.updateNotificationSetting(userId, request));
+    }
 }

@@ -1,4 +1,7 @@
 spring:
+  config:
+    import: optional:file:.env[.properties]
+
   application:
     name: notification
 
@@ -31,3 +34,7 @@ grpc:
     event-log:
       address: ${EVENT_LOG_GRPC_ADDRESS}
       negotiationType: plaintext
+
+firebase:
+  credentials:
+    base64: ${FIREBASE_CREDENTIALS_BASE64:}

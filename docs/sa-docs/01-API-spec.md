@@ -1,6 +1,6 @@
 # Polaris REST API 명세서
 
-> 기준일: 2026-05-21
+> 기준일: 2026-05-26
 > 기준 문서: Polaris v0.7 PRD, 최신 ERD, 기존 API 초안, `polaris` 백엔드 gateway/proto 코드 대조
 
 --- 
@@ -28,8 +28,7 @@ Base Pattern: /api/{domain}/v1/{resource}
 |---|---|
 | 🔐 | 인증 필요. `Authorization: Bearer {accessToken}` 필요 |
 | 💾 | 캐싱 권장 API. 자주 바뀌지 않는 조회성 데이터 |
-| ⚠️ | 동시성 민감 API. 중복 지급, 잔액 차감, 수량 차감, 일일 제한 처리 주의 |
-| 🧩 | 프론트 구현에는 필요하지만 현재 백엔드 코드 기준 미구현 또는 응답 필드 보강 필요 |
+| ⚠️ | 동시성 민감 API. 중복 지급, 잔액 차감, 수량 차감, 일일 제한 정합성 처리 필요 |
 
 ### 0.3 응답 포맷
 
@@ -105,25 +104,24 @@ Base Pattern: /api/{domain}/v1/{resource}
 - 미션 완료 보상 지급
 - 아이템 구매
 - 캐릭터 돌봄 액션
-- 공유 보상 지급
+- 공유 시도 보상 기록
 - 출석 보상 지급
 
-### 0.6 프론트-백엔드 연동 갭
+### 0.6 현재 구현 기준
 
-아래 표는 2026-05-21 기준 `polaris` 백엔드 코드와 `polaris-frontend` 실제 API 호출을 대조했을 때 아직 정리가 필요한 항목이다. 이미 백엔드 구현과 명세가 정렬된 API는 이 표에서 제외한다.
+아래 표는 2026-05-26 기준 `polaris` 백엔드가 제공하는 API 계약을 요약한다. 각 상세 섹션은 이 기준에 맞춰 요청/응답 예시를 작성한다.
 
-| 구분 | 프론트 필요 API/필드 | 현재 백엔드 코드 확인 | 프론트 영향 / 요청 |
-|---|---|---|---|
-| 홈 통합 조회 | `GET /api/home/v1/home` | gateway에 home 컨트롤러 없음 | 홈, 상단 요약, 현재 미션, 알림 개수 표시를 위해 백엔드 통합 조회 API 추가가 필요하다. 대안으로 프론트가 user/wallet/character/mission/notification을 조합 호출하도록 별도 결정해야 한다. |
-| 현재 캐릭터 | `GET /api/character/v1/characters/me` 응답의 `states`, `currentAssetUrl` | 현재 응답은 `id`, `name`, `characterTypeCode`, `active`, `equippedSkin` 중심 | 캐릭터 상세/보관함이 캐릭터 상태와 현재 에셋을 바로 쓰려면 응답 보강이 필요하다. 아니면 프론트가 status/assets API를 추가 호출해야 한다. |
-| 스킨 해제 | `PUT /api/character/v1/characters/{characterId}/equipped-skin` body `itemId: null` | proto `item_id`는 `int64`, gateway에서 null 처리 없음 | 보관함의 "해제" 버튼을 실제 API와 연결하려면 null 해제 정책 또는 별도 해제 endpoint가 필요하다. |
-| 지갑 거래내역 | `GET /api/wallet/v1/wallets/me/transactions` | `star_piece_transactions` 테이블은 있으나 REST/gRPC 조회 없음 | 별조각 화면의 거래내역 리스트에 필요하다. cursor 기반 최신순 조회가 필요하다. |
-| 상점 아이템 필드 | `GET /api/item/v1/items` 응답의 `characterTypeId`, `effectType` | entity에는 있으나 item proto/gateway 응답에는 없음 | 캐릭터별 스킨 필터와 소모품 라벨 표시를 안정적으로 처리하려면 응답 보강이 필요하다. |
-| 보유 아이템 필드 | `GET /api/item/v1/user-items` 응답의 `characterTypeId`, `imageUrl` | 현재 응답은 `userItemId`, `itemId`, `name`, `itemType`, `effectType`, `quantity` | 보관함의 캐릭터별 스킨 필터와 이미지 렌더링에 필요하다. |
-| 아이템 구매 멱등성 | `POST /api/item/v1/item-purchases`의 클라이언트 재시도 멱등키 | 현재 gateway가 `purchase-{userId}-{itemId}-{currentTimeMillis}`를 생성 | 같은 구매 요청 재시도 시 중복 차감 방지가 약하다. 실제 API 연동 전 client-provided `Idempotency-Key` 또는 body `idempotencyKey` 정책 결정이 필요하다. |
-| 공유 보상 상태 | `GET /api/share/v1/share-events/today` | share controller에 today 상태 조회 없음 | 공유 카드 버튼 상태와 중복 보상 안내에 필요하다. |
-| 알림 | `GET/PATCH /api/notification/v1/notifications` | gateway에 notification controller 없음 | 알림 목록, 읽음 처리, 홈 unreadCount에 필요하다. |
-| 지갑 요약 부가 필드 | `GET /api/wallet/v1/wallets/me`의 `updatedAt` | 현재 백엔드 응답은 `starPiece`만 반환 | MVP 화면은 잔액만 쓰므로 `updatedAt`은 선택 필드로 둔다. |
+| 구분 | 현재 API 기준 | 응답/처리 규칙 |
+|---|---|---|
+| 홈 통합 조회 | `GET /api/home/v1/home` | 홈 화면은 user, wallet, character, currentMission, notifications 요약을 이 API로 조회한다. |
+| 현재 캐릭터 | `GET /api/character/v1/characters/me` | `states`, `currentAssetUrl`, `assetUrls`, `equippedSkin`을 함께 반환한다. `currentAssetUrl`은 서버가 현재 상태 기준으로 고른 표시용 URL이고, `assetUrls`는 상태별 전환/프리로드용 맵이다. |
+| 스킨 장착/해제 | `PUT /api/character/v1/characters/{characterId}/equipped-skin` | `itemId`가 숫자이면 장착, 생략/null/0이면 기본 외형으로 해제한다. 응답에서 `equippedSkin`이 null이면 기본 외형 상태다. |
+| 지갑 거래내역 | `GET /api/wallet/v1/wallets/me/transactions` | cursor 기반 최신순 목록이며 `occurredAt`은 거래 생성 시각이다. |
+| 상점/보관함 아이템 | `GET /api/item/v1/items`, `GET /api/item/v1/user-items` | 응답에 `characterTypeId`, `effectType`, `imageUrl`이 포함된다. 캐릭터별 스킨 필터와 소모품 UI 매핑은 해당 필드를 기준으로 한다. |
+| 아이템 구매 | `POST /api/item/v1/item-purchases` | body의 `idempotencyKey`를 구매 재시도 멱등키로 사용한다. |
+| 공유 카드 | `GET /api/share/v1/presigned-url`, `POST /api/share/v1/share-cards` | 프론트가 canvas PNG를 presigned URL로 업로드한 뒤, `imageUrl`을 공유 카드 생성 요청에 전달한다. 백엔드는 업로드 URL을 검증하고 DB에는 object key/shareId를 저장한다. |
+| 공유 보상 | `POST /api/share/v1/share-events`, `GET /api/share/v1/share-events/today` | 공유 시도와 일일 보상 여부는 `share_logs` 기준으로 기록한다. 현재 공유 보상은 wallet 적립 연동 전 단계라 응답의 `wallet.starPiece`는 0일 수 있다. |
+| 알림 | notification 목록/읽음/구독/설정 API | 푸시 발송 여부는 사용자 알림 설정, 방해금지 시간, FCM 토큰 상태에 따라 결정된다. |
 
 ---
 
@@ -136,15 +134,15 @@ Base Pattern: /api/{domain}/v1/{resource}
 | POST   | `⚠️ /api/auth/v1/token-refreshes`                               | 토큰 재발급        | body | token | Public |
 | DELETE | `/api/auth/v1/sessions/current`                                 | 로그아웃          | none | logout result | 🔐 |
 | GET    | `/api/user/v1/users/me`                                         | 내 정보 조회       | none | user | 🔐 |
-| GET    | `🧩 /api/home/v1/home`                                           | 홈 화면 통합 조회    | none | home data | 🔐 |
+| GET    | `/api/home/v1/home`                                             | 홈 화면 통합 조회    | none | home data | 🔐 |
 | GET    | `💾 /api/character/v1/character-types`                          | 캐릭터 종류 조회     | query | character types | 🔐 |
 | GET    | `💾 /api/character/v1/character-types/{characterTypeId}/assets` | 캐릭터 에셋 조회     | path | assets | 🔐 |
 | POST   | `/api/character/v1/characters`                                  | 내 캐릭터 생성      | body | character | 🔐 |
-| GET    | `🧩 /api/character/v1/characters/me`                             | 내 활성 캐릭터 조회   | none | character | 🔐 |
+| GET    | `/api/character/v1/characters/me`                               | 내 활성 캐릭터 조회   | none | character | 🔐 |
 | PATCH  | `/api/character/v1/characters/{characterId}`                    | 캐릭터 이름 수정     | path + body | character | 🔐 |
 | GET    | `/api/character/v1/characters/{characterId}/status`             | 캐릭터 상태 조회     | path | status | 🔐 |
 | POST   | `⚠️ /api/character/v1/characters/{characterId}/care-logs`       | 돌봄 액션 수행      | path + body | care result | 🔐 |
-| PUT    | `⚠️🧩 /api/character/v1/characters/{characterId}/equipped-skin` | 캐릭터 스킨 장착/해제 | path + body | equipped skin | 🔐 |
+| PUT    | `⚠️ /api/character/v1/characters/{characterId}/equipped-skin`   | 캐릭터 스킨 장착/해제 | path + body | equipped skin | 🔐 |
 | GET    | `💾 /api/onboarding/v1/questions`                               | 온보딩 질문 목록 조회  | none | questions | 🔐 |
 | GET    | `/api/onboarding/v1/profiles/me`                                | 내 온보딩 프로필 조회  | none | profile | 🔐 |
 | PUT    | `/api/onboarding/v1/profiles/me`                                | 내 온보딩 프로필 저장/완료 | body | profile | 🔐 |
@@ -154,26 +152,34 @@ Base Pattern: /api/{domain}/v1/{resource}
 | POST   | `/api/mission/v1/missions/{missionId}/rejections`               | 미션 거절 기록 생성   | path + body | rejection | 🔐 |
 | POST   | `/api/mission/v1/missions/{missionId}/completion-sessions`      | 완료 질문 세션 시작   | path + body | question | 🔐 |
 | POST   | `⚠️ /api/mission/v1/missions/{missionId}/completion-answers`    | 완료 답변 제출 및 보상 지급 | path + body | completion result | 🔐 |
-| GET    | `🧩 /api/wallet/v1/wallets/me`                                   | 별조각 잔액 조회     | none | wallet | 🔐 |
-| GET    | `🧩 /api/wallet/v1/wallets/me/transactions`                      | 별조각 거래내역 조회   | query cursor | transactions | 🔐 |
-| GET    | `💾🧩 /api/item/v1/items`                                       | 상점 아이템 목록 조회  | query cursor | items | 🔐 |
-| GET    | `🧩 /api/item/v1/user-items`                                     | 내 보유 아이템 조회   | query cursor | user items | 🔐 |
+| GET    | `/api/wallet/v1/wallets/me`                                     | 별조각 잔액 조회     | none | wallet | 🔐 |
+| GET    | `/api/wallet/v1/wallets/me/transactions`                        | 별조각 거래내역 조회   | query cursor | transactions | 🔐 |
+| GET    | `💾 /api/item/v1/items`                                         | 상점 아이템 목록 조회  | query cursor | items | 🔐 |
+| GET    | `/api/item/v1/user-items`                                       | 내 보유 아이템 조회   | query cursor | user items | 🔐 |
 | POST   | `⚠️ /api/item/v1/item-purchases`                                | 아이템 구매        | body | purchase result | 🔐 |
-| GET    | `Deprecated /api/share/v1/presigned-url`                        | 구 프론트엔드 직접 업로드용 임시 URL 발급 | query | presigned url | 🔐 |
-| POST   | `/api/share/v1/share-cards`                                     | 공유 카드 생성 (백엔드 이미지 생성 및 S3 업로드) | body | share card | 🔐 |
+| GET    | `/api/share/v1/presigned-url`                                   | 공유 카드 이미지 업로드 URL 발급 | query | presigned url | 🔐 |
+| POST   | `/api/share/v1/share-cards`                                     | 공유 카드 이미지 검증 및 생성 | body | share card | 🔐 |
+| GET    | `/api/share/v1/share-cards/{shareCardId}`                       | 내 공유 카드 상세 조회 | path | share card detail | 🔐 |
 | POST   | `⚠️ /api/share/v1/share-events`                                 | 공유 시도 이벤트 생성 및 보상 처리 | body | share event | 🔐 |
-| GET    | `🧩 /api/share/v1/share-events/today`                            | 오늘 공유 보상 여부 조회 | none | share status | 🔐 |
-| GET    | `💾 /api/share/v1/share-links/{shareId}`                        | 공개 공유 링크 정보 조회 (클릭 로그 내재화) | path | shared card | Public |
+| GET    | `/api/share/v1/share-events/today`                              | 오늘 공유 보상 여부 조회 | none | share status | 🔐 |
+| GET    | `💾 /api/share/v1/share-links/{shareId}`                        | 공개 공유 링크 정보 조회 | path | shared card | Public |
+| POST   | `/api/share/v1/share-clicks`                                    | 공개 공유 링크 클릭 기록 | body | click result | Public |
+| GET    | `/share/{shareId}`                                              | OG 태그 포함 공유 HTML | path | HTML | Public |
 | POST   | `⚠️ /api/attendance/v1/attendance-records`                      | 오늘 출석 기록 생성 및 보상 지급 | none | attendance | 🔐 |
 | GET    | `/api/attendance/v1/attendance-records`                         | 출석 기록 조회      | query year, month | attendance list | 🔐 |
-| GET    | `🧩 /api/notification/v1/notifications`                          | 알림 목록 조회      | query cursor | notifications | 🔐 |
-| PATCH  | `🧩 /api/notification/v1/notifications/{notificationId}`         | 알림 읽음 처리      | path + body | notification | 🔐 |
+| GET    | `/api/notification/v1/notifications`                            | 알림 목록 조회      | query cursor | notifications | 🔐 |
+| PATCH  | `/api/notification/v1/notifications/{notificationId}`           | 알림 읽음 처리      | path + body | notification | 🔐 |
+| POST   | `/api/notification/v1/subscriptions/`                           | FCM 토큰 등록/갱신 | body | subscription | 🔐 |
+| GET    | `/api/notification/v1/settings`                                 | 알림 수신 설정 조회 | none | notification settings | 🔐 |
+| PATCH  | `/api/notification/v1/settings`                                 | 알림 수신 설정 수정 | body | notification settings | 🔐 |
+| 내부 gRPC | `NotificationService.SendPushNotification`                   | 알림 저장 및 FCM 푸시 발송 요청 | proto | success | Internal |
+| 내부 gRPC | `NotificationService.GetUnreadNotificationCount`             | 홈 화면 안 읽은 알림 수 조회 | proto | unread count | Internal |
 
 ---
 
 ## 2. 인증 / 사용자
 
-인증은 Google OAuth2를 우선한다. 이메일/비밀번호 로그인은 선택 구현이다.
+인증은 Google OAuth2를 기준으로 제공한다. 이메일/비밀번호 로그인 API는 현재 제공하지 않는다.
 
 ### 2.1 GET `/api/auth/v1/google/authorization-url`
 
@@ -184,7 +190,7 @@ Base Pattern: /api/{domain}/v1/{resource}
 
 ```json
 {
-  "redirectUri": "https://polaris.app/oauth/google/callback"
+  "redirectUri": "https://p5laris.life/oauth/google/callback"
 }
 ```
 
@@ -210,7 +216,7 @@ Google OAuth callback에서 받은 `code`를 서버에 전달하고 서비스 �
 {
   "code": "google-oauth-code",
   "state": "oauth-state-token",
-  "redirectUri": "https://polaris.app/oauth/google/callback"
+  "redirectUri": "https://p5laris.life/oauth/google/callback"
 }
 ```
 
@@ -310,8 +316,6 @@ Refresh Token으로 Access Token을 재발급한다.
 **설명**  
 홈 화면에 필요한 사용자, 지갑, 캐릭터, 현재 미션, 알림 요약을 한 번에 조회한다.
 
-> 백엔드 코드 확인: 2026-05-21 기준 gateway에 해당 REST 컨트롤러가 없다. 프론트는 현재 단일 홈 조회 API를 기준으로 구현되어 있으므로, 백엔드 통합 조회 API를 추가하거나 프론트에서 개별 API 조합 호출로 전환하는 결정이 필요하다.
-
 **Request**
 
 ```json
@@ -333,7 +337,7 @@ Refresh Token으로 Access Token을 재발급한다.
     "id": 10,
     "name": "작은노바",
     "characterTypeCode": "NOVA",
-    "currentAssetUrl": "https://cdn.polaris.app/nova/idle.png",
+    "currentAssetUrl": "https://cdn.p5laris.life/characters/nova/idle.png",
     "states": {
       "hunger": { "value": 80, "label": "든든함", "grade": "GOOD" },
       "energy": { "value": 55, "label": "졸림", "grade": "NORMAL" },
@@ -410,11 +414,11 @@ Refresh Token으로 Access Token을 재발급한다.
   "items": [
     {
       "assetType": "IDLE",
-      "assetUrl": "https://cdn.polaris.app/nova/idle.png"
+      "assetUrl": "https://cdn.p5laris.life/characters/nova/idle.png"
     },
     {
       "assetType": "STATE",
-      "assetUrl": "https://cdn.polaris.app/nova/lonely.png"
+      "assetUrl": "https://cdn.p5laris.life/characters/nova/lonely.png"
     }
   ]
 }
@@ -460,8 +464,6 @@ Refresh Token으로 Access Token을 재발급한다.
 **설명**  
 내 활성 캐릭터를 조회한다.
 
-> 백엔드 코드 확인: 현재 gateway 응답에는 `states`, `currentAssetUrl`이 포함되지 않는다. 프론트에서 캐릭터 상태/에셋을 함께 쓰는 화면은 `GET /api/character/v1/characters/{characterId}/status`, `GET /api/character/v1/character-types/{characterTypeId}/assets` 조합 호출로 갈지, 이 응답을 보강할지 결정이 필요하다.
-
 **Request**
 
 ```json
@@ -475,13 +477,29 @@ Refresh Token으로 Access Token을 재발급한다.
   "id": 10,
   "name": "작은노바",
   "characterTypeCode": "NOVA",
+  "currentAssetUrl": "https://cdn.p5laris.life/characters/nova/idle.png",
+  "assetUrls": {
+    "idle": "https://cdn.p5laris.life/characters/nova/idle.png",
+    "happy": "https://cdn.p5laris.life/characters/nova/happy.png",
+    "sleepy": "https://cdn.p5laris.life/characters/nova/sleepy.png",
+    "hungry": "https://cdn.p5laris.life/characters/nova/hungry.png",
+    "lowEnergy": "https://cdn.p5laris.life/characters/nova/low-energy.png",
+    "lonely": "https://cdn.p5laris.life/characters/nova/lonely.png"
+  },
   "active": true,
+  "states": {
+    "hunger": 80,
+    "energy": 55,
+    "affection": 35
+  },
   "equippedSkin": {
     "itemId": 3,
     "name": "말랑 별빛 스킨"
   }
 }
 ```
+
+`currentAssetUrl`은 서버가 현재 상태값으로 계산한 mood의 이미지 URL이다. `assetUrls`의 키는 `idle`, `happy`, `sleepy`, `hungry`, `lowEnergy`, `lonely`를 사용한다.
 
 ---
 
@@ -598,10 +616,8 @@ Refresh Token으로 Access Token을 재발급한다.
 캐릭터에 스킨을 장착하거나 기본 외형으로 해제한다. 스킨은 한 번에 하나만 적용한다.
 
 - `itemId`가 숫자이면 해당 보유 스킨을 장착한다.
-- `itemId`가 `null`이면 현재 장착 스킨을 해제하고 기본 외형으로 되돌린다.
+- `itemId`가 생략되거나 `null`이면 현재 장착 스킨을 해제하고 기본 외형으로 되돌린다.
 - 클라이언트는 `GET /api/character/v1/characters/me` 응답의 `equippedSkin.itemId`와 `GET /api/item/v1/user-items` 응답의 `itemId`를 비교해 장착 여부를 표시한다.
-
-> 백엔드 코드 확인: 현재 proto의 `item_id`는 `int64`라 `null` 표현이 없고, gateway도 `itemId: null` 해제를 처리하지 않는다. 프론트 보관함의 해제 버튼을 실제 API와 연결하려면 null 해제 정책 또는 별도 해제 endpoint가 필요하다.
 
 **Request**
 
@@ -823,7 +839,7 @@ mission REST 응답에는 AI fallback 여부를 노출하지 않는다. fallback
 
 ```json
 {
-  "missionDate": "2026-05-21",
+  "missionDate": "2026-05-26",
   "maxDailyOffers": 15,
   "offeredCount": 4,
   "completedCount": 2,
@@ -840,8 +856,8 @@ mission REST 응답에는 AI fallback 여부를 노출하지 않는다. fallback
       "rewardStarPiece": 10,
       "status": "COMPLETED",
       "characterMessage": "잘했어. 작은 시작도 별조각이 됐어.",
-      "createdAt": "2026-05-21T09:10:00+09:00",
-      "completedAt": "2026-05-21T09:15:00+09:00",
+      "createdAt": "2026-05-26T09:10:00+09:00",
+      "completedAt": "2026-05-26T09:15:00+09:00",
       "rejectedAt": null
     },
     {
@@ -853,7 +869,7 @@ mission REST 응답에는 AI fallback 여부를 노출하지 않는다. fallback
       "rewardStarPiece": 10,
       "status": "OFFERED",
       "characterMessage": "무... 오늘의 작은 별을 찾은 것 같아요.",
-      "createdAt": "2026-05-21T11:30:00+09:00",
+      "createdAt": "2026-05-26T11:30:00+09:00",
       "completedAt": null,
       "rejectedAt": null
     }
@@ -969,6 +985,7 @@ mission REST 응답에는 AI fallback 여부를 노출하지 않는다. fallback
 완료 답변은 1자 이상 300자 이하로 입력한다. 답변 전문은 `mission_completion_answers`에 저장하고, event-log에는 답변 전문을 남기지 않는다.
 
 미션 완료 보상은 1회만 지급된다. 응답의 `reward`는 지급된 보상량을, `wallet`은 보상 반영 후 지갑 스냅샷을 의미한다.
+별조각 보상 지급은 `mission_reward_outbox`를 통해 wallet 모듈에 전달하며, 같은 미션 완료 요청이 재시도되면 저장된 답변과 보상 outbox를 기준으로 멱등 처리한다.
 
 **Request**
 
@@ -990,7 +1007,7 @@ mission REST 응답에는 AI fallback 여부를 노출하지 않는다. fallback
   },
   "reward": {
     "starPiece": 10,
-    "affection": 5
+    "affection": 0
   },
   "wallet": {
     "starPiece": 127
@@ -1081,8 +1098,6 @@ AI 생성 결과는 `ai_mission_generations`, 사용 로그는 `ai_usage_logs`�
 **설명**  
 현재 별조각 잔액을 조회한다.
 
-> 백엔드 코드 확인: 현재 gateway 응답은 `starPiece`만 반환한다. `updatedAt`은 MVP 화면에서 사용하지 않으므로 선택 필드로 둔다.
-
 **Request**
 
 ```json
@@ -1103,8 +1118,6 @@ AI 생성 결과는 `ai_mission_generations`, 사용 로그는 `ai_usage_logs`�
 
 **설명**
 내 별조각 획득/사용 거래내역을 최신순으로 조회한다. 별조각 화면에서 잔액과 함께 노출한다.
-
-> 백엔드 코드 확인: `star_piece_transactions` 테이블은 있으나 2026-05-21 기준 gateway/proto에 거래내역 조회 API가 없다. 별조각 화면 실제 연동 전에 추가가 필요하다.
 
 **Request (Query Parameters)**
 
@@ -1128,7 +1141,7 @@ AI 생성 결과는 `ai_mission_generations`, 사용 로그는 `ai_usage_logs`�
       "description": "오늘 출석 보상",
       "sourceType": "ATTENDANCE",
       "sourceId": 302,
-      "occurredAt": "2026-05-21T10:50:00+09:00"
+      "occurredAt": "2026-05-26T10:50:00+09:00"
     },
     {
       "id": 1204,
@@ -1138,7 +1151,7 @@ AI 생성 결과는 `ai_mission_generations`, 사용 로그는 `ai_usage_logs`�
       "description": "말랑 별빛 스킨 구매",
       "sourceType": "ITEM",
       "sourceId": 3,
-      "occurredAt": "2026-05-21T11:20:00+09:00"
+      "occurredAt": "2026-05-26T11:20:00+09:00"
     }
   ],
   "pageInfo": {
@@ -1160,8 +1173,6 @@ AI 생성 결과는 `ai_mission_generations`, 사용 로그는 `ai_usage_logs`�
 - **모바일 스크롤 UI 대응**: 페이지 누락이나 중복 노출을 방지하기 위해 **커서(Cursor) 기반 페이징**을 적용합니다.
 - **탭 필터링**: 화면에 탭(`SKIN`, `CONSUMABLE`) 별로 구분하여 보여주기 위해 쿼리 파라미터 `itemType` 필터링을 제공합니다.
 - **캐릭터별 스킨**: `characterTypeId`가 있으면 해당 캐릭터 전용 스킨이며, `null`이면 공용 스킨입니다. 클라이언트는 현재 캐릭터 타입과 비교해 노출 여부를 판단합니다.
-
-> 백엔드 코드 확인: `items` 테이블에는 `effect_type`, `character_type_id`가 있으나, 현재 item proto/gateway 응답에는 `effectType`, `characterTypeId`가 포함되지 않는다. 상점 탭/캐릭터별 스킨 노출을 안정적으로 맞추려면 응답 필드 보강이 필요하다.
 
 **Request (Query Parameters)**
 
@@ -1187,7 +1198,7 @@ AI 생성 결과는 `ai_mission_generations`, 사용 로그는 `ai_usage_logs`�
       "characterTypeId": 2,
       "effectType": null,
       "price": 60,
-      "imageUrl": "https://cdn.polaris.app/items/skin-soft-star.png",
+      "imageUrl": "https://cdn.p5laris.life/items/skin-soft-star.png",
       "owned": false 
     }
   ],
@@ -1209,8 +1220,6 @@ AI 생성 결과는 `ai_mission_generations`, 사용 로그는 `ai_usage_logs`�
 - **소모성 아이템**: 보유 개수(`quantity`)가 표현됩니다.
 - **장착형 아이템(스킨)**: 장착 여부는 이 API에 포함되지 않습니다. 클라이언트가 보유한 캐릭터 정보(`equipped_skin_id`)와 비교하여 장착 상태를 판단합니다.
 - **돌봄 사용**: `itemType=CONSUMABLE`로 조회한 뒤 `effectType`이 돌봄 액션과 맞는 아이템의 `itemId`를 `POST /api/character/v1/characters/{characterId}/care-logs`에 전달합니다.
-
-> 백엔드 코드 확인: 현재 user-items 응답에는 `effectType`은 있으나 `characterTypeId`, `imageUrl`이 없다. 보관함의 캐릭터별 스킨 필터와 이미지 렌더링을 위해 응답 보강이 필요하다.
 
 > **장착 여부 판단 방식 (클라이언트 싱크)**  
 > `GET /api/character/v1/characters/me` 응답의 `equippedSkin.itemId` 와  
@@ -1242,7 +1251,7 @@ AI 생성 결과는 `ai_mission_generations`, 사용 로그는 `ai_usage_logs`�
       "characterTypeId": null,
       "effectType": "PLAY",
       "quantity": 3,
-      "imageUrl": "https://cdn.polaris.app/items/star-toy.png"
+      "imageUrl": "https://cdn.p5laris.life/items/star-toy.png"
     }
   ],
   "pageInfo": {
@@ -1263,15 +1272,15 @@ AI 생성 결과는 `ai_mission_generations`, 사용 로그는 `ai_usage_logs`�
 - **소모성 아이템 구매 정책**: 수량(`quantity`)을 선택하여 다량 구매가 가능하며, 구매 시 기존 보유량에 누적됩니다.
 - **트랜잭션**: 별조각 차감, 거래 내역 기록(`star_piece_transactions`), 보유 아이템(`user_items`) 추가/업데이트는 단일 트랜잭션으로 처리되어 정합성을 유지합니다.
 - **재화 부족**: 지갑 잔액이 부족하면 `STAR_PIECE_NOT_ENOUGH` (400) 에러가 발생합니다.
-
-> 백엔드 코드 확인: 현재 gateway가 요청마다 시간 기반 멱등키를 생성하므로 클라이언트 재시도 중복 차감을 완전히 막기 어렵다. 실제 연동 전 `Idempotency-Key` 헤더 또는 body `idempotencyKey` 중 하나로 클라이언트가 안정적인 멱등키를 전달하는 정책 결정이 필요하다.
+클라이언트는 구매 버튼 1회 시도마다 고유한 `idempotencyKey`를 생성하고, 네트워크 재시도에는 같은 값을 재사용한다.
 
 **Request**
 
 ```json
 {
   "itemId": 3,
-  "quantity": 1              
+  "quantity": 1,
+  "idempotencyKey": "item-purchase-20260526-uuid"
 }
 ```
 
@@ -1298,8 +1307,8 @@ AI 생성 결과는 `ai_mission_generations`, 사용 로그는 `ai_usage_logs`�
 ### 9.1 GET `/api/share/v1/presigned-url` 🔐
 
 **설명**  
-Deprecated. 과거 프론트엔드가 이미지를 직접 생성해 S3에 업로드하던 플로우에서 사용하던 임시 URL 발급 API다.
-현재 공유 카드 생성은 백엔드가 이미지를 생성하고 S3에 직접 업로드하므로 신규 클라이언트는 이 API를 호출하지 않는다.
+프론트엔드가 canvas로 생성한 공유 카드 PNG를 S3에 직접 업로드할 수 있도록 presigned PUT URL을 발급한다.
+프론트엔드는 `presignedUrl`로 이미지를 업로드한 뒤, 같은 응답의 `imageUrl`을 `POST /api/share/v1/share-cards`에 전달한다.
 
 **Request (Query String)**
 
@@ -1312,25 +1321,27 @@ Deprecated. 과거 프론트엔드가 이미지를 직접 생성해 S3에 업로
 ```json
 {
   "presignedUrl": "https://<bucket>.s3.ap-northeast-2.amazonaws.com/share-cards/UUID.png?X-Amz-Signature=...",
-  "imageUrl": "https://cdn.polaris.app/share-cards/UUID.png"
+  "imageUrl": "https://cdn.p5laris.life/share-cards/1/UUID.png"
 }
 ```
-* **`presignedUrl`**: 프론트엔드 직접 업로드용 HTTP PUT URL. 신규 플로우에서는 사용하지 않는다.
-* **`imageUrl`**: 구 플로우에서 업로드 후 저장하던 공개 URL. 신규 플로우에서는 9.2 응답의 `imageUrl`을 사용한다.
+* **`presignedUrl`**: 프론트엔드가 `PUT`으로 업로드할 임시 URL.
+* **`imageUrl`**: 업로드 완료 후 공유 카드 생성 요청에 전달할 공개 이미지 URL.
 
 ---
 
 ### 9.2 POST `/api/share/v1/share-cards` 🔐
 
 **설명**  
-내 캐릭터 공유 카드를 생성한다. 프론트엔드는 카드에 넣을 한 줄 문구(`headline`)만 전달하고, 백엔드는 캐릭터/오늘 미션 정보를 조회해 공유 카드 이미지를 생성한 뒤 S3에 업로드하고 공개 URL(`imageUrl`)을 저장한다.
+내 캐릭터 공유 카드를 생성한다. 공유 카드 이미지는 프론트엔드가 미리보기 화면과 같은 레이아웃으로 생성해 S3에 업로드하고, 백엔드는 전달받은 `imageUrl`의 소유자/경로를 검증한 뒤 공유 카드 레코드를 생성한다.
+같은 유저가 같은 `imageUrl`로 다시 생성 요청을 보내면 기존 공유 카드를 반환한다.
 
 **Request**
 
 ```json
 {
   "characterId": 10,
-  "headline": "오늘도 조금 반짝였어"
+  "headline": "오늘도 조금 반짝였어",
+  "imageUrl": "https://cdn.p5laris.life/share-cards/1/UUID.png"
 }
 ```
 
@@ -1340,17 +1351,44 @@ Deprecated. 과거 프론트엔드가 이미지를 직접 생성해 S3에 업로
 {
   "shareCardId": 800,
   "shareId": "sh_abc123",
-  "imageUrl": "https://cdn.polaris.app/share-cards/800.png",
-  "shareUrl": "https://polaris.app/share/sh_abc123"
+  "imageUrl": "https://cdn.p5laris.life/share-cards/1/UUID.png",
+  "shareUrl": "https://p5laris.life/share/sh_abc123"
 }
 ```
 
 ---
 
-### 9.3 POST `⚠️ /api/share/v1/share-events` 🔐
+### 9.3 GET `/api/share/v1/share-cards/{shareCardId}` 🔐
+
+**설명**
+내가 생성한 공유 카드 상세 정보를 조회한다. 공유 카드 소유자만 조회할 수 있다.
+
+**Request**
+
+```json
+{
+  "shareCardId": 800
+}
+```
+
+**Response**
+
+```json
+{
+  "shareCardId": 800,
+  "characterName": "노바별",
+  "imageUrl": "https://cdn.p5laris.life/share-cards/1/UUID.png",
+  "shareUrl": "https://p5laris.life/share/sh_abc123"
+}
+```
+
+---
+
+### 9.4 POST `⚠️ /api/share/v1/share-events` 🔐
 
 **설명**  
-사용자가 공유 버튼을 눌렀다는 이벤트를 저장한다. 실제 외부 SNS 게시 여부는 MVP에서 검증하지 않고, 하루 1회 공유 시도 보상을 지급한다.
+사용자가 공유 버튼을 눌렀다는 이벤트를 저장한다. 실제 외부 SNS 게시 여부는 MVP에서 검증하지 않고, 하루 1회 공유 시도 보상 대상 여부를 `share_logs`에 기록한다.
+현재 공유 보상은 wallet 적립 연동 전 단계이므로 `rewardPaid=true`여도 `wallet.starPiece`는 0으로 내려올 수 있다.
 
 **Request**
 
@@ -1371,19 +1409,18 @@ Deprecated. 과거 프론트엔드가 이미지를 직접 생성해 S3에 업로
   "rewardPaid": true,
   "rewardStarPiece": 10,
   "wallet": {
-    "starPiece": 77
+    "starPiece": 0
   }
 }
 ```
 
 ---
 
-### 9.4 GET `/api/share/v1/share-events/today` 🔐
+### 9.5 GET `/api/share/v1/share-events/today` 🔐
 
 **설명**  
 로그인한 유저가 오늘 날짜의 공유 보상을 이미 수령했는지 여부를 조회한다. 프론트엔드 버튼 상태 및 배너 표시에 사용된다.
-
-> 백엔드 코드 확인: 현재 share controller에는 해당 endpoint가 없다. 공유 카드 화면의 보상 상태 표시를 실제 데이터로 연결하려면 추가가 필요하다.
+오늘 공유 이력이 없으면 `rewardClaimed=false`, `lastSharedAt=""`로 반환한다.
 
 **Request**
 
@@ -1402,7 +1439,7 @@ Deprecated. 과거 프론트엔드가 이미지를 직접 생성해 S3에 업로
 
 ---
 
-### 9.5 GET `💾 /api/share/v1/share-links/{shareId}` Public
+### 9.6 GET `💾 /api/share/v1/share-links/{shareId}` Public
 
 **설명**  
 외부 사용자가 공유 링크로 들어왔을 때 카드 정보를 조회한다.
@@ -1421,10 +1458,58 @@ Deprecated. 과거 프론트엔드가 이미지를 직접 생성해 S3에 업로
 {
   "shareId": "sh_abc123",
   "characterName": "노바별",
-  "imageUrl": "https://cdn.polaris.app/share-cards/800.png",
+  "imageUrl": "https://cdn.p5laris.life/share-cards/1/UUID.png",
   "headline": "오늘도 조금 반짝였음.",
-  "signupUrl": "https://polaris.app/signup?shareId=sh_abc123"
+  "signupUrl": "https://p5laris.life/signup?shareId=sh_abc123"
 }
+```
+
+---
+
+### 9.7 POST `/api/share/v1/share-clicks` Public
+
+**설명**
+공개 공유 링크 클릭을 기록한다. MVP 구현은 클릭 정보를 로그로 남기고 `recorded=true`를 반환한다.
+
+**Request**
+
+```json
+{
+  "shareId": "sh_abc123",
+  "referrer": "https://example.com",
+  "utmSource": "kakao",
+  "utmMedium": "share",
+  "utmCampaign": "mission-card"
+}
+```
+
+**Response**
+
+```json
+{
+  "shareId": "sh_abc123",
+  "recorded": true
+}
+```
+
+---
+
+### 9.8 GET `/share/{shareId}` Public
+
+**설명**
+외부 SNS, 메신저, 브라우저가 접근하는 공유 HTML이다. 응답 HTML에는 `og:title`, `og:description`, `og:image`, `og:url` 메타 태그가 포함된다.
+
+**Response**
+
+```html
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta property="og:title" content="Polaris" />
+    <meta property="og:image" content="https://cdn.p5laris.life/share-cards/1/UUID.png" />
+  </head>
+  <body>...</body>
+</html>
 ```
 
 ---
@@ -1499,8 +1584,6 @@ Deprecated. 과거 프론트엔드가 이미지를 직접 생성해 S3에 업로
 **설명**  
 앱 내부 알림 목록을 조회한다.
 
-> 백엔드 코드 확인: 현재 gateway에 notification controller가 없다. 알림 목록, 읽음 처리, 홈 unreadCount를 실제 데이터로 연결하려면 notification REST API 구현이 필요하다.
-
 **Request**
 
 ```json
@@ -1559,12 +1642,13 @@ Deprecated. 과거 프론트엔드가 이미지를 직접 생성해 S3에 업로
   "updatedAt": "2026-05-15T18:45:00+09:00"
 }
 ```
+
 ---
 
 ### 11.3 POST `/api/notification/v1/subscriptions/` 🔐
 
 **설명**  
-FCM 푸쉬 알림을 허용하고 토큰을 저장해 구독을 시작한다.
+FCM 푸시 알림을 허용하고 토큰을 저장해 구독을 시작한다. 같은 토큰이 다시 들어오면 기존 토큰 정보를 갱신한다.
 
 **Request**
 
@@ -1578,11 +1662,124 @@ FCM 푸쉬 알림을 허용하고 토큰을 저장해 구독을 시작한다.
 
 ```json
 {
-  "id": 600,
-  "read": true,
+  "id": 900,
   "createdAt": "2026-05-15T18:45:00+09:00"
 }
 ```
+
+---
+
+### 11.4 GET `/api/notification/v1/settings` 🔐
+
+**설명**
+로그인한 사용자의 알림 수신 설정을 조회한다. 설정 row가 아직 없으면 기본 설정을 반환한다.
+
+**Request**
+
+```json
+{}
+```
+
+**Response**
+
+```json
+{
+  "pushEnabled": true,
+  "missionOfferEnabled": true,
+  "characterStateEnabled": true,
+  "dailyReminderEnabled": true,
+  "quietHoursEnabled": false,
+  "quietHoursStart": "22:00",
+  "quietHoursEnd": "08:00"
+}
+```
+
+---
+
+### 11.5 PATCH `/api/notification/v1/settings` 🔐
+
+**설명**
+알림 수신 설정을 갱신한다. 모든 필드를 함께 전달한다. 시간 필드는 `HH:mm` 형식이다.
+
+**Request**
+
+```json
+{
+  "pushEnabled": true,
+  "missionOfferEnabled": true,
+  "characterStateEnabled": true,
+  "dailyReminderEnabled": true,
+  "quietHoursEnabled": true,
+  "quietHoursStart": "22:00",
+  "quietHoursEnd": "08:00"
+}
+```
+
+**Response**
+
+```json
+{
+  "pushEnabled": true,
+  "missionOfferEnabled": true,
+  "characterStateEnabled": true,
+  "dailyReminderEnabled": true,
+  "quietHoursEnabled": true,
+  "quietHoursStart": "22:00",
+  "quietHoursEnd": "08:00"
+}
+```
+
+---
+
+### 11.6 내부 gRPC `NotificationService.SendPushNotification`
+
+**설명**
+mission, character 등 내부 서비스가 알림 저장과 FCM 푸시 발송을 요청할 때 사용한다. notification 서비스는 먼저 `notifications` row를 만들고, FCM 발송은 `notification_push_deliveries`에 시도 결과를 남긴다.
+
+**gRPC Request**
+
+```json
+{
+  "userId": 1,
+  "title": "새 미션이 도착했어요",
+  "body": "오늘의 작은 루틴을 시작해 볼까요?",
+  "notificationType": "NOTIFICATION_TYPE_MISSION",
+  "targetType": "TARGET_TYPE_MISSION",
+  "targetId": 101
+}
+```
+
+**gRPC Response**
+
+```json
+{
+  "success": true
+}
+```
+
+---
+
+### 11.7 내부 gRPC `NotificationService.GetUnreadNotificationCount`
+
+**설명**
+홈 통합 조회에서 `notifications.unreadCount`를 채우기 위해 gateway가 notification 서비스에 요청하는 내부 gRPC API다. 별도 외부 REST endpoint로 노출하지 않는다.
+
+**gRPC Request**
+
+```json
+{
+  "userId": 1
+}
+```
+
+**gRPC Response**
+
+```json
+{
+  "unreadCount": 2
+}
+```
+
 ---
 
 ## 12. 주요 상태 / Enum
@@ -1671,7 +1868,7 @@ FCM 푸쉬 알림을 허용하고 토큰을 저장해 구독을 시작한다.
 | `ITEM_NOT_OWNED` | 보유하지 않은 아이템 |
 | `ITEM_QUANTITY_NOT_ENOUGH` | 소모품 수량 부족 |
 | `ATTENDANCE_ALREADY_CHECKED` | 오늘 출석 완료 |
-| `SHARE_REWARD_ALREADY_PAID` | 오늘 공유 보상 지급 완료 |
+| `SHARE_REWARD_ALREADY_PAID` | 오늘 공유 시도 보상 대상 기록 완료 |
 | `AI_INVALID_REQUEST` | AI 문구 생성 요청 값 오류 |
 | `AI_FALLBACK_INVALID` | fallback 문구 정책 검증 실패 |
 | `AI_GENERATION_FAILED` | AI 문구 생성 실패 |
