@@ -7,6 +7,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.support.TransactionCallback;
+import org.springframework.transaction.support.TransactionTemplate;
 import p5laris.character.domain.domain.entity.CharacterType;
 import p5laris.character.domain.domain.entity.UserCharacter;
 import p5laris.character.domain.domain.enums.CharacterMood;
@@ -15,6 +17,7 @@ import p5laris.character.domain.infrastructure.grpc.NotificationPushClient;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -33,19 +36,25 @@ class CharacterStateNotificationServiceTest {
     @Mock
     private NotificationPushClient notificationPushClient;
 
+    @Mock
+    private TransactionTemplate transactionTemplate;
+
     private CharacterStateNotificationService service;
 
     @BeforeEach
     void setUp() {
-        service = new CharacterStateNotificationService(userCharacterRepository, notificationPushClient);
+        service = new CharacterStateNotificationService(userCharacterRepository, notificationPushClient, transactionTemplate);
+        when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+            TransactionCallback<?> callback = invocation.getArgument(0);
+            return callback.doInTransaction(null);
+        });
     }
 
     @Test
-    void 상태가_감소해_배고픔이_되면_상태_알림을_요청한다() {
-        UserCharacter character = character(10L, 1L, "무무", 45, 80, 80);
+    void dispatchDueStateNotifications_requestsNotificationWhenMoodNeedsCare() {
+        UserCharacter character = character(10L, 1L, "Mumu", 45, 80, 80);
         ReflectionTestUtils.setField(character, "lastStatDecreasedAt", Instant.now().minusSeconds(6 * 3600));
-        when(userCharacterRepository.findByActiveTrue(any()))
-                .thenReturn(new PageImpl<>(List.of(character)));
+        mockActiveCharacter(character);
 
         int requestedCount = service.dispatchDueStateNotifications(100);
 
@@ -53,59 +62,53 @@ class CharacterStateNotificationServiceTest {
         verify(notificationPushClient).sendCharacterStateNotification(
                 1L,
                 10L,
-                "무무",
+                "Mumu",
                 CharacterMood.HUNGRY
         );
     }
 
     @Test
-    void 상태가_감소해도_정상_범위면_알림을_보내지_않는다() {
-        UserCharacter character = character(10L, 1L, "무무", 90, 90, 90);
+    void dispatchDueStateNotifications_skipsNotificationWhenMoodIsNormal() {
+        UserCharacter character = character(10L, 1L, "Mumu", 90, 90, 90);
         ReflectionTestUtils.setField(character, "lastStatDecreasedAt", Instant.now().minusSeconds(6 * 3600));
-        when(userCharacterRepository.findByActiveTrue(any()))
-                .thenReturn(new PageImpl<>(List.of(character)));
+        mockActiveCharacter(character);
 
         int requestedCount = service.dispatchDueStateNotifications(100);
 
         assertThat(requestedCount).isZero();
-        verify(notificationPushClient, never()).sendCharacterStateNotification(
-                any(),
-                any(),
-                any(),
-                any()
-        );
+        verify(notificationPushClient, never()).sendCharacterStateNotification(any(), any(), any(), any());
     }
 
     @Test
-    void 상태_감소_주기가_아직_아니면_알림을_보내지_않는다() {
-        UserCharacter character = character(10L, 1L, "무무", 30, 80, 80);
+    void dispatchDueStateNotifications_skipsNotificationWhenDecreaseCycleIsNotDue() {
+        UserCharacter character = character(10L, 1L, "Mumu", 30, 80, 80);
         ReflectionTestUtils.setField(character, "lastStatDecreasedAt", Instant.now().minusSeconds(2 * 3600));
-        when(userCharacterRepository.findByActiveTrue(any()))
-                .thenReturn(new PageImpl<>(List.of(character)));
+        mockActiveCharacter(character);
 
         int requestedCount = service.dispatchDueStateNotifications(100);
 
         assertThat(requestedCount).isZero();
-        verify(notificationPushClient, never()).sendCharacterStateNotification(
-                any(),
-                any(),
-                any(),
-                any()
-        );
+        verify(notificationPushClient, never()).sendCharacterStateNotification(any(), any(), any(), any());
     }
 
     @Test
-    void 알림_요청이_실패해도_스케줄러_흐름은_깨지지_않는다() {
-        UserCharacter character = character(10L, 1L, "무무", 45, 80, 80);
+    void dispatchDueStateNotifications_doesNotStopWhenNotificationFails() {
+        UserCharacter character = character(10L, 1L, "Mumu", 45, 80, 80);
         ReflectionTestUtils.setField(character, "lastStatDecreasedAt", Instant.now().minusSeconds(6 * 3600));
-        when(userCharacterRepository.findByActiveTrue(any()))
-                .thenReturn(new PageImpl<>(List.of(character)));
+        mockActiveCharacter(character);
         doThrow(new RuntimeException("notification unavailable"))
                 .when(notificationPushClient)
-                .sendCharacterStateNotification(1L, 10L, "무무", CharacterMood.HUNGRY);
+                .sendCharacterStateNotification(1L, 10L, "Mumu", CharacterMood.HUNGRY);
 
         assertThatCode(() -> service.dispatchDueStateNotifications(100))
                 .doesNotThrowAnyException();
+    }
+
+    private void mockActiveCharacter(UserCharacter character) {
+        when(userCharacterRepository.findActiveIds(any()))
+                .thenReturn(new PageImpl<>(List.of(character.getId())));
+        when(userCharacterRepository.findById(character.getId()))
+                .thenReturn(Optional.of(character));
     }
 
     private UserCharacter character(
@@ -118,8 +121,14 @@ class CharacterStateNotificationServiceTest {
     ) {
         CharacterType characterType = CharacterType.builder()
                 .code("MUMU")
-                .name("무무")
+                .name("Mumu")
+                .summary("summary")
+                .personality("personality")
+                .speechStyle("speech")
+                .introMessage("intro")
+                .sampleLine("sample")
                 .active(true)
+                .sortOrder(1)
                 .build();
         ReflectionTestUtils.setField(characterType, "id", 1L);
 
