@@ -22,6 +22,8 @@ public class OnboardingGatewayService {
                 .map(q -> OnboardingDto.QuestionResponse.builder()
                         .key(q.getKey())
                         .content(q.getContent())
+                        .multipleSelection(q.getMultipleSelection())
+                        .maxSelectionCount(q.getMaxSelectionCount())
                         .options(q.getOptionsList().stream()
                                 .map(opt -> OnboardingDto.AnswerOption.builder()
                                         .key(opt.getKey())
@@ -54,6 +56,11 @@ public class OnboardingGatewayService {
         if (request.getMissionIntensity() != null) profileBuilder.setMissionIntensity(request.getMissionIntensity());
         if (request.getAnswersJson() != null) profileBuilder.setAnswersJson(request.getAnswersJson());
         if (request.getCompleted() != null) profileBuilder.setCompleted(request.getCompleted());
+        if (request.getOnboardingVersion() != null) profileBuilder.setOnboardingVersion(request.getOnboardingVersion());
+        if (request.getRoutineGoals() != null) profileBuilder.addAllRoutineGoals(request.getRoutineGoals());
+        if (request.getPreferredTimeSlots() != null) profileBuilder.addAllPreferredTimeSlots(request.getPreferredTimeSlots());
+        if (request.getMissionPlaceContexts() != null) profileBuilder.addAllMissionPlaceContexts(request.getMissionPlaceContexts());
+        if (request.getAvoidedMissionTags() != null) profileBuilder.addAllAvoidedMissionTags(request.getAvoidedMissionTags());
 
         SaveProfileResponse response = onboardingServiceStub.saveProfile(SaveProfileRequest.newBuilder()
                 .setUserId(userId)
@@ -74,6 +81,11 @@ public class OnboardingGatewayService {
                 .missionIntensity(proto.getMissionIntensity().isEmpty() ? null : proto.getMissionIntensity())
                 .answersJson(proto.getAnswersJson().isEmpty() ? null : proto.getAnswersJson())
                 .completed(proto.getCompleted())
+                .onboardingVersion(proto.getOnboardingVersion())
+                .routineGoals(proto.getRoutineGoalsList())
+                .preferredTimeSlots(proto.getPreferredTimeSlotsList())
+                .missionPlaceContexts(proto.getMissionPlaceContextsList())
+                .avoidedMissionTags(proto.getAvoidedMissionTagsList())
                 .build();
     }
 }

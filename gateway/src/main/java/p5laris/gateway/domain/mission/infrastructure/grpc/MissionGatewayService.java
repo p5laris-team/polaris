@@ -18,6 +18,8 @@ import com.p5laris.proto.mission.v1.StartCompletionSessionResponse;
 import com.p5laris.proto.mission.v1.SubmitCompletionAnswerRequest;
 import com.p5laris.proto.mission.v1.SubmitCompletionAnswerResponse;
 import com.p5laris.proto.mission.v1.TodayMission;
+import com.p5laris.proto.mission.v1.UpsertMissionFeedbackRequest;
+import com.p5laris.proto.mission.v1.UpsertMissionFeedbackResponse;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import net.devh.boot.grpc.client.inject.GrpcClient;
@@ -154,14 +156,29 @@ public class MissionGatewayService {
      * 미션 거절은 userId + missionId 기준으로 mission 서버에서 다시 검증한다.
      */
     public MissionDto.RejectMissionResponse rejectMission(Long userId, Long missionId) {
+        return rejectMission(userId, missionId, null);
+    }
+
+    public MissionDto.RejectMissionResponse rejectMission(
+            Long userId,
+            Long missionId,
+            MissionDto.RejectMissionRequest request
+    ) {
         validateMissionId(missionId);
 
         try {
+            RejectMissionRequest.Builder grpcRequest = RejectMissionRequest.newBuilder()
+                    .setUserId(userId)
+                    .setMissionId(missionId);
+            if (request != null && request.reasonCode() != null) {
+                grpcRequest.setReasonCode(request.reasonCode());
+            }
+            if (request != null && request.reasonText() != null) {
+                grpcRequest.setReasonText(request.reasonText());
+            }
+
             RejectMissionResponse response = missionStub.rejectMission(
-                    RejectMissionRequest.newBuilder()
-                            .setUserId(userId)
-                            .setMissionId(missionId)
-                            .build()
+                    grpcRequest.build()
             );
 
             return new MissionDto.RejectMissionResponse(
@@ -169,6 +186,47 @@ public class MissionGatewayService {
                     toRestMissionStatus(response.getStatus().name()),
                     response.getRejectedAt(),
                     response.getCharacterMessage()
+            );
+        } catch (StatusRuntimeException e) {
+            throw toGatewayException(e);
+        }
+    }
+
+    /**
+     * 미션 거절 이유 또는 완료 만족도 피드백을 mission 서버에 저장한다.
+     */
+    public MissionDto.MissionFeedbackResponse upsertMissionFeedback(
+            Long userId,
+            Long missionId,
+            MissionDto.UpsertMissionFeedbackRequest request
+    ) {
+        validateMissionId(missionId);
+        validateFeedbackRequest(request);
+
+        try {
+            UpsertMissionFeedbackRequest.Builder grpcRequest = UpsertMissionFeedbackRequest.newBuilder()
+                    .setUserId(userId)
+                    .setMissionId(missionId)
+                    .setFeedbackType(toGrpcFeedbackType(request.feedbackType()));
+            if (request.reaction() != null && !request.reaction().isBlank()) {
+                grpcRequest.setReaction(toGrpcFeedbackReaction(request.reaction()));
+            }
+            if (request.reasonCode() != null && !request.reasonCode().isBlank()) {
+                grpcRequest.setReasonCode(request.reasonCode());
+            }
+            if (request.reasonText() != null && !request.reasonText().isBlank()) {
+                grpcRequest.setReasonText(request.reasonText());
+            }
+
+            UpsertMissionFeedbackResponse response = missionStub.upsertMissionFeedback(grpcRequest.build());
+
+            return new MissionDto.MissionFeedbackResponse(
+                    response.getMissionId(),
+                    toRestFeedbackType(response.getFeedbackType().name()),
+                    toRestFeedbackReaction(response.getReaction().name()),
+                    emptyToNull(response.getReasonCode()),
+                    emptyToNull(response.getReasonText()),
+                    emptyToNull(response.getUpdatedAt())
             );
         } catch (StatusRuntimeException e) {
             throw toGatewayException(e);
@@ -362,6 +420,12 @@ public class MissionGatewayService {
         }
     }
 
+    private void validateFeedbackRequest(MissionDto.UpsertMissionFeedbackRequest request) {
+        if (request == null || request.feedbackType() == null || request.feedbackType().isBlank()) {
+            throw new MissionGatewayException(MissionGatewayErrorCode.MISSION_FEEDBACK_INVALID);
+        }
+    }
+
     private String toRestMissionStatus(String grpcStatus) {
         return removeGrpcPrefix(grpcStatus, "MISSION_STATUS_");
     }
@@ -376,6 +440,35 @@ public class MissionGatewayService {
 
     private String toRestCompletionInputType(String grpcInputType) {
         return removeGrpcPrefix(grpcInputType, "COMPLETION_INPUT_TYPE_");
+    }
+
+    private String toRestFeedbackType(String grpcFeedbackType) {
+        return removeGrpcPrefix(grpcFeedbackType, "MISSION_FEEDBACK_TYPE_");
+    }
+
+    private String toRestFeedbackReaction(String grpcReaction) {
+        String value = removeGrpcPrefix(grpcReaction, "MISSION_FEEDBACK_REACTION_");
+        return "UNSPECIFIED".equals(value) ? null : value;
+    }
+
+    private com.p5laris.proto.mission.v1.MissionFeedbackType toGrpcFeedbackType(String feedbackType) {
+        try {
+            return com.p5laris.proto.mission.v1.MissionFeedbackType.valueOf(
+                    "MISSION_FEEDBACK_TYPE_" + feedbackType.trim()
+            );
+        } catch (IllegalArgumentException e) {
+            throw new MissionGatewayException(MissionGatewayErrorCode.MISSION_FEEDBACK_INVALID);
+        }
+    }
+
+    private com.p5laris.proto.mission.v1.MissionFeedbackReaction toGrpcFeedbackReaction(String reaction) {
+        try {
+            return com.p5laris.proto.mission.v1.MissionFeedbackReaction.valueOf(
+                    "MISSION_FEEDBACK_REACTION_" + reaction.trim()
+            );
+        } catch (IllegalArgumentException e) {
+            throw new MissionGatewayException(MissionGatewayErrorCode.MISSION_FEEDBACK_INVALID);
+        }
     }
 
     private String removeGrpcPrefix(String value, String prefix) {
@@ -407,13 +500,21 @@ public class MissionGatewayService {
 
         return switch (code) {
             case NOT_FOUND -> new MissionGatewayException(toNotFoundErrorCode(description));
-            case INVALID_ARGUMENT -> new MissionGatewayException(MissionGatewayErrorCode.MISSION_ANSWER_INVALID);
+            case INVALID_ARGUMENT -> new MissionGatewayException(toInvalidArgumentErrorCode(description));
             case ALREADY_EXISTS -> new MissionGatewayException(MissionGatewayErrorCode.MISSION_ALREADY_COMPLETED);
             case RESOURCE_EXHAUSTED -> new MissionGatewayException(toResourceExhaustedErrorCode(description));
             case FAILED_PRECONDITION -> new MissionGatewayException(toFailedPreconditionErrorCode(description));
             case UNAVAILABLE -> new MissionGatewayException(toUnavailableErrorCode(description));
             default -> new BusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
         };
+    }
+
+    private MissionGatewayErrorCode toInvalidArgumentErrorCode(String description) {
+        if (contains(description, "피드백")) {
+            return MissionGatewayErrorCode.MISSION_FEEDBACK_INVALID;
+        }
+
+        return MissionGatewayErrorCode.MISSION_ANSWER_INVALID;
     }
 
     private MissionGatewayErrorCode toResourceExhaustedErrorCode(String description) {

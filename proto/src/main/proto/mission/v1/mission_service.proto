@@ -15,6 +15,7 @@ service MissionService {
   rpc RejectMission(RejectMissionRequest) returns (RejectMissionResponse);
   rpc StartCompletionSession(StartCompletionSessionRequest) returns (StartCompletionSessionResponse);
   rpc SubmitCompletionAnswer(SubmitCompletionAnswerRequest) returns (SubmitCompletionAnswerResponse);
+  rpc UpsertMissionFeedback(UpsertMissionFeedbackRequest) returns (UpsertMissionFeedbackResponse);
 }
 
 message PingPongRequest {
@@ -86,6 +87,8 @@ message RejectMissionRequest {
   int64 user_id = 1;
   int64 character_id = 2;
   int64 mission_id = 3;
+  optional string reason_code = 4;
+  optional string reason_text = 5;
 }
 
 message RejectMissionResponse {
@@ -122,6 +125,24 @@ message SubmitCompletionAnswerResponse {
   MissionReward reward = 4;
   WalletSnapshot wallet = 5;
   string character_message = 6;
+}
+
+message UpsertMissionFeedbackRequest {
+  int64 user_id = 1;
+  int64 mission_id = 2;
+  MissionFeedbackType feedback_type = 3;
+  MissionFeedbackReaction reaction = 4;
+  optional string reason_code = 5;
+  optional string reason_text = 6;
+}
+
+message UpsertMissionFeedbackResponse {
+  int64 mission_id = 1;
+  MissionFeedbackType feedback_type = 2;
+  MissionFeedbackReaction reaction = 3;
+  string reason_code = 4;
+  string reason_text = 5;
+  string updated_at = 6;
 }
 
 message Mission {
@@ -232,4 +253,16 @@ enum MissionDifficulty {
 enum CompletionInputType {
   COMPLETION_INPUT_TYPE_UNSPECIFIED = 0;
   COMPLETION_INPUT_TYPE_TEXT = 1;
+}
+
+enum MissionFeedbackType {
+  MISSION_FEEDBACK_TYPE_UNSPECIFIED = 0;
+  MISSION_FEEDBACK_TYPE_REJECTION = 1;
+  MISSION_FEEDBACK_TYPE_SATISFACTION = 2;
+}
+
+enum MissionFeedbackReaction {
+  MISSION_FEEDBACK_REACTION_UNSPECIFIED = 0;
+  MISSION_FEEDBACK_REACTION_LIKE = 1;
+  MISSION_FEEDBACK_REACTION_DISLIKE = 2;
 }

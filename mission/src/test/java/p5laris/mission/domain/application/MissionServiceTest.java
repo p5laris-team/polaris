@@ -8,6 +8,7 @@ import com.p5laris.proto.mission.v1.MissionStatus;
 import com.p5laris.proto.mission.v1.RejectMissionResponse;
 import com.p5laris.proto.mission.v1.StartCompletionSessionResponse;
 import com.p5laris.proto.mission.v1.SubmitCompletionAnswerResponse;
+import com.p5laris.proto.mission.v1.UpsertMissionFeedbackResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,11 +16,16 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
 import p5laris.mission.domain.domain.entity.MissionCompletionAnswer;
+import p5laris.mission.domain.domain.entity.MissionFeedback;
 import p5laris.mission.domain.domain.entity.MissionOutboxEvent;
 import p5laris.mission.domain.domain.entity.UserMission;
+import p5laris.mission.domain.domain.enums.MissionFeedbackReaction;
+import p5laris.mission.domain.domain.enums.MissionFeedbackReasonCode;
+import p5laris.mission.domain.domain.enums.MissionFeedbackType;
 import p5laris.mission.domain.domain.enums.MissionOutboxEventStatus;
 import p5laris.mission.domain.domain.enums.UserMissionStatus;
 import p5laris.mission.domain.domain.repository.MissionCompletionAnswerRepository;
+import p5laris.mission.domain.domain.repository.MissionFeedbackRepository;
 import p5laris.mission.domain.domain.repository.MissionOutboxEventRepository;
 import p5laris.mission.domain.domain.repository.MissionTemplateRepository;
 import p5laris.mission.domain.domain.repository.UserMissionRepository;
@@ -80,6 +86,9 @@ class MissionServiceTest {
     private MissionCompletionAnswerRepository missionCompletionAnswerRepository;
 
     @Autowired
+    private MissionFeedbackRepository missionFeedbackRepository;
+
+    @Autowired
     private MissionOutboxEventRepository missionOutboxEventRepository;
 
     @Autowired
@@ -100,6 +109,7 @@ class MissionServiceTest {
     @BeforeEach
     void setUp() {
         missionOutboxEventRepository.deleteAll();
+        missionFeedbackRepository.deleteAll();
         missionCompletionAnswerRepository.deleteAll();
         userMissionRepository.deleteAll();
         reset(walletRewardClient, aiMissionTextClient, characterProfileClient, notificationPushClient);
@@ -206,6 +216,33 @@ class MissionServiceTest {
         assertThat(current.hasMission()).isFalse();
         assertThat(saved.getStatus()).isEqualTo(UserMissionStatus.REJECTED);
         assertThat(saved.getRejectedAt()).isNotNull();
+    }
+
+    @Test
+    void 거절_이유가_없으면_JUST_SKIP으로_피드백을_저장한다() {
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+
+        missionService.rejectMission(USER_ID, created.getMission().getId());
+
+        MissionFeedback feedback = findFeedback(created.getMission().getId(), MissionFeedbackType.REJECTION);
+        assertThat(feedback.getReasonCode()).isEqualTo(MissionFeedbackReasonCode.JUST_SKIP);
+        assertThat(feedback.getReasonText()).isNull();
+    }
+
+    @Test
+    void 거절_이유와_사유를_선택적으로_저장한다() {
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+
+        missionService.rejectMission(
+                USER_ID,
+                created.getMission().getId(),
+                "TOO_HARD",
+                "오늘은 몸이 무거워"
+        );
+
+        MissionFeedback feedback = findFeedback(created.getMission().getId(), MissionFeedbackType.REJECTION);
+        assertThat(feedback.getReasonCode()).isEqualTo(MissionFeedbackReasonCode.TOO_HARD);
+        assertThat(feedback.getReasonText()).isEqualTo("오늘은 몸이 무거워");
     }
 
     @Test
@@ -463,6 +500,75 @@ class MissionServiceTest {
     }
 
     @Test
+    void 완료_미션에_만족도_피드백을_저장하고_다시_보내면_갱신한다() {
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        missionService.startCompletionSession(USER_ID, created.getMission().getId());
+        missionService.submitCompletionAnswer(USER_ID, created.getMission().getId(), "완료했어");
+
+        UpsertMissionFeedbackResponse liked = missionService.upsertMissionFeedback(
+                USER_ID,
+                created.getMission().getId(),
+                MissionFeedbackType.SATISFACTION,
+                MissionFeedbackReaction.LIKE,
+                null,
+                null
+        );
+        UpsertMissionFeedbackResponse disliked = missionService.upsertMissionFeedback(
+                USER_ID,
+                created.getMission().getId(),
+                MissionFeedbackType.SATISFACTION,
+                MissionFeedbackReaction.DISLIKE,
+                null,
+                null
+        );
+
+        MissionFeedback feedback = findFeedback(created.getMission().getId(), MissionFeedbackType.SATISFACTION);
+        assertThat(liked.getReaction().name()).isEqualTo("MISSION_FEEDBACK_REACTION_LIKE");
+        assertThat(disliked.getReaction().name()).isEqualTo("MISSION_FEEDBACK_REACTION_DISLIKE");
+        assertThat(feedback.getReaction()).isEqualTo(MissionFeedbackReaction.DISLIKE);
+        assertThat(missionFeedbackRepository.findAll())
+                .filteredOn(saved -> saved.getMissionId().equals(created.getMission().getId())
+                        && saved.getFeedbackType() == MissionFeedbackType.SATISFACTION)
+                .hasSize(1);
+    }
+
+    @Test
+    void 다른_유저의_미션에는_만족도_피드백을_저장할_수_없다() {
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        missionService.startCompletionSession(USER_ID, created.getMission().getId());
+        missionService.submitCompletionAnswer(USER_ID, created.getMission().getId(), "완료했어");
+
+        assertThatThrownBy(() -> missionService.upsertMissionFeedback(
+                9999L,
+                created.getMission().getId(),
+                MissionFeedbackType.SATISFACTION,
+                MissionFeedbackReaction.LIKE,
+                null,
+                null
+        ))
+                .isInstanceOf(MissionException.class)
+                .extracting("errorCode")
+                .isEqualTo(MissionErrorCode.MISSION_NOT_FOUND);
+    }
+
+    @Test
+    void 완료되지_않은_미션에는_만족도_피드백을_저장할_수_없다() {
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+
+        assertThatThrownBy(() -> missionService.upsertMissionFeedback(
+                USER_ID,
+                created.getMission().getId(),
+                MissionFeedbackType.SATISFACTION,
+                MissionFeedbackReaction.LIKE,
+                null,
+                null
+        ))
+                .isInstanceOf(MissionException.class)
+                .extracting("errorCode")
+                .isEqualTo(MissionErrorCode.MISSION_FEEDBACK_INVALID);
+    }
+
+    @Test
     void 완료_답변은_1자_이상_300자_이하여야_한다() {
         CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
         missionService.startCompletionSession(USER_ID, created.getMission().getId());
@@ -684,6 +790,12 @@ class MissionServiceTest {
     private MissionOutboxEvent findRewardOutbox(Long missionId) {
         return missionOutboxEventRepository
                 .findByIdempotencyKey("MISSION_REWARD:" + missionId)
+                .orElseThrow();
+    }
+
+    private MissionFeedback findFeedback(Long missionId, MissionFeedbackType feedbackType) {
+        return missionFeedbackRepository
+                .findByUserIdAndMissionIdAndFeedbackType(USER_ID, missionId, feedbackType)
                 .orElseThrow();
     }
 }
