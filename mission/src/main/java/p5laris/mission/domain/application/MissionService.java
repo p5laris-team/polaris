@@ -1,5 +1,6 @@
 package p5laris.mission.domain.application;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.p5laris.proto.mission.v1.CreateNextMissionResponse;
 import com.p5laris.proto.mission.v1.CompletionAnswer;
 import com.p5laris.proto.mission.v1.CompletionInputType;
@@ -25,12 +26,12 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import p5laris.mission.domain.application.event.MissionEventLogEvent;
 import p5laris.mission.domain.domain.entity.MissionCompletionAnswer;
-import p5laris.mission.domain.domain.entity.MissionRewardOutbox;
+import p5laris.mission.domain.domain.entity.MissionOutboxEvent;
 import p5laris.mission.domain.domain.entity.MissionTemplate;
 import p5laris.mission.domain.domain.entity.UserMission;
 import p5laris.mission.domain.domain.enums.UserMissionStatus;
 import p5laris.mission.domain.domain.repository.MissionCompletionAnswerRepository;
-import p5laris.mission.domain.domain.repository.MissionRewardOutboxRepository;
+import p5laris.mission.domain.domain.repository.MissionOutboxEventRepository;
 import p5laris.mission.domain.domain.repository.MissionTemplateRepository;
 import p5laris.mission.domain.domain.repository.UserMissionRepository;
 import p5laris.mission.domain.exception.MissionErrorCode;
@@ -89,13 +90,14 @@ public class MissionService {
     private final MissionTemplateSelector missionTemplateSelector;
     private final UserMissionRepository userMissionRepository;
     private final MissionCompletionAnswerRepository missionCompletionAnswerRepository;
-    private final MissionRewardOutboxRepository missionRewardOutboxRepository;
+    private final MissionOutboxEventRepository missionOutboxEventRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final AiMissionTextClient aiMissionTextClient;
     private final CharacterProfileClient characterProfileClient;
     private final WalletRewardClient walletRewardClient;
     private final MissionRewardDispatcher missionRewardDispatcher;
     private final TransactionTemplate transactionTemplate;
+    private final ObjectMapper objectMapper = new ObjectMapper();
     private final Clock clock;
 
     /**
@@ -417,7 +419,7 @@ public class MissionService {
      *
      * mission DB 쓰기와 wallet gRPC 호출을 한 트랜잭션에 넣지 않는다.
      * 답변 저장/상태 전환은 짧은 mission 트랜잭션으로 끝내고, 별조각 지급은 트랜잭션 밖에서 호출한다.
-     * wallet 지급 요청은 mission_reward_outbox를 통해 남기고, 성공하면 dispatcher가 보상 지급 완료 marker까지 저장한다.
+     * wallet 지급 요청은 mission_outbox_events에 기록하고, 성공하면 dispatcher가 보상 지급 완료 marker까지 저장한다.
      */
     public SubmitCompletionAnswerResponse submitCompletionAnswer(Long userId, Long missionId, String answerText) {
         String normalizedAnswer = validateAndNormalizeAnswer(answerText);
@@ -450,7 +452,7 @@ public class MissionService {
                 return new MissionCompletionContext(mission, answer, true, rewardIdempotencyKey, null);
             }
 
-            MissionRewardOutbox outbox = ensureRewardOutbox(mission, rewardIdempotencyKey, LocalDateTime.now(clock));
+            MissionOutboxEvent outbox = ensureRewardOutbox(mission, rewardIdempotencyKey, LocalDateTime.now(clock));
             return new MissionCompletionContext(mission, answer, false, rewardIdempotencyKey, outbox.getId());
         }
 
@@ -471,7 +473,7 @@ public class MissionService {
         answer.submit(normalizedAnswer, now);
         mission.complete(now);
         eventPublisher.publishEvent(MissionEventLogEvent.missionCompleted(mission, answer, toOccurredAt(now)));
-        MissionRewardOutbox outbox = ensureRewardOutbox(mission, rewardIdempotencyKey, now);
+        MissionOutboxEvent outbox = ensureRewardOutbox(mission, rewardIdempotencyKey, now);
 
         return new MissionCompletionContext(mission, answer, false, rewardIdempotencyKey, outbox.getId());
     }
@@ -490,14 +492,19 @@ public class MissionService {
         return missionRewardDispatcher.dispatchNow(context.rewardOutboxId());
     }
 
-    private MissionRewardOutbox ensureRewardOutbox(
+    private MissionOutboxEvent ensureRewardOutbox(
             UserMission mission,
             String rewardIdempotencyKey,
             LocalDateTime nextAttemptAt
     ) {
-        return missionRewardOutboxRepository.findByMissionId(mission.getId())
-                .orElseGet(() -> missionRewardOutboxRepository.save(MissionRewardOutbox.pending(
+        return missionOutboxEventRepository.findByIdempotencyKey(rewardIdempotencyKey)
+                .orElseGet(() -> missionOutboxEventRepository.save(MissionOutboxEvent.rewardRequested(
                         mission,
+                        objectMapper.valueToTree(new MissionRewardRequestedPayload(
+                                mission.getId(),
+                                mission.getUserId(),
+                                mission.getRewardStarPiece()
+                        )),
                         rewardIdempotencyKey,
                         nextAttemptAt
                 )));
