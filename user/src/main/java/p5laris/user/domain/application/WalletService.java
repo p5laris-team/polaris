@@ -64,10 +64,11 @@ public class WalletService {
     public StarPieceTransaction spendStarPiece(Long userId, int amount, String reason, String refType, Long refId, String idempotencyKey) {
         if (amount < 0) throw new IllegalArgumentException("Amount must be positive");
 
-        // 멱등성 체크
+        // 1. 멱등성 검증 (Idempotency Check)
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {
             Optional<StarPieceTransaction> existing = transactionRepository.findByIdempotencyKey(idempotencyKey);
             if (existing.isPresent()) {
+                // 이미 처리된 요청이면 재화 차감 없이 기존 성공 내역 즉시 반환 (Early Return)
                 return existing.get();
             }
         }
@@ -79,7 +80,7 @@ public class WalletService {
             throw new UserException(UserErrorCode.STAR_PIECE_NOT_ENOUGH);
         }
 
-        // 별조각 차감
+        // 2. 정상적인 별조각 차감 로직 수행
         wallet.useStarPiece(amount);
 
         String keyToSave = (idempotencyKey != null && !idempotencyKey.isBlank()) ? idempotencyKey : null;

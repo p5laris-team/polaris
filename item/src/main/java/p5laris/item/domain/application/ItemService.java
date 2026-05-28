@@ -184,7 +184,7 @@ public class ItemService {
         int totalPrice = item.getPrice() * quantity;
         final int finalQuantity = quantity;
 
-        // Transaction 1: PENDING 상태로 구매 기록 생성
+        // Transaction 1: 타 서버 호출 전, PENDING 상태로 구매 기록 먼저 생성 (아웃박스 역할)
         UserItemPurchase pendingPurchase = transactionTemplate.execute(status -> {
             UserItem tmpUserItem = userItemRepository.findByUserIdAndItemId(userId, itemId).orElse(null);
             if (tmpUserItem == null) {
@@ -200,14 +200,14 @@ public class ItemService {
                     .starPiece(0) // 아직 모름
                     .transactionId(0L) // 아직 모름
                     .idempotencyKey(idempotencyKey)
-                    .status("PENDING")
+                    .status("PENDING") // 상태를 먼저 PENDING으로 기록
                     .build();
             return userItemPurchaseRepository.save(purchase);
         });
 
         SpendStarPieceResponse spendResponse = null;
         try {
-            // 외부 gRPC 호출 (트랜잭션 밖에서 실행)
+            // Transaction 2: User 서버로 별조각 차감 API(gRPC) 호출 (트랜잭션 밖에서 실행)
             spendResponse = walletStub.spendStarPiece(
                 SpendStarPieceRequest.newBuilder()
                     .setUserId(userId)
@@ -231,8 +231,8 @@ public class ItemService {
                 });
                 throw new ItemException(ItemErrorCode.STAR_PIECE_NOT_ENOUGH);
             }
-            
-            // 네트워크/서버 에러 등: UNKNOWN 마킹 (스케줄러가 재처리)
+
+            // 통신 실패 시 상태를 UNKNOWN으로 변경하여 백그라운드 스케줄러가 처리하도록 위임
             transactionTemplate.execute(status -> {
                 UserItemPurchase p = userItemPurchaseRepository.findById(pendingPurchase.getId()).orElseThrow();
                 p.updateStatusWithRetry("UNKNOWN", java.time.LocalDateTime.now().plusMinutes(1));

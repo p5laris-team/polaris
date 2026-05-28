@@ -30,11 +30,12 @@ public class ItemPurchaseSagaScheduler {
 
     @Scheduled(fixedDelayString = "10000")
     public void recoverUnknownPurchases() {
+        // 1. 에러가 나서 UNKNOWN(또는 PENDING) 상태로 멈춰있는 구매 내역 조회
         List<UserItemPurchase> unknownPurchases = userItemPurchaseRepository.findUnknownPurchases(LocalDateTime.now());
         
         for (UserItemPurchase purchase : unknownPurchases) {
             try {
-                // 1. 유저 지갑에서 결제가 실제로 이루어졌는지 확인
+                // 2. User 서버에 결제(재화 차감)가 실제로 성공했었는지 확인
                 CheckTransactionResponse checkResponse = walletStub.checkTransaction(
                         CheckTransactionRequest.newBuilder()
                                 .setIdempotencyKey(purchase.getIdempotencyKey())
@@ -45,7 +46,7 @@ public class ItemPurchaseSagaScheduler {
                     UserItemPurchase p = userItemPurchaseRepository.findById(purchase.getId()).orElseThrow();
                     
                     if (checkResponse.getExists()) {
-                        // 2. 결제가 이루어졌다면 환불 진행 (보상 트랜잭션)
+                        // 3. 돈은 빠져나갔는데 아이템 지급이 안 된 상태이므로 환불 진행 (보상 트랜잭션)
                         log.info("Found orphan purchase transaction. Refunding {} star pieces for userId={}", 
                                 p.getPrice(), p.getUserId());
                                 
@@ -59,10 +60,10 @@ public class ItemPurchaseSagaScheduler {
                                         .setIdempotencyKey("REFUND_" + p.getIdempotencyKey())
                                         .build()
                         );
-                        
+                        // 4. 내역을 환불 완료(REFUNDED)로 상태 업데이트
                         p.updateStatus("REFUNDED");
                     } else {
-                        // 3. 결제가 안 되었다면 실패 처리
+                        // 5. 결제가 안 되었다면 실패 처리
                         p.updateStatus("FAILED");
                     }
                     

@@ -1,0 +1,20 @@
+global:
+  scrape_interval: 10s
+  evaluation_interval: 10s
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'polaris-services'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      # host.docker.internal을 사용하여 로컬 머신에서 구동 중인 스프링 부트 서버들에 접근
+      - targets: 
+          - 'host.docker.internal:8080' # Gateway
+          - 'host.docker.internal:8081' # User
+          - 'host.docker.internal:8082' # Item
+          - 'host.docker.internal:8083' # Mission
+          - 'host.docker.internal:8084' # Notification
+          - 'host.docker.internal:8085' # Event Log
