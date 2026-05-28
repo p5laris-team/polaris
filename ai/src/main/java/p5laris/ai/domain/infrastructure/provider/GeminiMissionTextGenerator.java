@@ -120,6 +120,13 @@ public class GeminiMissionTextGenerator implements ExternalMissionTextGenerator 
                 같은 표현이나 같은 행동을 반복하지 말고, 작게 시작할 수 있지만 새롭게 느껴지는 변주를 만든다.
                 category는 BASIC_ROUTINE, SPACE_RESET, BODY_CARE, OUTDOOR_LIGHT, MIND_RECORD, REST_RECOVERY, SOCIAL_LIGHT 중 하나만 쓴다.
                 difficulty는 EASY, NORMAL, CHALLENGE 중 하나만 쓴다.
+                recentMissionContext.environmentContext.currentTimeSlot과 timeSlotPolicy를 반드시 따른다.
+                timeSlotPolicy.blockedCategories에 포함된 category는 절대 선택하지 않는다.
+                timeSlotPolicy.blockedMissionKeywords에 포함된 표현이나 그와 같은 의미의 행동은 만들지 않는다.
+                currentTimeSlot이 NIGHT 또는 LATE_NIGHT이면 햇빛, 햇살, 햇볕, 낮 산책, 야외 빛 충전 미션을 만들지 않는다.
+                currentTimeSlot이 LATE_NIGHT이면 연락, 메시지, 전화, 점프, 달리기, 강한 운동, 잠을 깨우는 청소/정리 미션을 만들지 않는다.
+                currentTimeSlot이 LATE_NIGHT이면 REST_RECOVERY, MIND_RECORD, BASIC_ROUTINE 중심으로 아주 조용하고 짧은 미션을 만든다.
+                currentTimeSlot이 NIGHT이면 REST_RECOVERY, MIND_RECORD, BASIC_ROUTINE, 가벼운 SPACE_RESET 중심으로 만든다.
                 난이도 선택은 allowedDifficulties 안에서 missionIntensity를 목표 난이도로 맞추는 것을 원칙으로 한다.
                 missionIntensity가 NORMAL이고 allowedDifficulties에 NORMAL이 있으면 NORMAL을 선택한다. 단, 최근 거절/회피 태그가 NORMAL 자체와 직접 충돌할 때만 EASY로 낮춘다.
                 missionIntensity가 CHALLENGE이고 allowedDifficulties에 CHALLENGE가 있으며 challengeAlreadyUsedToday가 false면 CHALLENGE를 선택한다. 단, 최근 거절/회피 태그가 CHALLENGE 자체와 직접 충돌할 때만 NORMAL 이하로 낮춘다.
@@ -166,6 +173,13 @@ public class GeminiMissionTextGenerator implements ExternalMissionTextGenerator 
 
                 최근 미션 context JSON:
                 %s
+
+                시간대 정책 지시:
+                - recentMissionContext.environmentContext.currentTimeSlot을 현재 시간대 기준으로 사용한다.
+                - recentMissionContext.environmentContext.timeSlotPolicy.recommendedCategories를 우선 고려한다.
+                - recentMissionContext.environmentContext.timeSlotPolicy.blockedCategories는 선택하지 않는다.
+                - recentMissionContext.environmentContext.timeSlotPolicy.blockedMissionKeywords와 충돌하는 제목/설명/캐릭터 문구를 만들지 않는다.
+                - 밤과 새벽에는 햇빛/햇살/햇볕/낮 산책 계열 미션을 만들지 않는다.
 
                 난이도 선택 지시:
                 - onboarding context의 missionIntensity를 목표 난이도로 우선 반영한다.
