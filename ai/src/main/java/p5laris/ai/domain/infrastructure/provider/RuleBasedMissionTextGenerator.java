@@ -11,7 +11,7 @@ import p5laris.ai.domain.domain.policy.CharacterTonePolicy;
 import java.util.Objects;
 
 /**
- * 외부 AI 없이 캐릭터 타입별 규칙으로 문구를 만드는 rule-based generator다.
+ * 외부 AI 없이 seed 미션과 캐릭터 타입별 규칙으로 안전한 fallback 후보를 만드는 generator다.
  *
  * provider 장애 또는 운영에서 외부 AI를 끈 상태에서도 API 흐름을 유지하는 기본 구현체다.
  */
@@ -21,16 +21,20 @@ public class RuleBasedMissionTextGenerator implements MissionTextGenerator {
 
     private final CharacterTonePolicy characterTonePolicy;
 
-    // 캐릭터 타입을 해석한 뒤, 해당 캐릭터의 말투 정책으로 문구 3개를 만든다.
+    // 캐릭터 타입을 해석한 뒤 seed title/description에 캐릭터 말투 문구를 더해 fallback 후보를 만든다.
     @Override
     public MissionTextCandidate generate(MissionTextGenerationCommand command) {
         CharacterToneType toneType = characterTonePolicy.resolve(command.characterType());
         long variationSeed = variationSeed(command);
 
         return new MissionTextCandidate(
+                command.baseTitle(),
+                command.baseDescription(),
                 toneType.characterMessage(command.baseTitle(), variationSeed),
                 toneType.completionQuestion(variationSeed),
-                toneType.completionResponse(variationSeed)
+                toneType.completionResponse(variationSeed),
+                command.category(),
+                command.difficulty()
         );
     }
 
