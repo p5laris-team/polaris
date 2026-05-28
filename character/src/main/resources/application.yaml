@@ -48,6 +48,9 @@ grpc:
     notification:
       address: ${NOTIFICATION_GRPC_ADDRESS}
       negotiationType: plaintext
+    event-log:
+      address: ${EVENT_LOG_GRPC_ADDRESS}
+      negotiationType: plaintext
 
 character:
   state-notification:
