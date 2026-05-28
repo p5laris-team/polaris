@@ -42,8 +42,10 @@ import p5laris.mission.domain.infrastructure.grpc.OnboardingProfileClient.Onboar
 import p5laris.mission.domain.infrastructure.grpc.WalletRewardClient;
 import p5laris.mission.domain.infrastructure.grpc.WalletRewardResult;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 
@@ -80,6 +82,9 @@ class MissionServiceTest {
 
     @Autowired
     private MissionService missionService;
+
+    @Autowired
+    private Clock clock;
 
     @Autowired
     private MissionRewardDispatcher missionRewardDispatcher;
@@ -129,6 +134,7 @@ class MissionServiceTest {
                 .thenReturn(Optional.of("NOVA"));
         when(onboardingProfileClient.findProfile(anyLong()))
                 .thenReturn(Optional.empty());
+        ReflectionTestUtils.setField(missionService, "clock", clock);
         when(aiMissionTextClient.generateMissionTexts(any()))
                 .thenReturn(Optional.of(aiMissionTextResult(
                         501L,
@@ -341,7 +347,33 @@ class MissionServiceTest {
         assertThat(request.recentMissionContextJson())
                 .contains("\"policyContext\"")
                 .contains("\"allowedDifficulties\"")
+                .contains("\"environmentContext\"")
+                .contains("\"currentTimeSlot\"")
+                .contains("\"timeSlotPolicy\"")
+                .contains("\"blockedCategories\"")
+                .contains("\"blockedMissionKeywords\"")
                 .contains("\"recentMissions\"");
+    }
+
+    @Test
+    void 밤에_AI가_햇빛_미션을_반환하면_seed_template_fallback을_유지한다() {
+        ReflectionTestUtils.setField(missionService, "clock", fixedClockAt(2026, 5, 25, 22, 30));
+        when(aiMissionTextClient.generateMissionTexts(any()))
+                .thenReturn(Optional.of(aiMissionTextResult(
+                        801L,
+                        "짧은 햇빛 충전하기",
+                        "가능하다면 햇빛이나 밝은 곳에 1분 정도 머물러보세요.",
+                        "OUTDOOR_LIGHT",
+                        "EASY"
+                )));
+
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        UserMission savedMission = userMissionRepository.findById(created.getMission().getId()).orElseThrow();
+        var template = missionTemplateRepository.findById(savedMission.getMissionTemplateId()).orElseThrow();
+
+        assertThat(savedMission.getAiGenerationId()).isNull();
+        assertThat(savedMission.getTitle()).isEqualTo(template.getBaseTitle());
+        assertThat(savedMission.getCategory().name()).isNotEqualTo("OUTDOOR_LIGHT");
     }
 
     @Test
@@ -994,6 +1026,14 @@ class MissionServiceTest {
                 category,
                 difficulty,
                 fallbackUsed
+        );
+    }
+
+    private Clock fixedClockAt(int year, int month, int day, int hour, int minute) {
+        ZoneId zone = ZoneId.of("Asia/Seoul");
+        return Clock.fixed(
+                LocalDateTime.of(year, month, day, hour, minute).atZone(zone).toInstant(),
+                zone
         );
     }
 }
