@@ -17,6 +17,7 @@ import com.p5laris.proto.mission.v1.RejectMissionResponse;
 import com.p5laris.proto.mission.v1.StartCompletionSessionResponse;
 import com.p5laris.proto.mission.v1.SubmitCompletionAnswerResponse;
 import com.p5laris.proto.mission.v1.TodayMission;
+import com.p5laris.proto.mission.v1.UpsertMissionFeedbackResponse;
 import com.p5laris.proto.mission.v1.WalletSnapshot;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -26,11 +27,16 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import p5laris.mission.domain.application.event.MissionEventLogEvent;
 import p5laris.mission.domain.domain.entity.MissionCompletionAnswer;
+import p5laris.mission.domain.domain.entity.MissionFeedback;
 import p5laris.mission.domain.domain.entity.MissionOutboxEvent;
 import p5laris.mission.domain.domain.entity.MissionTemplate;
 import p5laris.mission.domain.domain.entity.UserMission;
+import p5laris.mission.domain.domain.enums.MissionFeedbackReaction;
+import p5laris.mission.domain.domain.enums.MissionFeedbackReasonCode;
+import p5laris.mission.domain.domain.enums.MissionFeedbackType;
 import p5laris.mission.domain.domain.enums.UserMissionStatus;
 import p5laris.mission.domain.domain.repository.MissionCompletionAnswerRepository;
+import p5laris.mission.domain.domain.repository.MissionFeedbackRepository;
 import p5laris.mission.domain.domain.repository.MissionOutboxEventRepository;
 import p5laris.mission.domain.domain.repository.MissionTemplateRepository;
 import p5laris.mission.domain.domain.repository.UserMissionRepository;
@@ -75,6 +81,7 @@ public class MissionService {
     private static final int COMPLETION_ANSWER_MIN_LENGTH = 1;
     private static final int COMPLETION_ANSWER_MAX_LENGTH = 300;
     private static final int ANSWER_PREVIEW_MAX_LENGTH = 40;
+    private static final int FEEDBACK_REASON_TEXT_MAX_LENGTH = 100;
     private static final String MISSION_REWARD_IDEMPOTENCY_KEY_PREFIX = "MISSION_REWARD:";
     private static final String MISSION_TEXT_REQUEST_ID_PREFIX = "MISSION_TEXT:";
     private static final String DEFAULT_COMPLETION_QUESTION = "해보고 나서 어땠어?";
@@ -90,6 +97,7 @@ public class MissionService {
     private final MissionTemplateSelector missionTemplateSelector;
     private final UserMissionRepository userMissionRepository;
     private final MissionCompletionAnswerRepository missionCompletionAnswerRepository;
+    private final MissionFeedbackRepository missionFeedbackRepository;
     private final MissionOutboxEventRepository missionOutboxEventRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final AiMissionTextClient aiMissionTextClient;
@@ -354,6 +362,16 @@ public class MissionService {
      */
     @Transactional
     public RejectMissionResponse rejectMission(Long userId, Long missionId) {
+        return rejectMission(userId, missionId, null, null);
+    }
+
+    @Transactional
+    public RejectMissionResponse rejectMission(
+            Long userId,
+            Long missionId,
+            String reasonCode,
+            String reasonText
+    ) {
         UserMission mission = userMissionRepository.findByIdAndUserId(missionId, userId)
                 .orElseThrow(() -> new MissionException(MissionErrorCode.MISSION_NOT_FOUND));
 
@@ -365,6 +383,7 @@ public class MissionService {
 
         LocalDateTime now = LocalDateTime.now(clock);
         mission.reject(now);
+        upsertRejectionFeedback(mission, reasonCode, reasonText);
         eventPublisher.publishEvent(MissionEventLogEvent.missionRejected(mission, toOccurredAt(now)));
 
         return RejectMissionResponse.newBuilder()
@@ -373,6 +392,38 @@ public class MissionService {
                 .setRejectedAt(formatDateTime(mission.getRejectedAt()))
                 .setCharacterMessage(REJECTION_CHARACTER_MESSAGE)
                 .build();
+    }
+
+    /**
+     * 거절 이유 또는 완료 만족도 피드백을 저장한다.
+     *
+     * 피드백은 보상 조건이 아니라 이후 자율 미션 개인화에 쓰는 입력 신호다.
+     */
+    @Transactional
+    public UpsertMissionFeedbackResponse upsertMissionFeedback(
+            Long userId,
+            Long missionId,
+            MissionFeedbackType feedbackType,
+            MissionFeedbackReaction reaction,
+            String reasonCode,
+            String reasonText
+    ) {
+        UserMission mission = userMissionRepository.findByIdAndUserId(missionId, userId)
+                .orElseThrow(() -> new MissionException(MissionErrorCode.MISSION_NOT_FOUND));
+
+        if (feedbackType == MissionFeedbackType.SATISFACTION) {
+            validateSatisfactionFeedback(mission, reaction);
+            MissionFeedback feedback = upsertSatisfactionFeedback(mission, reaction);
+            return toFeedbackResponse(feedback);
+        }
+
+        if (feedbackType == MissionFeedbackType.REJECTION) {
+            validateRejectionFeedback(mission);
+            MissionFeedback feedback = upsertRejectionFeedback(mission, reasonCode, reasonText);
+            return toFeedbackResponse(feedback);
+        }
+
+        throw new MissionException(MissionErrorCode.MISSION_FEEDBACK_INVALID);
     }
 
     /**
@@ -568,6 +619,75 @@ public class MissionService {
         return normalizedAnswer;
     }
 
+    private void validateSatisfactionFeedback(UserMission mission, MissionFeedbackReaction reaction) {
+        if (!mission.isCompleted() || reaction == null) {
+            throw new MissionException(MissionErrorCode.MISSION_FEEDBACK_INVALID);
+        }
+    }
+
+    private void validateRejectionFeedback(UserMission mission) {
+        if (mission.getStatus() != UserMissionStatus.REJECTED) {
+            throw new MissionException(MissionErrorCode.MISSION_FEEDBACK_INVALID);
+        }
+    }
+
+    private MissionFeedback upsertSatisfactionFeedback(
+            UserMission mission,
+            MissionFeedbackReaction reaction
+    ) {
+        MissionFeedback feedback = missionFeedbackRepository
+                .findByUserIdAndMissionIdAndFeedbackType(
+                        mission.getUserId(),
+                        mission.getId(),
+                        MissionFeedbackType.SATISFACTION
+                )
+                .orElseGet(() -> MissionFeedback.satisfaction(mission, reaction));
+        feedback.updateSatisfaction(reaction);
+        return missionFeedbackRepository.saveAndFlush(feedback);
+    }
+
+    private MissionFeedback upsertRejectionFeedback(
+            UserMission mission,
+            String reasonCode,
+            String reasonText
+    ) {
+        MissionFeedbackReasonCode normalizedReasonCode = toReasonCode(reasonCode);
+        String normalizedReasonText = normalizeReasonText(reasonText);
+        MissionFeedback feedback = missionFeedbackRepository
+                .findByUserIdAndMissionIdAndFeedbackType(
+                        mission.getUserId(),
+                        mission.getId(),
+                        MissionFeedbackType.REJECTION
+                )
+                .orElseGet(() -> MissionFeedback.rejection(mission, normalizedReasonCode, normalizedReasonText));
+        feedback.updateRejection(normalizedReasonCode, normalizedReasonText);
+        return missionFeedbackRepository.saveAndFlush(feedback);
+    }
+
+    private MissionFeedbackReasonCode toReasonCode(String reasonCode) {
+        if (reasonCode == null || reasonCode.isBlank()) {
+            return MissionFeedbackReasonCode.JUST_SKIP;
+        }
+
+        try {
+            return MissionFeedbackReasonCode.valueOf(reasonCode.trim());
+        } catch (IllegalArgumentException e) {
+            throw new MissionException(MissionErrorCode.MISSION_FEEDBACK_INVALID);
+        }
+    }
+
+    private String normalizeReasonText(String reasonText) {
+        if (reasonText == null || reasonText.isBlank()) {
+            return null;
+        }
+
+        String normalized = reasonText.trim();
+        if (normalized.length() > FEEDBACK_REASON_TEXT_MAX_LENGTH) {
+            throw new MissionException(MissionErrorCode.MISSION_FEEDBACK_INVALID);
+        }
+        return normalized;
+    }
+
     private String rewardIdempotencyKey(Long missionId) {
         return MISSION_REWARD_IDEMPOTENCY_KEY_PREFIX + missionId;
     }
@@ -609,6 +729,24 @@ public class MissionService {
                         .build())
                 .setCharacterMessage(mission.getCompletionCharacterResponse())
                 .build();
+    }
+
+    private UpsertMissionFeedbackResponse toFeedbackResponse(MissionFeedback feedback) {
+        UpsertMissionFeedbackResponse.Builder builder = UpsertMissionFeedbackResponse.newBuilder()
+                .setMissionId(feedback.getMissionId())
+                .setFeedbackType(toProtoFeedbackType(feedback.getFeedbackType()))
+                .setUpdatedAt(formatDateTime(feedback.getUpdatedAt()));
+
+        if (feedback.getReaction() != null) {
+            builder.setReaction(toProtoFeedbackReaction(feedback.getReaction()));
+        }
+        if (feedback.getReasonCode() != null) {
+            builder.setReasonCode(feedback.getReasonCode().name());
+        }
+        if (feedback.getReasonText() != null) {
+            builder.setReasonText(feedback.getReasonText());
+        }
+        return builder.build();
     }
 
     /**
@@ -761,6 +899,20 @@ public class MissionService {
     // DB enum 이름에 proto enum prefix를 붙여 MissionStatus proto enum으로 변환한다.
     private MissionStatus toProtoStatus(UserMissionStatus status) {
         return MissionStatus.valueOf("MISSION_STATUS_" + status.name());
+    }
+
+    private com.p5laris.proto.mission.v1.MissionFeedbackType toProtoFeedbackType(MissionFeedbackType feedbackType) {
+        return com.p5laris.proto.mission.v1.MissionFeedbackType.valueOf(
+                "MISSION_FEEDBACK_TYPE_" + feedbackType.name()
+        );
+    }
+
+    private com.p5laris.proto.mission.v1.MissionFeedbackReaction toProtoFeedbackReaction(
+            MissionFeedbackReaction reaction
+    ) {
+        return com.p5laris.proto.mission.v1.MissionFeedbackReaction.valueOf(
+                "MISSION_FEEDBACK_REACTION_" + reaction.name()
+        );
     }
 
     // proto에는 LocalDateTime 타입을 직접 쓰지 않으므로 ISO 문자열로 변환한다.

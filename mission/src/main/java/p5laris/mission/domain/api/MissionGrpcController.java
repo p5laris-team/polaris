@@ -18,11 +18,15 @@ import com.p5laris.proto.mission.v1.StartCompletionSessionRequest;
 import com.p5laris.proto.mission.v1.StartCompletionSessionResponse;
 import com.p5laris.proto.mission.v1.SubmitCompletionAnswerRequest;
 import com.p5laris.proto.mission.v1.SubmitCompletionAnswerResponse;
+import com.p5laris.proto.mission.v1.UpsertMissionFeedbackRequest;
+import com.p5laris.proto.mission.v1.UpsertMissionFeedbackResponse;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import lombok.RequiredArgsConstructor;
 import net.devh.boot.grpc.server.service.GrpcService;
 import p5laris.mission.domain.application.MissionService;
+import p5laris.mission.domain.domain.enums.MissionFeedbackReaction;
+import p5laris.mission.domain.domain.enums.MissionFeedbackType;
 import p5laris.mission.domain.exception.MissionErrorCode;
 import p5laris.mission.domain.exception.MissionException;
 
@@ -144,7 +148,9 @@ public class MissionGrpcController extends MissionServiceGrpc.MissionServiceImpl
         try {
             RejectMissionResponse response = missionService.rejectMission(
                     request.getUserId(),
-                    request.getMissionId()
+                    request.getMissionId(),
+                    request.hasReasonCode() ? request.getReasonCode() : null,
+                    request.hasReasonText() ? request.getReasonText() : null
             );
 
             responseObserver.onNext(response);
@@ -201,17 +207,63 @@ public class MissionGrpcController extends MissionServiceGrpc.MissionServiceImpl
         }
     }
 
+    // 미션 거절 이유나 완료 만족도 피드백을 저장하는 gRPC 엔드포인트다.
+    // 피드백은 보상 조건이 아니라 이후 자율 미션 개인화에 쓰는 입력 신호다.
+    @Override
+    public void upsertMissionFeedback(
+            UpsertMissionFeedbackRequest request,
+            StreamObserver<UpsertMissionFeedbackResponse> responseObserver
+    ) {
+        try {
+            UpsertMissionFeedbackResponse response = missionService.upsertMissionFeedback(
+                    request.getUserId(),
+                    request.getMissionId(),
+                    toDomainFeedbackType(request.getFeedbackType()),
+                    toDomainFeedbackReaction(request.getReaction()),
+                    request.hasReasonCode() ? request.getReasonCode() : null,
+                    request.hasReasonText() ? request.getReasonText() : null
+            );
+
+            responseObserver.onNext(response);
+            responseObserver.onCompleted();
+        } catch (MissionException e) {
+            responseObserver.onError(toStatus(e).withDescription(e.getMessage()).asRuntimeException());
+        } catch (Exception e) {
+            responseObserver.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+        }
+    }
+
     // mission 도메인 예외를 gateway가 이해할 수 있는 gRPC status로 변환한다.
     private Status toStatus(MissionException e) {
         MissionErrorCode errorCode = e.getErrorCode();
 
         return switch (errorCode) {
             case MISSION_NOT_FOUND, MISSION_TEMPLATE_NOT_FOUND -> Status.NOT_FOUND;
-            case MISSION_ANSWER_INVALID -> Status.INVALID_ARGUMENT;
+            case MISSION_ANSWER_INVALID, MISSION_FEEDBACK_INVALID -> Status.INVALID_ARGUMENT;
             case MISSION_ALREADY_COMPLETED -> Status.ALREADY_EXISTS;
             case MISSION_DAILY_LIMIT_EXCEEDED, MISSION_REJECT_LIMIT_EXCEEDED -> Status.RESOURCE_EXHAUSTED;
             case MISSION_REWARD_FAILED -> Status.UNAVAILABLE;
             case MISSION_INVALID_STATUS, MISSION_ACTIVE_ALREADY_EXISTS -> Status.FAILED_PRECONDITION;
+        };
+    }
+
+    private MissionFeedbackType toDomainFeedbackType(
+            com.p5laris.proto.mission.v1.MissionFeedbackType feedbackType
+    ) {
+        return switch (feedbackType) {
+            case MISSION_FEEDBACK_TYPE_REJECTION -> MissionFeedbackType.REJECTION;
+            case MISSION_FEEDBACK_TYPE_SATISFACTION -> MissionFeedbackType.SATISFACTION;
+            default -> throw new MissionException(MissionErrorCode.MISSION_FEEDBACK_INVALID);
+        };
+    }
+
+    private MissionFeedbackReaction toDomainFeedbackReaction(
+            com.p5laris.proto.mission.v1.MissionFeedbackReaction reaction
+    ) {
+        return switch (reaction) {
+            case MISSION_FEEDBACK_REACTION_LIKE -> MissionFeedbackReaction.LIKE;
+            case MISSION_FEEDBACK_REACTION_DISLIKE -> MissionFeedbackReaction.DISLIKE;
+            default -> null;
         };
     }
 
