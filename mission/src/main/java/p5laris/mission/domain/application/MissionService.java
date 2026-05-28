@@ -28,6 +28,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 import p5laris.mission.domain.application.event.MissionEventLogEvent;
 import p5laris.mission.domain.application.personalization.MissionPersonalizationContext;
 import p5laris.mission.domain.application.personalization.MissionPersonalizationContextBuilder;
+import p5laris.mission.domain.application.time.MissionTimePolicy;
+import p5laris.mission.domain.application.time.MissionTimeSlot;
 import p5laris.mission.domain.domain.entity.MissionCompletionAnswer;
 import p5laris.mission.domain.domain.entity.MissionFeedback;
 import p5laris.mission.domain.domain.entity.MissionOutboxEvent;
@@ -292,7 +294,7 @@ public class MissionService {
         validateMissionCreatable(userId, today);
 
         LocalDateTime now = LocalDateTime.now(clock);
-        MissionTemplate template = selectNextTemplate(userId, today);
+        MissionTemplate template = selectNextTemplate(userId, today, MissionTimeSlot.from(now));
         int nextStackOrder = userMissionRepository.findMaxStackOrder(userId, today) + 1;
         UserMission userMission = UserMission.offerFromTemplate(
                 userId,
@@ -424,7 +426,16 @@ public class MissionService {
                 || completionQuestion == null
                 || completionCharacterResponse == null
                 || containsCharacterInterpretation(title, description)
-                || containsProhibitedExpression(title, description, characterMessage, completionQuestion, completionCharacterResponse)) {
+                || containsProhibitedExpression(title, description, characterMessage, completionQuestion, completionCharacterResponse)
+                || !isAllowedForMissionTimeSlot(
+                        fallbackMission,
+                        category.get(),
+                        title,
+                        description,
+                        characterMessage,
+                        completionQuestion,
+                        completionCharacterResponse
+                )) {
             return Optional.empty();
         }
 
@@ -501,6 +512,17 @@ public class MissionService {
             }
         }
         return false;
+    }
+
+    private boolean isAllowedForMissionTimeSlot(
+            UserMission fallbackMission,
+            MissionCategoryType category,
+            String... values
+    ) {
+        LocalDateTime offeredAt = fallbackMission.getOfferedAt() == null
+                ? LocalDateTime.now(clock)
+                : fallbackMission.getOfferedAt();
+        return MissionTimePolicy.isCandidateAllowed(MissionTimeSlot.from(offeredAt), category, values);
     }
 
     private int rewardForDifficulty(MissionDifficultyType difficulty) {
@@ -728,7 +750,7 @@ public class MissionService {
      * 같은 날 같은 fallback 미션이 반복 제안되는 느낌을 줄이기 위해 오늘 사용한 template id는 제외한다.
      * 후보 선택 순서는 id 오름차순이 아니라 날짜 기준 랜덤 정책에 맡긴다.
      */
-    private MissionTemplate selectNextTemplate(Long userId, LocalDate missionDate) {
+    private MissionTemplate selectNextTemplate(Long userId, LocalDate missionDate, MissionTimeSlot timeSlot) {
         List<Long> usedTemplateIds = userMissionRepository.findMissionTemplateIdsByUserIdAndMissionDate(userId, missionDate);
         Set<Long> usedTemplateIdSet = Set.copyOf(usedTemplateIds);
         List<MissionTemplate> activeTemplates = missionTemplateRepository.findByActiveTrueOrderByIdAsc();
@@ -737,7 +759,8 @@ public class MissionService {
                 userId,
                 missionDate,
                 activeTemplates,
-                usedTemplateIdSet
+                usedTemplateIdSet,
+                timeSlot
         );
     }
 

@@ -1,6 +1,8 @@
 package p5laris.mission.domain.application;
 
 import org.springframework.stereotype.Component;
+import p5laris.mission.domain.application.time.MissionTimePolicy;
+import p5laris.mission.domain.application.time.MissionTimeSlot;
 import p5laris.mission.domain.domain.entity.MissionTemplate;
 import p5laris.mission.domain.exception.MissionErrorCode;
 import p5laris.mission.domain.exception.MissionException;
@@ -33,15 +35,26 @@ public class MissionTemplateSelector {
             List<MissionTemplate> activeTemplates,
             Set<Long> usedTemplateIds
     ) {
-        Objects.requireNonNull(userId, "userId must not be null");
-        Objects.requireNonNull(missionDate, "missionDate must not be null");
-        Objects.requireNonNull(activeTemplates, "activeTemplates must not be null");
+        return selectNextTemplate(userId, missionDate, activeTemplates, usedTemplateIds, null);
+    }
+
+    public MissionTemplate selectNextTemplate(
+            Long userId,
+            LocalDate missionDate,
+            List<MissionTemplate> activeTemplates,
+            Set<Long> usedTemplateIds,
+            MissionTimeSlot timeSlot
+    ) {
+        Objects.requireNonNull(userId, "사용자 ID는 비어 있을 수 없습니다.");
+        Objects.requireNonNull(missionDate, "미션 날짜는 비어 있을 수 없습니다.");
+        Objects.requireNonNull(activeTemplates, "활성 미션 템플릿 목록은 비어 있을 수 없습니다.");
 
         Set<Long> usedIds = usedTemplateIds == null ? Set.of() : usedTemplateIds;
 
         return activeTemplates.stream()
                 .filter(template -> template.getId() != null)
                 .filter(template -> !usedIds.contains(template.getId()))
+                .filter(template -> timeSlot == null || MissionTimePolicy.isTemplateAllowed(timeSlot, template))
                 .min(Comparator
                         .comparing((MissionTemplate template) -> dailyRandomKey(userId, missionDate, template.getId()))
                         .thenComparing(MissionTemplate::getId))
@@ -65,7 +78,7 @@ public class MissionTemplateSelector {
                     .digest(value.getBytes(StandardCharsets.UTF_8));
             return HexFormat.of().formatHex(digest);
         } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 algorithm is unavailable.", e);
+            throw new IllegalStateException("SHA-256 해시 알고리즘을 사용할 수 없습니다.", e);
         }
     }
 }

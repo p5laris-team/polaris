@@ -38,7 +38,7 @@ public class GlobalExceptionHandler {
             HttpMessageNotReadableException.class
     })
     public ResponseEntity<ApiResponse<Void>> handleInvalidInput(Exception e, HttpServletRequest request) {
-        log.warn("Invalid input : {}", e.getMessage());
+        log.warn("잘못된 입력값입니다. message={}", e.getMessage());
 
         return ResponseEntity
                 .status(CommonErrorCode.INVALID_INPUT_VALUE.getStatus())
@@ -51,7 +51,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleException(Exception e, HttpServletRequest request) {
-        log.error("Unhandled exception", e);
+        log.error("처리되지 않은 예외가 발생했습니다.", e);
 
         return ResponseEntity
                 .internalServerError() // 500 Internal Server Error

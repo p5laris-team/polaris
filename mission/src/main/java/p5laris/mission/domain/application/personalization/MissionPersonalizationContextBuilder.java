@@ -6,6 +6,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import p5laris.mission.domain.application.time.MissionTimePolicy;
+import p5laris.mission.domain.application.time.MissionTimeSlot;
 import p5laris.mission.domain.domain.entity.MissionCompletionAnswer;
 import p5laris.mission.domain.domain.entity.MissionFeedback;
 import p5laris.mission.domain.domain.entity.UserMission;
@@ -111,10 +113,14 @@ public class MissionPersonalizationContextBuilder {
 
     private Map<String, Object> environmentContext(LocalDate targetDate) {
         LocalDateTime now = LocalDateTime.now(clock);
+        MissionTimeSlot currentTimeSlot = MissionTimeSlot.from(now);
         Map<String, Object> context = new LinkedHashMap<>();
         context.put("date", targetDate.toString());
         context.put("dayOfWeek", targetDate.getDayOfWeek().name());
-        context.put("timeSlot", timeSlot(now.getHour()));
+        // 기존 timeSlot key는 유지하고, 명확한 신규 key와 상세 정책을 함께 내려준다.
+        context.put("timeSlot", currentTimeSlot.name());
+        context.put("currentTimeSlot", currentTimeSlot.name());
+        context.put("timeSlotPolicy", MissionTimePolicy.toContext(currentTimeSlot));
         context.put("weather", null);
         return context;
     }
@@ -205,22 +211,6 @@ public class MissionPersonalizationContextBuilder {
             return normalized;
         }
         return normalized.substring(0, maxLength) + "...";
-    }
-
-    private String timeSlot(int hour) {
-        if (hour < 6) {
-            return "DAWN";
-        }
-        if (hour < 12) {
-            return "MORNING";
-        }
-        if (hour < 18) {
-            return "AFTERNOON";
-        }
-        if (hour < 22) {
-            return "EVENING";
-        }
-        return "NIGHT";
     }
 
     private String toJson(Map<String, Object> value) {

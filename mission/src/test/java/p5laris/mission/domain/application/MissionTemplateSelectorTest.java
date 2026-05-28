@@ -2,7 +2,9 @@ package p5laris.mission.domain.application;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
+import p5laris.mission.domain.application.time.MissionTimeSlot;
 import p5laris.mission.domain.domain.entity.MissionTemplate;
+import p5laris.mission.domain.domain.enums.MissionCategoryType;
 import p5laris.mission.domain.exception.MissionErrorCode;
 import p5laris.mission.domain.exception.MissionException;
 
@@ -74,6 +76,43 @@ class MissionTemplateSelectorTest {
                 .isEqualTo(MissionErrorCode.MISSION_TEMPLATE_NOT_FOUND);
     }
 
+    @Test
+    void 밤에는_OUTDOOR_LIGHT_템플릿을_선택하지_않는다() {
+        List<MissionTemplate> templates = List.of(
+                template(1, MissionCategoryType.OUTDOOR_LIGHT, "짧은 햇빛 충전하기", "햇빛에 잠깐 머물러보세요."),
+                template(2, MissionCategoryType.REST_RECOVERY, "잠들기 전 호흡 고르기", "자리에서 천천히 숨을 골라보세요.")
+        );
+
+        MissionTemplate selected = selector.selectNextTemplate(
+                1001L,
+                LocalDate.of(2026, 5, 25),
+                templates,
+                Set.of(),
+                MissionTimeSlot.NIGHT
+        );
+
+        assertThat(selected.getCategory()).isEqualTo(MissionCategoryType.REST_RECOVERY);
+    }
+
+    @Test
+    void 새벽에는_SOCIAL_LIGHT와_OUTDOOR_LIGHT_템플릿을_선택하지_않는다() {
+        List<MissionTemplate> templates = List.of(
+                template(1, MissionCategoryType.OUTDOOR_LIGHT, "햇빛 있는 곳 보기", "햇빛이나 밝은 곳을 잠깐 바라보세요."),
+                template(2, MissionCategoryType.SOCIAL_LIGHT, "안부 메시지 보내기", "생각나는 사람에게 짧게 메시지를 보내보세요."),
+                template(3, MissionCategoryType.MIND_RECORD, "오늘 마음 한 줄 쓰기", "지금 마음을 한 줄로 적어보세요.")
+        );
+
+        MissionTemplate selected = selector.selectNextTemplate(
+                1001L,
+                LocalDate.of(2026, 5, 25),
+                templates,
+                Set.of(),
+                MissionTimeSlot.LATE_NIGHT
+        );
+
+        assertThat(selected.getCategory()).isEqualTo(MissionCategoryType.MIND_RECORD);
+    }
+
     private List<MissionTemplate> templates(long... ids) {
         return java.util.Arrays.stream(ids)
                 .mapToObj(this::template)
@@ -90,5 +129,21 @@ class MissionTemplateSelectorTest {
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException("MissionTemplate test fixture creation failed.", e);
         }
+    }
+
+    private MissionTemplate template(
+            long id,
+            MissionCategoryType category,
+            String baseTitle,
+            String baseDescription
+    ) {
+        MissionTemplate template = template(id);
+        ReflectionTestUtils.setField(template, "category", category);
+        ReflectionTestUtils.setField(template, "baseTitle", baseTitle);
+        ReflectionTestUtils.setField(template, "baseDescription", baseDescription);
+        ReflectionTestUtils.setField(template, "fallbackCharacterMessage", baseTitle);
+        ReflectionTestUtils.setField(template, "fallbackQuestion", "어땠나요?");
+        ReflectionTestUtils.setField(template, "fallbackCompletionResponse", "좋아요.");
+        return template;
     }
 }

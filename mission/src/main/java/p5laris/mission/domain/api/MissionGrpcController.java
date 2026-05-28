@@ -23,6 +23,7 @@ import com.p5laris.proto.mission.v1.UpsertMissionFeedbackResponse;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.server.service.GrpcService;
 import p5laris.mission.domain.application.MissionService;
 import p5laris.mission.domain.domain.enums.MissionFeedbackReaction;
@@ -34,7 +35,10 @@ import java.time.LocalDate;
 
 @GrpcService
 @RequiredArgsConstructor
+@Slf4j
 public class MissionGrpcController extends MissionServiceGrpc.MissionServiceImplBase {
+
+    private static final String INTERNAL_ERROR_DESCRIPTION = "미션 서비스 처리 중 오류가 발생했습니다.";
 
     private final MissionService missionService;
 
@@ -67,7 +71,7 @@ public class MissionGrpcController extends MissionServiceGrpc.MissionServiceImpl
         } catch (MissionException e) {
             responseObserver.onError(toStatus(e).withDescription(e.getMessage()).asRuntimeException());
         } catch (Exception e) {
-            responseObserver.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+            responseObserver.onError(internalError("현재 미션 조회", e));
         }
     }
 
@@ -89,7 +93,7 @@ public class MissionGrpcController extends MissionServiceGrpc.MissionServiceImpl
         } catch (MissionException e) {
             responseObserver.onError(toStatus(e).withDescription(e.getMessage()).asRuntimeException());
         } catch (Exception e) {
-            responseObserver.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+            responseObserver.onError(internalError("오늘 미션 히스토리 조회", e));
         }
     }
 
@@ -111,7 +115,7 @@ public class MissionGrpcController extends MissionServiceGrpc.MissionServiceImpl
         } catch (MissionException e) {
             responseObserver.onError(toStatus(e).withDescription(e.getMessage()).asRuntimeException());
         } catch (Exception e) {
-            responseObserver.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+            responseObserver.onError(internalError("미션 상세 조회", e));
         }
     }
 
@@ -134,7 +138,7 @@ public class MissionGrpcController extends MissionServiceGrpc.MissionServiceImpl
         } catch (MissionException e) {
             responseObserver.onError(toStatus(e).withDescription(e.getMessage()).asRuntimeException());
         } catch (Exception e) {
-            responseObserver.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+            responseObserver.onError(internalError("다음 미션 생성", e));
         }
     }
 
@@ -158,7 +162,7 @@ public class MissionGrpcController extends MissionServiceGrpc.MissionServiceImpl
         } catch (MissionException e) {
             responseObserver.onError(toStatus(e).withDescription(e.getMessage()).asRuntimeException());
         } catch (Exception e) {
-            responseObserver.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+            responseObserver.onError(internalError("미션 거절", e));
         }
     }
 
@@ -180,7 +184,7 @@ public class MissionGrpcController extends MissionServiceGrpc.MissionServiceImpl
         } catch (MissionException e) {
             responseObserver.onError(toStatus(e).withDescription(e.getMessage()).asRuntimeException());
         } catch (Exception e) {
-            responseObserver.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+            responseObserver.onError(internalError("완료 질문 세션 시작", e));
         }
     }
 
@@ -203,7 +207,7 @@ public class MissionGrpcController extends MissionServiceGrpc.MissionServiceImpl
         } catch (MissionException e) {
             responseObserver.onError(toStatus(e).withDescription(e.getMessage()).asRuntimeException());
         } catch (Exception e) {
-            responseObserver.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+            responseObserver.onError(internalError("완료 답변 제출", e));
         }
     }
 
@@ -229,8 +233,13 @@ public class MissionGrpcController extends MissionServiceGrpc.MissionServiceImpl
         } catch (MissionException e) {
             responseObserver.onError(toStatus(e).withDescription(e.getMessage()).asRuntimeException());
         } catch (Exception e) {
-            responseObserver.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+            responseObserver.onError(internalError("미션 피드백 저장", e));
         }
+    }
+
+    private RuntimeException internalError(String operation, Exception e) {
+        log.error("미션 gRPC 처리 중 알 수 없는 예외가 발생했습니다. operation={}", operation, e);
+        return Status.INTERNAL.withDescription(INTERNAL_ERROR_DESCRIPTION).asRuntimeException();
     }
 
     // mission 도메인 예외를 gateway가 이해할 수 있는 gRPC status로 변환한다.
