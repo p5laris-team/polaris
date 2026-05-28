@@ -32,6 +32,7 @@ import p5laris.mission.domain.infrastructure.grpc.NotificationPushClient;
 import p5laris.mission.domain.infrastructure.grpc.WalletRewardClient;
 import p5laris.mission.domain.infrastructure.grpc.WalletRewardResult;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Optional;
 
@@ -219,11 +220,15 @@ class MissionServiceTest {
         GetTodayMissionsResponse response = missionService.getTodayMissions(USER_ID);
 
         assertThat(response.getMissionDate()).isNotBlank();
-        assertThat(response.getMaxDailyOffers()).isEqualTo(15);
+        assertThat(response.getMaxDailyOffers()).isEqualTo(20);
+        assertThat(response.getMaxDailyRewardCount()).isEqualTo(20);
         assertThat(response.getOfferedCount()).isEqualTo(3);
         assertThat(response.getCompletedCount()).isEqualTo(1);
         assertThat(response.getRejectedCount()).isEqualTo(1);
-        assertThat(response.getRemainingOfferCount()).isEqualTo(12);
+        assertThat(response.getRemainingOfferCount()).isEqualTo(19);
+        assertThat(response.getRemainingRewardCount()).isEqualTo(19);
+        assertThat(response.getMaxDailyRejectCount()).isEqualTo(10);
+        assertThat(response.getRemainingRejectCount()).isEqualTo(9);
         assertThat(response.hasCurrentMissionId()).isTrue();
         assertThat(response.getCurrentMissionId()).isEqualTo(third.getMission().getId());
         assertThat(response.getMissionsList()).hasSize(3);
@@ -231,10 +236,14 @@ class MissionServiceTest {
         assertThat(response.getMissions(0).getStackOrder()).isEqualTo(1);
         assertThat(response.getMissions(0).getStatus()).isEqualTo(MissionStatus.MISSION_STATUS_COMPLETED);
         assertThat(response.getMissions(0).getCompletedAt()).isNotBlank();
+        assertThat(response.getMissions(0).getCompletionQuestion()).isEqualTo("AI가 만든 완료 질문");
+        assertThat(response.getMissions(0).getAnswerPreview()).isEqualTo("첫 번째 미션 완료");
+        assertThat(response.getMissions(0).getHasAnswer()).isTrue();
         assertThat(response.getMissions(1).getId()).isEqualTo(second.getMission().getId());
         assertThat(response.getMissions(1).getStackOrder()).isEqualTo(2);
         assertThat(response.getMissions(1).getStatus()).isEqualTo(MissionStatus.MISSION_STATUS_REJECTED);
         assertThat(response.getMissions(1).getRejectedAt()).isNotBlank();
+        assertThat(response.getMissions(1).getHasAnswer()).isFalse();
         assertThat(response.getMissions(2).getId()).isEqualTo(third.getMission().getId());
         assertThat(response.getMissions(2).getStackOrder()).isEqualTo(3);
         assertThat(response.getMissions(2).getStatus()).isEqualTo(MissionStatus.MISSION_STATUS_OFFERED);
@@ -243,16 +252,88 @@ class MissionServiceTest {
     }
 
     @Test
-    void 하루_미션_제안은_최대_15개까지만_가능하다() {
-        for (int i = 0; i < 15; i++) {
+    void 하루_미션_보상은_완료_20회까지만_가능하다() {
+        for (int i = 0; i < 20; i++) {
             CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
-            missionService.rejectMission(USER_ID, created.getMission().getId());
+            missionService.startCompletionSession(USER_ID, created.getMission().getId());
+            missionService.submitCompletionAnswer(USER_ID, created.getMission().getId(), "완료 " + i);
         }
 
         assertThatThrownBy(() -> missionService.createNextMission(USER_ID, CHARACTER_ID, 0L))
                 .isInstanceOf(MissionException.class)
                 .extracting("errorCode")
                 .isEqualTo(MissionErrorCode.MISSION_DAILY_LIMIT_EXCEEDED);
+    }
+
+    @Test
+    void 거절한_미션은_하루_보상_횟수를_차감하지_않는다() {
+        for (int i = 0; i < 2; i++) {
+            CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+            missionService.rejectMission(USER_ID, created.getMission().getId());
+        }
+
+        GetTodayMissionsResponse response = missionService.getTodayMissions(USER_ID);
+
+        assertThat(response.getCompletedRewardCount()).isZero();
+        assertThat(response.getRejectedCount()).isEqualTo(2);
+        assertThat(response.getRemainingRewardCount()).isEqualTo(20);
+        assertThat(response.getRemainingOfferCount()).isEqualTo(20);
+        assertThat(response.getRemainingRejectCount()).isEqualTo(8);
+    }
+
+    @Test
+    void 날짜별_미션_조회는_요청한_날짜의_목록만_반환한다() {
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        LocalDate today = LocalDate.parse(missionService.getTodayMissions(USER_ID).getMissionDate());
+        LocalDate yesterday = today.minusDays(1);
+
+        GetTodayMissionsResponse todayResponse = missionService.getTodayMissions(USER_ID, today);
+        GetTodayMissionsResponse yesterdayResponse = missionService.getTodayMissions(USER_ID, yesterday);
+
+        assertThat(todayResponse.getMissionDate()).isEqualTo(today.toString());
+        assertThat(todayResponse.getMissionsList())
+                .extracting("id")
+                .containsExactly(created.getMission().getId());
+        assertThat(yesterdayResponse.getMissionDate()).isEqualTo(yesterday.toString());
+        assertThat(yesterdayResponse.getMissionsList()).isEmpty();
+    }
+
+    @Test
+    void 미션_상세_조회는_완료_질문과_답변_전문을_반환한다() {
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        missionService.startCompletionSession(USER_ID, created.getMission().getId());
+        missionService.submitCompletionAnswer(
+                USER_ID,
+                created.getMission().getId(),
+                "오늘은 책상 위 컵을 치우고 물도 한 모금 마셨어"
+        );
+
+        var response = missionService.getMissionDetail(USER_ID, created.getMission().getId());
+
+        assertThat(response.getMission().getId()).isEqualTo(created.getMission().getId());
+        assertThat(response.getMission().getQuestion().getText()).isEqualTo("AI가 만든 완료 질문");
+        assertThat(response.getMission().getHasAnswer()).isTrue();
+        assertThat(response.getMission().getAnswer().getText())
+                .isEqualTo("오늘은 책상 위 컵을 치우고 물도 한 모금 마셨어");
+        assertThat(response.getMission().getAnswer().getAnsweredAt()).isNotBlank();
+        assertThat(response.getMission().getCompletionCharacterResponse()).isEqualTo("AI가 만든 완료 반응");
+    }
+
+    @Test
+    void 하루_미션_거절은_10회까지만_가능하고_초과하면_현재_미션을_유지한다() {
+        for (int i = 0; i < 10; i++) {
+            CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+            missionService.rejectMission(USER_ID, created.getMission().getId());
+        }
+        CreateNextMissionResponse current = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+
+        assertThatThrownBy(() -> missionService.rejectMission(USER_ID, current.getMission().getId()))
+                .isInstanceOf(MissionException.class)
+                .extracting("errorCode")
+                .isEqualTo(MissionErrorCode.MISSION_REJECT_LIMIT_EXCEEDED);
+
+        UserMission saved = userMissionRepository.findById(current.getMission().getId()).orElseThrow();
+        assertThat(saved.getStatus()).isEqualTo(UserMissionStatus.OFFERED);
     }
 
     @Test

@@ -4,6 +4,8 @@ import com.p5laris.proto.mission.v1.CreateNextMissionRequest;
 import com.p5laris.proto.mission.v1.CreateNextMissionResponse;
 import com.p5laris.proto.mission.v1.GetCurrentMissionRequest;
 import com.p5laris.proto.mission.v1.GetCurrentMissionResponse;
+import com.p5laris.proto.mission.v1.GetMissionDetailRequest;
+import com.p5laris.proto.mission.v1.GetMissionDetailResponse;
 import com.p5laris.proto.mission.v1.GetTodayMissionsRequest;
 import com.p5laris.proto.mission.v1.GetTodayMissionsResponse;
 import com.p5laris.proto.mission.v1.HealthStatus;
@@ -23,6 +25,8 @@ import net.devh.boot.grpc.server.service.GrpcService;
 import p5laris.mission.domain.application.MissionService;
 import p5laris.mission.domain.exception.MissionErrorCode;
 import p5laris.mission.domain.exception.MissionException;
+
+import java.time.LocalDate;
 
 @GrpcService
 @RequiredArgsConstructor
@@ -72,7 +76,30 @@ public class MissionGrpcController extends MissionServiceGrpc.MissionServiceImpl
     ) {
         try {
             GetTodayMissionsResponse response = missionService.getTodayMissions(
-                    request.getUserId()
+                    request.getUserId(),
+                    parseMissionDate(request)
+            );
+
+            responseObserver.onNext(response);
+            responseObserver.onCompleted();
+        } catch (MissionException e) {
+            responseObserver.onError(toStatus(e).withDescription(e.getMessage()).asRuntimeException());
+        } catch (Exception e) {
+            responseObserver.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+        }
+    }
+
+    // 미션 상세 조회 gRPC 엔드포인트다.
+    // 목록에서는 답변 미리보기만 내려주고, 전문은 상세 조회에서만 반환한다.
+    @Override
+    public void getMissionDetail(
+            GetMissionDetailRequest request,
+            StreamObserver<GetMissionDetailResponse> responseObserver
+    ) {
+        try {
+            GetMissionDetailResponse response = missionService.getMissionDetail(
+                    request.getUserId(),
+                    request.getMissionId()
             );
 
             responseObserver.onNext(response);
@@ -182,9 +209,17 @@ public class MissionGrpcController extends MissionServiceGrpc.MissionServiceImpl
             case MISSION_NOT_FOUND, MISSION_TEMPLATE_NOT_FOUND -> Status.NOT_FOUND;
             case MISSION_ANSWER_INVALID -> Status.INVALID_ARGUMENT;
             case MISSION_ALREADY_COMPLETED -> Status.ALREADY_EXISTS;
-            case MISSION_DAILY_LIMIT_EXCEEDED -> Status.RESOURCE_EXHAUSTED;
+            case MISSION_DAILY_LIMIT_EXCEEDED, MISSION_REJECT_LIMIT_EXCEEDED -> Status.RESOURCE_EXHAUSTED;
             case MISSION_REWARD_FAILED -> Status.UNAVAILABLE;
             case MISSION_INVALID_STATUS, MISSION_ACTIVE_ALREADY_EXISTS -> Status.FAILED_PRECONDITION;
         };
+    }
+
+    private LocalDate parseMissionDate(GetTodayMissionsRequest request) {
+        if (!request.hasMissionDate() || request.getMissionDate().isBlank()) {
+            return null;
+        }
+
+        return LocalDate.parse(request.getMissionDate());
     }
 }

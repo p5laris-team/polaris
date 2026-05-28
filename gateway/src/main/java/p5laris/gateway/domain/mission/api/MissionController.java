@@ -2,16 +2,20 @@ package p5laris.gateway.domain.mission.api;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import p5laris.gateway.domain.mission.api.dto.MissionDto;
 import p5laris.gateway.domain.mission.infrastructure.grpc.MissionGatewayService;
 import p5laris.gateway.global.auth.LoginUserId;
 import p5laris.gateway.global.common.ApiResponse;
+
+import java.time.LocalDate;
 
 /**
  * mission 도메인을 외부 REST API로 노출하는 gateway 컨트롤러다.
@@ -44,6 +48,28 @@ public class MissionController {
             @LoginUserId Long userId
     ) {
         return ApiResponse.success(missionGatewayService.getTodayMissions(userId));
+    }
+
+    /**
+     * 로그인한 사용자의 특정 날짜 미션 stack 전체와 진행 현황을 조회한다.
+     */
+    @GetMapping("/v1/missions/history")
+    public ApiResponse<MissionDto.TodayMissionsResponse> getMissionHistory(
+            @LoginUserId Long userId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date
+    ) {
+        return ApiResponse.success(missionGatewayService.getMissionHistory(userId, date));
+    }
+
+    /**
+     * 미션 1개의 상세 정보와 완료 답변 전문을 조회한다.
+     */
+    @GetMapping("/v1/missions/{missionId}")
+    public ApiResponse<MissionDto.MissionDetailResponse> getMissionDetail(
+            @LoginUserId Long userId,
+            @PathVariable Long missionId
+    ) {
+        return ApiResponse.success(missionGatewayService.getMissionDetail(userId, missionId));
     }
 
     /**

@@ -5,7 +5,9 @@ import com.p5laris.proto.mission.v1.CompletionAnswer;
 import com.p5laris.proto.mission.v1.CompletionInputType;
 import com.p5laris.proto.mission.v1.CompletionQuestion;
 import com.p5laris.proto.mission.v1.GetCurrentMissionResponse;
+import com.p5laris.proto.mission.v1.GetMissionDetailResponse;
 import com.p5laris.proto.mission.v1.GetTodayMissionsResponse;
+import com.p5laris.proto.mission.v1.MissionDetail;
 import com.p5laris.proto.mission.v1.MissionCategory;
 import com.p5laris.proto.mission.v1.MissionDifficulty;
 import com.p5laris.proto.mission.v1.MissionReward;
@@ -51,9 +53,12 @@ import java.time.format.DateTimeFormatter;
 import java.util.EnumSet;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -62,11 +67,13 @@ public class MissionService {
     /*
      * 아래 값들은 운영 토글이 아니라 현재 MVP 정책을 표현하는 도메인 상수다.
      * 배포 환경별로 달라져야 하는 값은 application.yaml/env로 분리하고,
-     * 하루 제안 수/답변 길이/멱등키 prefix처럼 API 정책과 함께 움직이는 값만 코드에 둔다.
+     * 하루 보상/거절 횟수, 답변 길이, 멱등키 prefix처럼 API 정책과 함께 움직이는 값만 코드에 둔다.
      */
-    private static final int DAILY_MISSION_OFFER_LIMIT = 15;
+    private static final int MAX_DAILY_REWARD_COUNT = 20;
+    private static final int MAX_DAILY_REJECT_COUNT = 10;
     private static final int COMPLETION_ANSWER_MIN_LENGTH = 1;
     private static final int COMPLETION_ANSWER_MAX_LENGTH = 300;
+    private static final int ANSWER_PREVIEW_MAX_LENGTH = 40;
     private static final String MISSION_REWARD_IDEMPOTENCY_KEY_PREFIX = "MISSION_REWARD:";
     private static final String MISSION_TEXT_REQUEST_ID_PREFIX = "MISSION_TEXT:";
     private static final String DEFAULT_COMPLETION_QUESTION = "해보고 나서 어땠어?";
@@ -117,29 +124,64 @@ public class MissionService {
 
     /**
      * 오늘 유저에게 제안된 미션 stack 전체를 조회한다.
-     *
-     * 이 메서드는 홈/미션 히스토리 화면용 읽기 API라 상태를 바꾸지 않는다.
-     * 하루 최대 15개 정책이 있으므로 pagination 없이 stackOrder 오름차순으로 반환한다.
      */
     @Transactional(readOnly = true)
     public GetTodayMissionsResponse getTodayMissions(Long userId) {
-        LocalDate today = LocalDate.now(clock);
-        List<UserMission> missions = userMissionRepository.findByUserIdAndMissionDateOrderByStackOrderAsc(userId, today);
+        return getTodayMissions(userId, LocalDate.now(clock));
+    }
+
+    /**
+     * 특정 날짜의 미션 stack 전체를 조회한다.
+     *
+     * 이 메서드는 홈/미션 히스토리 화면용 읽기 API라 상태를 바꾸지 않는다.
+     * 목록에는 답변 전문 대신 미리보기만 포함하고, 전문은 상세 조회에서만 내려준다.
+     */
+    @Transactional(readOnly = true)
+    public GetTodayMissionsResponse getTodayMissions(Long userId, LocalDate missionDate) {
+        LocalDate targetDate = missionDate == null ? LocalDate.now(clock) : missionDate;
+        List<UserMission> missions = userMissionRepository.findByUserIdAndMissionDateOrderByStackOrderAsc(userId, targetDate);
+        Map<Long, MissionCompletionAnswer> answerByMissionId = findAnswersByMissionId(missions);
+
+        int completedCount = countByStatus(missions, UserMissionStatus.COMPLETED);
+        int rejectedCount = countByStatus(missions, UserMissionStatus.REJECTED);
+        int remainingRewardCount = remainingCount(MAX_DAILY_REWARD_COUNT, completedCount);
+        int remainingRejectCount = remainingCount(MAX_DAILY_REJECT_COUNT, rejectedCount);
 
         GetTodayMissionsResponse.Builder builder = GetTodayMissionsResponse.newBuilder()
-                .setMissionDate(today.toString())
-                .setMaxDailyOffers(DAILY_MISSION_OFFER_LIMIT)
+                .setMissionDate(targetDate.toString())
+                // 기존 클라이언트 호환 필드다. 신규 화면은 maxDailyRewardCount를 우선 사용한다.
+                .setMaxDailyOffers(MAX_DAILY_REWARD_COUNT)
                 .setOfferedCount(missions.size())
-                .setCompletedCount(countByStatus(missions, UserMissionStatus.COMPLETED))
-                .setRejectedCount(countByStatus(missions, UserMissionStatus.REJECTED))
-                .setRemainingOfferCount(Math.max(0, DAILY_MISSION_OFFER_LIMIT - missions.size()));
+                .setCompletedCount(completedCount)
+                .setRejectedCount(rejectedCount)
+                // 기존 클라이언트가 거절을 보상 횟수 차감으로 오해하지 않도록 남은 보상 횟수를 내려준다.
+                .setRemainingOfferCount(remainingRewardCount)
+                .setMaxDailyRewardCount(MAX_DAILY_REWARD_COUNT)
+                .setCompletedRewardCount(completedCount)
+                .setRemainingRewardCount(remainingRewardCount)
+                .setMaxDailyRejectCount(MAX_DAILY_REJECT_COUNT)
+                .setRemainingRejectCount(remainingRejectCount);
 
         findCurrentMissionId(missions).ifPresent(builder::setCurrentMissionId);
         missions.stream()
-                .map(this::toProtoTodayMission)
+                .map(mission -> toProtoTodayMission(mission, answerByMissionId.get(mission.getId())))
                 .forEach(builder::addMissions);
 
         return builder.build();
+    }
+
+    /**
+     * 미션 상세 화면에서 완료 질문과 사용자가 제출한 답변 전문을 조회한다.
+     */
+    @Transactional(readOnly = true)
+    public GetMissionDetailResponse getMissionDetail(Long userId, Long missionId) {
+        UserMission mission = userMissionRepository.findByIdAndUserId(missionId, userId)
+                .orElseThrow(() -> new MissionException(MissionErrorCode.MISSION_NOT_FOUND));
+        Optional<MissionCompletionAnswer> answer = missionCompletionAnswerRepository.findByMissionId(mission.getId());
+
+        return GetMissionDetailResponse.newBuilder()
+                .setMission(toProtoMissionDetail(mission, answer.orElse(null)))
+                .build();
     }
 
     /**
@@ -179,9 +221,28 @@ public class MissionService {
             throw new MissionException(MissionErrorCode.MISSION_ACTIVE_ALREADY_EXISTS);
         }
 
-        long todayOfferCount = userMissionRepository.countByUserIdAndMissionDate(userId, today);
-        if (todayOfferCount >= DAILY_MISSION_OFFER_LIMIT) {
+        validateDailyRewardLimit(userId, today);
+    }
+
+    private void validateDailyRewardLimit(Long userId, LocalDate missionDate) {
+        long completedCount = userMissionRepository.countByUserIdAndMissionDateAndStatus(
+                userId,
+                missionDate,
+                UserMissionStatus.COMPLETED
+        );
+        if (completedCount >= MAX_DAILY_REWARD_COUNT) {
             throw new MissionException(MissionErrorCode.MISSION_DAILY_LIMIT_EXCEEDED);
+        }
+    }
+
+    private void validateDailyRejectLimit(Long userId, LocalDate missionDate) {
+        long rejectedCount = userMissionRepository.countByUserIdAndMissionDateAndStatus(
+                userId,
+                missionDate,
+                UserMissionStatus.REJECTED
+        );
+        if (rejectedCount >= MAX_DAILY_REJECT_COUNT) {
+            throw new MissionException(MissionErrorCode.MISSION_REJECT_LIMIT_EXCEEDED);
         }
     }
 
@@ -298,6 +359,8 @@ public class MissionService {
             throw new MissionException(MissionErrorCode.MISSION_INVALID_STATUS);
         }
 
+        validateDailyRejectLimit(userId, mission.getMissionDate());
+
         LocalDateTime now = LocalDateTime.now(clock);
         mission.reject(now);
         eventPublisher.publishEvent(MissionEventLogEvent.missionRejected(mission, toOccurredAt(now)));
@@ -394,6 +457,8 @@ public class MissionService {
         if (!mission.isAnswering()) {
             throw new MissionException(MissionErrorCode.MISSION_INVALID_STATUS);
         }
+
+        validateDailyRewardLimit(userId, mission.getMissionDate());
 
         MissionCompletionAnswer answer = missionCompletionAnswerRepository.findByMissionId(mission.getId())
                 .orElseThrow(() -> new MissionException(MissionErrorCode.MISSION_INVALID_STATUS));
@@ -562,10 +627,10 @@ public class MissionService {
     /**
      * 오늘 미션 히스토리 목록에 필요한 최소 필드만 proto로 변환한다.
      *
-     * 완료 답변 전문은 민감할 수 있어 히스토리 응답에 포함하지 않는다.
+     * 완료 답변 전문은 민감할 수 있어 히스토리 응답에는 미리보기만 포함한다.
      */
-    private TodayMission toProtoTodayMission(UserMission mission) {
-        return TodayMission.newBuilder()
+    private TodayMission toProtoTodayMission(UserMission mission, MissionCompletionAnswer answer) {
+        TodayMission.Builder builder = TodayMission.newBuilder()
                 .setId(mission.getId())
                 .setStackOrder(mission.getStackOrder())
                 .setTitle(mission.getTitle())
@@ -576,14 +641,80 @@ public class MissionService {
                 .setCharacterMessage(mission.getCharacterMessage())
                 .setCreatedAt(formatDateTime(mission.getCreatedAt()))
                 .setCompletedAt(formatDateTime(mission.getCompletedAt()))
+                .setRejectedAt(formatDateTime(mission.getRejectedAt()));
+
+        if (answer != null) {
+            builder.setCompletionQuestion(answer.getQuestionText());
+            if (answer.isAnswered()) {
+                builder.setHasAnswer(true);
+                builder.setAnswerPreview(toAnswerPreview(answer.getAnswerText()));
+            }
+        }
+
+        return builder.build();
+    }
+
+    private MissionDetail toProtoMissionDetail(UserMission mission, MissionCompletionAnswer answer) {
+        MissionDetail.Builder builder = MissionDetail.newBuilder()
+                .setId(mission.getId())
+                .setMissionDate(mission.getMissionDate().toString())
+                .setStackOrder(mission.getStackOrder())
+                .setTitle(mission.getTitle())
+                .setDescription(mission.getDescription())
+                .setCharacterMessage(mission.getCharacterMessage())
+                .setCategory(toProtoCategory(mission))
+                .setDifficulty(toProtoDifficulty(mission))
+                .setRewardStarPiece(mission.getRewardStarPiece())
+                .setStatus(toProtoStatus(mission.getStatus()))
+                .setCreatedAt(formatDateTime(mission.getCreatedAt()))
+                .setCompletedAt(formatDateTime(mission.getCompletedAt()))
                 .setRejectedAt(formatDateTime(mission.getRejectedAt()))
-                .build();
+                .setCompletionCharacterResponse(nullToEmpty(mission.getCompletionCharacterResponse()));
+
+        if (answer != null) {
+            builder.setQuestion(toProtoQuestion(answer));
+            if (answer.isAnswered()) {
+                builder.setAnswer(toProtoAnswer(answer));
+                builder.setHasAnswer(true);
+            }
+        }
+
+        return builder.build();
     }
 
     private int countByStatus(List<UserMission> missions, UserMissionStatus status) {
         return (int) missions.stream()
                 .filter(mission -> mission.getStatus() == status)
                 .count();
+    }
+
+    private Map<Long, MissionCompletionAnswer> findAnswersByMissionId(List<UserMission> missions) {
+        if (missions.isEmpty()) {
+            return Map.of();
+        }
+
+        List<Long> missionIds = missions.stream()
+                .map(UserMission::getId)
+                .toList();
+        return missionCompletionAnswerRepository.findByMissionIdIn(missionIds).stream()
+                .collect(Collectors.toMap(MissionCompletionAnswer::getMissionId, Function.identity()));
+    }
+
+    private int remainingCount(int maxCount, int usedCount) {
+        return Math.max(0, maxCount - usedCount);
+    }
+
+    private String toAnswerPreview(String answerText) {
+        if (answerText == null || answerText.isBlank()) {
+            return "";
+        }
+
+        String normalized = answerText.strip();
+        if (normalized.length() <= ANSWER_PREVIEW_MAX_LENGTH) {
+            return normalized;
+        }
+
+        return normalized.substring(0, ANSWER_PREVIEW_MAX_LENGTH) + "...";
     }
 
     private Optional<Long> findCurrentMissionId(List<UserMission> missions) {
@@ -631,6 +762,10 @@ public class MissionService {
             return "";
         }
         return DATE_TIME_FORMATTER.format(dateTime);
+    }
+
+    private String nullToEmpty(String value) {
+        return value == null ? "" : value;
     }
 
     private OffsetDateTime toOccurredAt(LocalDateTime dateTime) {
