@@ -177,18 +177,35 @@ jobs:
 
               git fetch origin "$BASE_REF"
 
-              AFFECTED_PROJECTS="$(./nx show projects --affected --base="origin/$BASE_REF" --head=HEAD || true)"
-
-              echo "Affected projects:"
+              RAW_AFFECTED_PROJECTS="$(
+                NX_DAEMON=false ./nx show projects --affected --base="origin/$BASE_REF" --head=HEAD
+              )"
+              
+              echo "Raw affected projects:"
+              if [ -n "$RAW_AFFECTED_PROJECTS" ]; then
+                echo "$RAW_AFFECTED_PROJECTS"
+              else
+                echo "(none)"
+              fi
+              echo ""
+              
+              AFFECTED_PROJECTS="$(
+                printf '%s\n' "$RAW_AFFECTED_PROJECTS" \
+                  | sed 's/^://g' \
+                  | grep -E '^(gateway|user|character|item|mission|event-log|ai|notification)$' \
+                  || true
+              )"
+              
+              echo "Filtered deployable affected projects:"
               if [ -n "$AFFECTED_PROJECTS" ]; then
                 echo "$AFFECTED_PROJECTS"
               else
                 echo "(none)"
               fi
               echo ""
-
+              
               SERVICES=()
-
+              
               for candidate in "${DEPLOY_ORDER[@]}"; do
                 if contains_line "$candidate" "$AFFECTED_PROJECTS"; then
                   SERVICES+=("$candidate")

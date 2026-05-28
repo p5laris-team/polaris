@@ -1,3 +1,6 @@
+server:
+  port: ${SERVER_PORT}
+
 spring:
   config:
     import: optional:file:.env[.properties]
@@ -81,3 +84,15 @@ ai:
     window-seconds: ${AI_RATE_LIMIT_WINDOW_SECONDS}
     key-ttl-seconds: ${AI_RATE_LIMIT_KEY_TTL_SECONDS}
     fail-closed: ${AI_RATE_LIMIT_FAIL_CLOSED}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      show-details: never
+  health:
+    db:
+      enabled: true
