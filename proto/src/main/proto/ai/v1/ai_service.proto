@@ -53,6 +53,10 @@ message GenerateMissionTextsResponse {
   bool fallback_used = 6;
   AiErrorType error_type = 7;
   string request_id = 8;
+  string title = 9;
+  string description = 10;
+  string category = 11;
+  string difficulty = 12;
 }
 
 enum AiGenerationStatus {
