@@ -9,7 +9,7 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "outbox_events")
+@Table(name = "user_outbox_events")
 @Getter
 @Builder
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
