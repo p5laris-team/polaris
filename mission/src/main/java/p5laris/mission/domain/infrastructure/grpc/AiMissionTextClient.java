@@ -13,8 +13,8 @@ import java.util.Optional;
 /**
  * mission 모듈에서 ai 모듈의 GenerateMissionTexts gRPC를 호출하는 adapter다.
  *
- * AI 문구 생성은 사용자 흐름을 보조하는 기능이므로, 호출 실패를 mission 생성 실패로 전파하지 않는다.
- * 실패하면 Optional.empty()를 반환하고 MissionService가 seed template fallback 문구로 계속 진행한다.
+ * AI 자율 미션 후보 생성은 사용자 흐름을 보조하는 기능이므로, 호출 실패를 mission 생성 실패로 전파하지 않는다.
+ * 실패하면 Optional.empty()를 반환하고 MissionService가 seed template fallback 미션으로 계속 진행한다.
  */
 @Slf4j
 @Component
@@ -24,9 +24,9 @@ public class AiMissionTextClient {
     private AiServiceGrpc.AiServiceBlockingStub aiStub;
 
     /**
-     * 캐릭터 말투 기반 미션 문구 생성을 요청한다.
+     * 개인화 기반 자율 미션 후보 생성을 요청한다.
      *
-     * requestId는 ai 모듈에서 멱등키처럼 사용되므로 같은 미션 문구 생성 시도에는 같은 값이 들어가야 한다.
+     * requestId는 ai 모듈에서 멱등키처럼 사용되므로 같은 미션 후보 생성 시도에는 같은 값이 들어가야 한다.
      */
     public Optional<AiMissionTextResult> generateMissionTexts(AiMissionTextRequest request) {
         try {
@@ -51,17 +51,21 @@ public class AiMissionTextClient {
 
             return Optional.of(new AiMissionTextResult(
                     response.getAiGenerationId(),
+                    response.getTitle(),
+                    response.getDescription(),
                     response.getCharacterMessage(),
                     response.getCompletionQuestion(),
                     response.getCompletionCharacterResponse(),
+                    response.getCategory(),
+                    response.getDifficulty(),
                     response.getFallbackUsed()
             ));
         } catch (StatusRuntimeException e) {
-            log.warn("AI 미션 문구 생성 실패. requestId={}, status={}",
+            log.warn("AI 자율 미션 후보 생성 실패. requestId={}, status={}",
                     request.requestId(), e.getStatus().getCode(), e);
             return Optional.empty();
         } catch (Exception e) {
-            log.warn("AI 미션 문구 생성 실패. requestId={}", request.requestId(), e);
+            log.warn("AI 자율 미션 후보 생성 실패. requestId={}", request.requestId(), e);
             return Optional.empty();
         }
     }

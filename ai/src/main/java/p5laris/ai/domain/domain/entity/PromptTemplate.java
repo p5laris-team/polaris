@@ -22,7 +22,7 @@ import java.time.LocalDateTime;
 /**
  * AI 프롬프트 템플릿을 DB에서 버전 관리하기 위한 엔티티다.
  *
- * 지금 PR에서는 seed prompt를 저장만 해두고, 실제 외부 provider 호출은 다음 PR에서 붙인다.
+ * 생성 이력에는 사용한 템플릿 id만 남기고, 실제 provider 프롬프트 조립은 infrastructure 계층에서 수행한다.
  */
 @Entity
 @Getter

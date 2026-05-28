@@ -139,9 +139,13 @@ class DelegatingMissionTextGeneratorTest {
         public MissionTextCandidate generate(MissionTextGenerationCommand command) {
             called++;
             return new MissionTextCandidate(
+                    "gemini title",
+                    "gemini description",
                     "gemini message",
                     "gemini question",
-                    "gemini response"
+                    "gemini response",
+                    "BASIC_ROUTINE",
+                    "EASY"
             );
         }
     }

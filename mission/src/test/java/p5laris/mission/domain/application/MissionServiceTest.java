@@ -11,6 +11,7 @@ import com.p5laris.proto.mission.v1.SubmitCompletionAnswerResponse;
 import com.p5laris.proto.mission.v1.UpsertMissionFeedbackResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -32,14 +33,18 @@ import p5laris.mission.domain.domain.repository.UserMissionRepository;
 import p5laris.mission.domain.exception.MissionErrorCode;
 import p5laris.mission.domain.exception.MissionException;
 import p5laris.mission.domain.infrastructure.grpc.AiMissionTextClient;
+import p5laris.mission.domain.infrastructure.grpc.AiMissionTextRequest;
 import p5laris.mission.domain.infrastructure.grpc.AiMissionTextResult;
 import p5laris.mission.domain.infrastructure.grpc.CharacterProfileClient;
 import p5laris.mission.domain.infrastructure.grpc.NotificationPushClient;
+import p5laris.mission.domain.infrastructure.grpc.OnboardingProfileClient;
+import p5laris.mission.domain.infrastructure.grpc.OnboardingProfileClient.OnboardingProfileSnapshot;
 import p5laris.mission.domain.infrastructure.grpc.WalletRewardClient;
 import p5laris.mission.domain.infrastructure.grpc.WalletRewardResult;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -104,6 +109,9 @@ class MissionServiceTest {
     private CharacterProfileClient characterProfileClient;
 
     @MockitoBean
+    private OnboardingProfileClient onboardingProfileClient;
+
+    @MockitoBean
     private NotificationPushClient notificationPushClient;
 
     @BeforeEach
@@ -112,20 +120,22 @@ class MissionServiceTest {
         missionFeedbackRepository.deleteAll();
         missionCompletionAnswerRepository.deleteAll();
         userMissionRepository.deleteAll();
-        reset(walletRewardClient, aiMissionTextClient, characterProfileClient, notificationPushClient);
+        reset(walletRewardClient, aiMissionTextClient, characterProfileClient, onboardingProfileClient, notificationPushClient);
         when(walletRewardClient.earnMissionReward(anyLong(), anyLong(), anyInt(), anyString()))
                 .thenReturn(new WalletRewardResult(110, 9001L));
         when(walletRewardClient.getWalletStarPiece(anyLong()))
                 .thenReturn(110);
         when(characterProfileClient.findActiveCharacterTypeCode(anyLong(), anyLong()))
                 .thenReturn(Optional.of("NOVA"));
+        when(onboardingProfileClient.findProfile(anyLong()))
+                .thenReturn(Optional.empty());
         when(aiMissionTextClient.generateMissionTexts(any()))
-                .thenReturn(Optional.of(new AiMissionTextResult(
+                .thenReturn(Optional.of(aiMissionTextResult(
                         501L,
-                        "AI가 바꾼 제안 문구",
-                        "AI가 만든 완료 질문",
-                        "AI가 만든 완료 반응",
-                        false
+                        "AI가 만든 자율 미션",
+                        "AI가 만든 자율 미션 설명",
+                        "BASIC_ROUTINE",
+                        "EASY"
                 )));
     }
 
@@ -146,6 +156,8 @@ class MissionServiceTest {
         assertThat(created.hasMission()).isTrue();
         assertThat(created.getMission().getStatus()).isEqualTo(MissionStatus.MISSION_STATUS_OFFERED);
         assertThat(created.getMission().getRewardStarPiece()).isEqualTo(10);
+        assertThat(created.getMission().getTitle()).isEqualTo("AI가 만든 자율 미션");
+        assertThat(created.getMission().getDescription()).isEqualTo("AI가 만든 자율 미션 설명");
         assertThat(created.getMission().getCharacterMessage()).isEqualTo("AI가 바꾼 제안 문구");
         assertThat(current.hasMission()).isTrue();
         assertThat(current.getMission().getId()).isEqualTo(created.getMission().getId());
@@ -155,12 +167,13 @@ class MissionServiceTest {
                 .findByMissionId(created.getMission().getId())
                 .orElseThrow();
         assertThat(savedMission.getAiGenerationId()).isEqualTo(501L);
+        assertThat(savedMission.getMissionTemplateId()).isNull();
         assertThat(savedMission.getCompletionCharacterResponse()).isEqualTo("AI가 만든 완료 반응");
         assertThat(savedAnswer.getQuestionText()).isEqualTo("AI가 만든 완료 질문");
     }
 
     @Test
-    void AI_문구_생성에_실패하면_template_fallback_문구로_미션을_생성한다() {
+    void AI_후보_생성에_실패하면_template_fallback_미션을_생성한다() {
         when(aiMissionTextClient.generateMissionTexts(any()))
                 .thenReturn(Optional.empty());
 
@@ -175,6 +188,160 @@ class MissionServiceTest {
         assertThat(savedMission.getCharacterMessage()).isEqualTo(template.getFallbackCharacterMessage());
         assertThat(savedMission.getCompletionCharacterResponse()).isEqualTo(template.getFallbackCompletionResponse());
         assertThat(savedAnswer.getQuestionText()).isEqualTo(template.getFallbackQuestion());
+    }
+
+    @Test
+    void AI가_fallback_결과를_반환하면_seed_template_fallback을_유지한다() {
+        when(aiMissionTextClient.generateMissionTexts(any()))
+                .thenReturn(Optional.of(aiMissionTextResult(
+                        601L,
+                        "fallback 후보 제목",
+                        "fallback 후보 설명",
+                        "BASIC_ROUTINE",
+                        "EASY",
+                        true
+                )));
+
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        UserMission savedMission = userMissionRepository.findById(created.getMission().getId()).orElseThrow();
+        MissionCompletionAnswer savedAnswer = missionCompletionAnswerRepository
+                .findByMissionId(created.getMission().getId())
+                .orElseThrow();
+        var template = missionTemplateRepository.findById(savedMission.getMissionTemplateId()).orElseThrow();
+
+        assertThat(savedMission.getAiGenerationId()).isNull();
+        assertThat(savedMission.getTitle()).isEqualTo(template.getBaseTitle());
+        assertThat(savedMission.getCharacterMessage()).isEqualTo(template.getFallbackCharacterMessage());
+        assertThat(savedAnswer.getQuestionText()).isEqualTo(template.getFallbackQuestion());
+    }
+
+    @Test
+    void AI_제목이나_설명에_캐릭터_해석_형식이_섞이면_seed_template_fallback을_유지한다() {
+        when(aiMissionTextClient.generateMissionTexts(any()))
+                .thenReturn(Optional.of(aiMissionTextResult(
+                        602L,
+                        "무우... 무...? (해석: 몸 좌우 균형 느끼기)",
+                        "서 있거나 앉은 상태에서 몸이 어느 쪽으로 기우는지 느껴보세요.",
+                        "BODY_CARE",
+                        "EASY"
+                )));
+
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        UserMission savedMission = userMissionRepository.findById(created.getMission().getId()).orElseThrow();
+        MissionCompletionAnswer savedAnswer = missionCompletionAnswerRepository
+                .findByMissionId(created.getMission().getId())
+                .orElseThrow();
+        var template = missionTemplateRepository.findById(savedMission.getMissionTemplateId()).orElseThrow();
+
+        assertThat(savedMission.getAiGenerationId()).isNull();
+        assertThat(savedMission.getTitle()).isEqualTo(template.getBaseTitle());
+        assertThat(savedMission.getDescription()).isEqualTo(template.getBaseDescription());
+        assertThat(savedAnswer.getQuestionText()).isEqualTo(template.getFallbackQuestion());
+    }
+
+    @Test
+    void AI_제목이_캐릭터_발화로_시작하면_seed_template_fallback을_유지한다() {
+        when(aiMissionTextClient.generateMissionTexts(any()))
+                .thenReturn(Optional.of(aiMissionTextResult(
+                        603L,
+                        "무우... 몸 좌우 균형 느끼기",
+                        "서 있거나 앉은 상태에서 몸이 어느 쪽으로 기우는지 느껴보세요.",
+                        "BODY_CARE",
+                        "EASY"
+                )));
+
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        UserMission savedMission = userMissionRepository.findById(created.getMission().getId()).orElseThrow();
+        var template = missionTemplateRepository.findById(savedMission.getMissionTemplateId()).orElseThrow();
+
+        assertThat(savedMission.getAiGenerationId()).isNull();
+        assertThat(savedMission.getTitle()).isEqualTo(template.getBaseTitle());
+    }
+
+    @Test
+    void AI가_NORMAL_난이도를_반환하면_보상을_15개로_확정한다() {
+        when(aiMissionTextClient.generateMissionTexts(any()))
+                .thenReturn(Optional.of(aiMissionTextResult(
+                        601L,
+                        "3분 창가 숨 고르기",
+                        "창가나 가까운 자리에서 3분 동안 천천히 숨을 골라보세요.",
+                        "REST_RECOVERY",
+                        "NORMAL"
+                )));
+
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        UserMission savedMission = userMissionRepository.findById(created.getMission().getId()).orElseThrow();
+
+        assertThat(created.getMission().getRewardStarPiece()).isEqualTo(15);
+        assertThat(created.getMission().getDifficulty().name()).isEqualTo("MISSION_DIFFICULTY_NORMAL");
+        assertThat(savedMission.getAiGenerationId()).isEqualTo(601L);
+        assertThat(savedMission.getMissionTemplateId()).isNull();
+    }
+
+    @Test
+    void AI가_CHALLENGE_난이도를_반환하면_보상을_30개로_확정한다() {
+        when(aiMissionTextClient.generateMissionTexts(any()))
+                .thenReturn(Optional.of(aiMissionTextResult(
+                        701L,
+                        "책상 한 구역 깊게 정리",
+                        "책상 위 한 구역을 정해서 5분 동안 물건을 분류하고 닦아보세요.",
+                        "SPACE_RESET",
+                        "CHALLENGE"
+                )));
+
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        UserMission savedMission = userMissionRepository.findById(created.getMission().getId()).orElseThrow();
+
+        assertThat(created.getMission().getRewardStarPiece()).isEqualTo(30);
+        assertThat(created.getMission().getDifficulty().name()).isEqualTo("MISSION_DIFFICULTY_CHALLENGE");
+        assertThat(savedMission.getAiGenerationId()).isEqualTo(701L);
+        assertThat(savedMission.getMissionTemplateId()).isNull();
+    }
+
+    @Test
+    void CHALLENGE_미션은_하루에_한_번만_AI_후보로_확정한다() {
+        when(aiMissionTextClient.generateMissionTexts(any()))
+                .thenReturn(
+                        Optional.of(aiMissionTextResult(701L, "첫 도전 미션", "5분짜리 첫 도전 미션이에요.", "MIND_RECORD", "CHALLENGE")),
+                        Optional.of(aiMissionTextResult(702L, "두 번째 도전 미션", "5분짜리 두 번째 도전 미션이에요.", "MIND_RECORD", "CHALLENGE"))
+                );
+        CreateNextMissionResponse first = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        missionService.rejectMission(USER_ID, first.getMission().getId());
+
+        CreateNextMissionResponse second = missionService.createNextMission(USER_ID, CHARACTER_ID, first.getMission().getId());
+        UserMission savedSecond = userMissionRepository.findById(second.getMission().getId()).orElseThrow();
+
+        assertThat(savedSecond.getAiGenerationId()).isNull();
+        assertThat(savedSecond.getMissionTemplateId()).isNotNull();
+        assertThat(second.getMission().getRewardStarPiece()).isNotEqualTo(30);
+    }
+
+    @Test
+    void 온보딩과_최근_미션_context를_AI_생성_요청에_전달한다() {
+        when(onboardingProfileClient.findProfile(USER_ID))
+                .thenReturn(Optional.of(new OnboardingProfileSnapshot(
+                        2,
+                        List.of("MOVE_BODY", "FOCUS"),
+                        List.of("MORNING"),
+                        List.of("HOME"),
+                        "NORMAL",
+                        List.of("OUTDOOR"),
+                        true
+                )));
+        ArgumentCaptor<AiMissionTextRequest> requestCaptor = ArgumentCaptor.forClass(AiMissionTextRequest.class);
+
+        missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+
+        verify(aiMissionTextClient).generateMissionTexts(requestCaptor.capture());
+        AiMissionTextRequest request = requestCaptor.getValue();
+        assertThat(request.onboardingContextJson())
+                .contains("\"available\":true")
+                .contains("\"routineGoals\":[\"MOVE_BODY\",\"FOCUS\"]")
+                .contains("\"missionIntensity\":\"NORMAL\"");
+        assertThat(request.recentMissionContextJson())
+                .contains("\"policyContext\"")
+                .contains("\"allowedDifficulties\"")
+                .contains("\"recentMissions\"");
     }
 
     @Test
@@ -797,5 +964,36 @@ class MissionServiceTest {
         return missionFeedbackRepository
                 .findByUserIdAndMissionIdAndFeedbackType(USER_ID, missionId, feedbackType)
                 .orElseThrow();
+    }
+
+    private AiMissionTextResult aiMissionTextResult(
+            Long aiGenerationId,
+            String title,
+            String description,
+            String category,
+            String difficulty
+    ) {
+        return aiMissionTextResult(aiGenerationId, title, description, category, difficulty, false);
+    }
+
+    private AiMissionTextResult aiMissionTextResult(
+            Long aiGenerationId,
+            String title,
+            String description,
+            String category,
+            String difficulty,
+            boolean fallbackUsed
+    ) {
+        return new AiMissionTextResult(
+                aiGenerationId,
+                title,
+                description,
+                "AI가 바꾼 제안 문구",
+                "AI가 만든 완료 질문",
+                "AI가 만든 완료 반응",
+                category,
+                difficulty,
+                fallbackUsed
+        );
     }
 }

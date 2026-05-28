@@ -42,7 +42,7 @@ public class AiGrpcController extends AiServiceGrpc.AiServiceImplBase {
         responseObserver.onCompleted();
     }
 
-    // 선택된 미션 템플릿을 캐릭터 말투 문구 3개로 변환하는 gRPC 메서드다.
+    // 개인화 context를 바탕으로 AI 자율 미션 후보를 생성하는 gRPC 메서드다.
     @Override
     public void generateMissionTexts(
             GenerateMissionTextsRequest request,
@@ -84,9 +84,13 @@ public class AiGrpcController extends AiServiceGrpc.AiServiceImplBase {
         GenerateMissionTextsResponse.Builder builder = GenerateMissionTextsResponse.newBuilder()
                 .setAiGenerationId(result.aiGenerationId())
                 .setStatus(toProtoStatus(result.status()))
+                .setTitle(result.title())
+                .setDescription(result.description())
                 .setCharacterMessage(result.characterMessage())
                 .setCompletionQuestion(result.completionQuestion())
                 .setCompletionCharacterResponse(result.completionCharacterResponse())
+                .setCategory(result.category())
+                .setDifficulty(result.difficulty())
                 .setFallbackUsed(result.fallbackUsed())
                 .setRequestId(result.requestId());
 

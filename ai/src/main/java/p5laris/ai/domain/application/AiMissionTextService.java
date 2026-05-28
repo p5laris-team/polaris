@@ -38,10 +38,10 @@ import java.util.Map;
 import java.util.TreeMap;
 
 /**
- * AI 미션 문구 생성 유스케이스의 중심 서비스다.
+ * AI 자율 미션 후보 생성 유스케이스의 중심 서비스다.
  *
  * 이 서비스는 "어떤 provider를 썼는지"보다 Polaris 정책을 우선한다.
- * seed 미션의 제목/보상/카테고리는 바꾸지 않고, 캐릭터 말투 문구 3개만 생성한 뒤 검증하고 저장한다.
+ * provider가 만든 미션 후보를 검증하고 저장하되, 실제 보상과 최종 저장 여부는 mission 모듈이 결정한다.
  */
 @Service
 @RequiredArgsConstructor
@@ -57,7 +57,7 @@ public class AiMissionTextService {
     private final ObjectMapper objectMapper;
 
     /**
-     * 선택된 seed 미션을 캐릭터 말투의 제안 문구/완료 질문/완료 반응으로 변환한다.
+     * 개인화 context를 바탕으로 자율 미션 후보를 생성한다.
      *
      * 실제 provider 선택과 rate limit은 MissionTextGenerator 구현체가 담당한다.
      * 이 서비스는 성공/fallback 결과를 검증하고 저장하는 흐름만 책임진다.
@@ -78,7 +78,7 @@ public class AiMissionTextService {
      */
     private MissionTextGenerationResult generateAndSave(MissionTextGenerationCommand command, String requestHash) {
         long startedAt = System.nanoTime();
-        PromptTemplate promptTemplate = findCharacterTonePromptTemplate();
+        PromptTemplate promptTemplate = findMissionGenerationPromptTemplate();
         MissionTextCandidate candidate;
         AiGenerationStatus status;
         AiUsageStatus usageStatus;
@@ -123,16 +123,20 @@ public class AiMissionTextService {
         return new MissionTextGenerationResult(
                 generation.getId(),
                 generation.getStatus(),
+                requiredText(response, "title"),
+                requiredText(response, "description"),
                 requiredText(response, "characterMessage"),
                 requiredText(response, "completionQuestion"),
                 requiredText(response, "completionCharacterResponse"),
+                requiredText(response, "category"),
+                requiredText(response, "difficulty"),
                 generation.isFallbackUsed(),
                 generation.getErrorType(),
                 generation.getRequestId()
         );
     }
 
-    // gRPC로 들어온 요청이 AI 문구 생성에 필요한 최소 정보를 모두 갖고 있는지 확인한다.
+    // gRPC로 들어온 요청이 AI 자율 미션 후보 생성에 필요한 최소 정보를 모두 갖고 있는지 확인한다.
     private void validateRequest(MissionTextGenerationCommand command) {
         if (command == null
                 || isNotPositive(command.userId())
@@ -160,10 +164,10 @@ public class AiMissionTextService {
         return generation;
     }
 
-    // 현재 활성화된 캐릭터 말투 프롬프트 템플릿을 가져온다. 없으면 null로 저장해도 생성 자체는 가능하다.
-    private PromptTemplate findCharacterTonePromptTemplate() {
+    // 현재 활성화된 미션 생성 프롬프트 템플릿을 가져온다. 없으면 null로 저장해도 생성 자체는 가능하다.
+    private PromptTemplate findMissionGenerationPromptTemplate() {
         return promptTemplateRepository
-                .findFirstByCategoryAndActiveTrueOrderByVersionDescIdDesc(PromptCategory.CHARACTER_TONE)
+                .findFirstByCategoryAndActiveTrueOrderByVersionDescIdDesc(PromptCategory.MISSION_GENERATION)
                 .orElse(null);
     }
 
@@ -176,9 +180,13 @@ public class AiMissionTextService {
         }
 
         return new MissionTextCandidate(
+                command.baseTitle(),
+                command.baseDescription(),
                 command.fallbackCharacterMessage(),
                 command.fallbackQuestion(),
-                command.fallbackCompletionResponse()
+                command.fallbackCompletionResponse(),
+                command.category(),
+                command.difficulty()
         );
     }
 
@@ -265,9 +273,13 @@ public class AiMissionTextService {
     // AI 출력도 JSONB에 저장해 나중에 fallback 비율과 문구 품질을 추적할 수 있게 한다.
     private String toResponseJson(MissionTextCandidate candidate) {
         Map<String, Object> response = new LinkedHashMap<>();
+        response.put("title", candidate.title());
+        response.put("description", candidate.description());
         response.put("characterMessage", candidate.characterMessage());
         response.put("completionQuestion", candidate.completionQuestion());
         response.put("completionCharacterResponse", candidate.completionCharacterResponse());
+        response.put("category", candidate.category());
+        response.put("difficulty", candidate.difficulty());
         return toJson(response);
     }
 

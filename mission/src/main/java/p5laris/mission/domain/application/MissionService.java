@@ -26,11 +26,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import p5laris.mission.domain.application.event.MissionEventLogEvent;
+import p5laris.mission.domain.application.personalization.MissionPersonalizationContext;
+import p5laris.mission.domain.application.personalization.MissionPersonalizationContextBuilder;
 import p5laris.mission.domain.domain.entity.MissionCompletionAnswer;
 import p5laris.mission.domain.domain.entity.MissionFeedback;
 import p5laris.mission.domain.domain.entity.MissionOutboxEvent;
 import p5laris.mission.domain.domain.entity.MissionTemplate;
 import p5laris.mission.domain.domain.entity.UserMission;
+import p5laris.mission.domain.domain.enums.MissionCategoryType;
+import p5laris.mission.domain.domain.enums.MissionDifficultyType;
 import p5laris.mission.domain.domain.enums.MissionFeedbackReaction;
 import p5laris.mission.domain.domain.enums.MissionFeedbackReasonCode;
 import p5laris.mission.domain.domain.enums.MissionFeedbackType;
@@ -60,6 +64,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.EnumSet;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -82,12 +87,31 @@ public class MissionService {
     private static final int COMPLETION_ANSWER_MAX_LENGTH = 300;
     private static final int ANSWER_PREVIEW_MAX_LENGTH = 40;
     private static final int FEEDBACK_REASON_TEXT_MAX_LENGTH = 100;
+    private static final int AUTONOMOUS_TITLE_MAX_LENGTH = 40;
+    private static final int AUTONOMOUS_DESCRIPTION_MAX_LENGTH = 120;
+    private static final int AUTONOMOUS_CHARACTER_MESSAGE_MAX_LENGTH = 160;
+    private static final int AUTONOMOUS_COMPLETION_QUESTION_MAX_LENGTH = 100;
+    private static final int AUTONOMOUS_COMPLETION_RESPONSE_MAX_LENGTH = 160;
+    private static final int EASY_REWARD_STAR_PIECE = 10;
+    private static final int NORMAL_REWARD_STAR_PIECE = 15;
+    private static final int CHALLENGE_REWARD_STAR_PIECE = 30;
     private static final String MISSION_REWARD_IDEMPOTENCY_KEY_PREFIX = "MISSION_REWARD:";
     private static final String MISSION_TEXT_REQUEST_ID_PREFIX = "MISSION_TEXT:";
     private static final String DEFAULT_COMPLETION_QUESTION = "해보고 나서 어땠어?";
     private static final String REJECTION_CHARACTER_MESSAGE = "괜찮아요. 다른 별을 찾아볼게요.";
-    private static final String EMPTY_JSON_OBJECT = "{}";
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
+    private static final List<String> PROHIBITED_MISSION_EXPRESSIONS = List.of(
+            "자해",
+            "굶",
+            "굶기",
+            "술",
+            "담배",
+            "벌 받을",
+            "안 하면",
+            "무조건 참",
+            "밤새",
+            "무리해서"
+    );
     private static final Set<UserMissionStatus> ACTIVE_STATUSES = EnumSet.of(
             UserMissionStatus.OFFERED,
             UserMissionStatus.ANSWERING
@@ -102,6 +126,7 @@ public class MissionService {
     private final ApplicationEventPublisher eventPublisher;
     private final AiMissionTextClient aiMissionTextClient;
     private final CharacterProfileClient characterProfileClient;
+    private final MissionPersonalizationContextBuilder missionPersonalizationContextBuilder;
     private final WalletRewardClient walletRewardClient;
     private final MissionRewardDispatcher missionRewardDispatcher;
     private final TransactionTemplate transactionTemplate;
@@ -200,17 +225,18 @@ public class MissionService {
      * 진행 중인 미션이 이미 있으면 새 미션을 만들지 않는다.
      * 이 검사는 유저 기준으로 수행하고, characterId는 새 미션 row에 제안 캐릭터로 저장한다.
      *
-     * 미션 row는 먼저 template fallback 문구로 짧게 저장하고, 그 뒤 트랜잭션 밖에서 ai 모듈을 호출한다.
-     * AI 호출이 성공하면 다시 짧은 트랜잭션을 열어 캐릭터 말투 문구와 aiGenerationId를 반영한다.
+     * 미션 row는 먼저 seed template fallback으로 저장하고, 그 뒤 트랜잭션 밖에서 ai 모듈을 호출한다.
+     * AI 후보가 서버 검증을 통과하면 fallback row를 자율 미션으로 교체하고, 실패하면 seed fallback을 유지한다.
      */
     public CreateNextMissionResponse createNextMission(Long userId, Long characterId, Long lastMissionId) {
         LocalDate today = LocalDate.now(clock);
         validateMissionCreatable(userId, today);
+        MissionPersonalizationContext personalizationContext = missionPersonalizationContextBuilder.build(userId, today);
 
         MissionCreationContext context = Objects.requireNonNull(transactionTemplate.execute(
                 status -> createMissionWithFallback(userId, characterId, today)
         ));
-        Optional<AiMissionTextResult> generatedText = generateMissionText(context);
+        Optional<AiMissionTextResult> generatedText = generateMissionText(context, personalizationContext);
         UserMission mission = Objects.requireNonNull(transactionTemplate.execute(
                 status -> finalizeMissionCreation(userId, context.missionId(), generatedText)
         ));
@@ -295,9 +321,12 @@ public class MissionService {
     /**
      * character/ai 모듈을 트랜잭션 밖에서 호출한다.
      *
-     * character나 ai 모듈 호출이 실패하면 Optional.empty()를 반환해 fallback 문구로 미션 생성을 마무리한다.
+     * character나 ai 모듈 호출이 실패하면 Optional.empty()를 반환해 fallback 미션으로 생성을 마무리한다.
      */
-    private Optional<AiMissionTextResult> generateMissionText(MissionCreationContext context) {
+    private Optional<AiMissionTextResult> generateMissionText(
+            MissionCreationContext context,
+            MissionPersonalizationContext personalizationContext
+    ) {
         return characterProfileClient.findActiveCharacterTypeCode(context.userId(), context.characterId())
                 .flatMap(characterType -> aiMissionTextClient.generateMissionTexts(new AiMissionTextRequest(
                         context.userId(),
@@ -311,14 +340,14 @@ public class MissionService {
                         context.fallbackCharacterMessage(),
                         context.fallbackQuestion(),
                         context.fallbackCompletionResponse(),
-                        EMPTY_JSON_OBJECT,
-                        EMPTY_JSON_OBJECT,
+                        personalizationContext.onboardingContextJson(),
+                        personalizationContext.recentMissionContextJson(),
                         context.aiRequestId()
                 )));
     }
 
     /**
-     * AI 결과가 있으면 미션 문구와 완료 질문을 교체하고, 없으면 fallback 상태 그대로 확정한다.
+     * AI 결과가 서버 검증을 통과하면 자율 미션으로 교체하고, 없거나 검증에 실패하면 fallback 상태 그대로 확정한다.
      *
      * MISSION_OFFERED 이벤트는 최종 문구가 정해진 뒤 발행해 event-log metadata에 aiGenerationId를 담을 수 있게 한다.
      */
@@ -335,20 +364,151 @@ public class MissionService {
                         resolveCompletionQuestion(mission)
                 )));
 
-        generatedText.ifPresent(text -> {
-            mission.applyGeneratedTexts(
-                    text.aiGenerationId(),
-                    text.characterMessage(),
-                    text.completionCharacterResponse()
-            );
-            answer.replaceQuestion(text.completionQuestion());
-        });
+        generatedText.flatMap(text -> toValidatedGeneratedMission(mission, text))
+                .ifPresent(candidate -> {
+                    mission.applyGeneratedMission(
+                            candidate.aiGenerationId(),
+                            candidate.title(),
+                            candidate.description(),
+                            candidate.characterMessage(),
+                            candidate.completionCharacterResponse(),
+                            candidate.category(),
+                            candidate.difficulty(),
+                            rewardForDifficulty(candidate.difficulty())
+                    );
+                    answer.replaceQuestion(candidate.completionQuestion());
+                });
 
         eventPublisher.publishEvent(MissionEventLogEvent.missionOffered(
                 mission,
                 toOccurredAt(mission.getOfferedAt())
         ));
         return mission;
+    }
+
+    private Optional<ValidatedGeneratedMission> toValidatedGeneratedMission(
+            UserMission fallbackMission,
+            AiMissionTextResult generatedText
+    ) {
+        if (generatedText.fallbackUsed()) {
+            return Optional.empty();
+        }
+
+        Optional<MissionCategoryType> category = toMissionCategory(generatedText.category());
+        Optional<MissionDifficultyType> difficulty = toMissionDifficulty(generatedText.difficulty());
+        if (category.isEmpty() || difficulty.isEmpty()) {
+            return Optional.empty();
+        }
+
+        if (difficulty.get() == MissionDifficultyType.CHALLENGE
+                && userMissionRepository.existsByUserIdAndMissionDateAndDifficultyAndIdNot(
+                        fallbackMission.getUserId(),
+                        fallbackMission.getMissionDate(),
+                        MissionDifficultyType.CHALLENGE,
+                        fallbackMission.getId()
+                )) {
+            return Optional.empty();
+        }
+
+        String title = normalizeText(generatedText.title(), AUTONOMOUS_TITLE_MAX_LENGTH);
+        String description = normalizeText(generatedText.description(), AUTONOMOUS_DESCRIPTION_MAX_LENGTH);
+        String characterMessage = normalizeText(generatedText.characterMessage(), AUTONOMOUS_CHARACTER_MESSAGE_MAX_LENGTH);
+        String completionQuestion = normalizeText(generatedText.completionQuestion(), AUTONOMOUS_COMPLETION_QUESTION_MAX_LENGTH);
+        String completionCharacterResponse = normalizeText(
+                generatedText.completionCharacterResponse(),
+                AUTONOMOUS_COMPLETION_RESPONSE_MAX_LENGTH
+        );
+        if (title == null
+                || description == null
+                || characterMessage == null
+                || completionQuestion == null
+                || completionCharacterResponse == null
+                || containsCharacterInterpretation(title, description)
+                || containsProhibitedExpression(title, description, characterMessage, completionQuestion, completionCharacterResponse)) {
+            return Optional.empty();
+        }
+
+        return Optional.of(new ValidatedGeneratedMission(
+                generatedText.aiGenerationId(),
+                title,
+                description,
+                characterMessage,
+                completionQuestion,
+                completionCharacterResponse,
+                category.get(),
+                difficulty.get()
+        ));
+    }
+
+    // 제목/설명은 일반 한국어 미션 문장이어야 하며, 캐릭터 해석 형식은 캐릭터 문구에만 허용한다.
+    private boolean containsCharacterInterpretation(String... values) {
+        for (String value : values) {
+            if (value.contains("(해석:") || startsWithMumuUtterance(value)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean startsWithMumuUtterance(String value) {
+        String trimmed = value.trim();
+        return trimmed.startsWith("무우")
+                || trimmed.startsWith("무무")
+                || trimmed.startsWith("무...")
+                || trimmed.startsWith("무…")
+                || trimmed.startsWith("무?")
+                || trimmed.startsWith("무!");
+    }
+
+    private Optional<MissionCategoryType> toMissionCategory(String value) {
+        return toEnum(value, MissionCategoryType.class);
+    }
+
+    private Optional<MissionDifficultyType> toMissionDifficulty(String value) {
+        return toEnum(value, MissionDifficultyType.class);
+    }
+
+    private <T extends Enum<T>> Optional<T> toEnum(String value, Class<T> enumType) {
+        if (value == null || value.isBlank()) {
+            return Optional.empty();
+        }
+
+        try {
+            return Optional.of(Enum.valueOf(enumType, value.trim().toUpperCase(Locale.ROOT)));
+        } catch (IllegalArgumentException e) {
+            return Optional.empty();
+        }
+    }
+
+    private String normalizeText(String value, int maxLength) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+
+        String normalized = value.trim();
+        if (normalized.length() > maxLength) {
+            return null;
+        }
+        return normalized;
+    }
+
+    private boolean containsProhibitedExpression(String... values) {
+        for (String value : values) {
+            for (String expression : PROHIBITED_MISSION_EXPRESSIONS) {
+                if (value.contains(expression)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private int rewardForDifficulty(MissionDifficultyType difficulty) {
+        return switch (difficulty) {
+            case EASY -> EASY_REWARD_STAR_PIECE;
+            case NORMAL -> NORMAL_REWARD_STAR_PIECE;
+            case CHALLENGE -> CHALLENGE_REWARD_STAR_PIECE;
+        };
     }
 
     /**
@@ -564,8 +724,8 @@ public class MissionService {
     /**
      * 오늘 아직 사용하지 않은 활성 미션 템플릿을 하나 고른다.
      *
-     * AI가 미션 제목/보상/카테고리를 임의 생성하지 않도록 seed template을 기준으로 선택한다.
-     * 같은 날 같은 템플릿이 반복 제안되는 느낌을 줄이기 위해 오늘 사용한 template id는 제외한다.
+     * AI 후보가 실패하거나 검증을 통과하지 못할 때 사용할 seed fallback template을 고른다.
+     * 같은 날 같은 fallback 미션이 반복 제안되는 느낌을 줄이기 위해 오늘 사용한 template id는 제외한다.
      * 후보 선택 순서는 id 오름차순이 아니라 날짜 기준 랜덤 정책에 맡긴다.
      */
     private MissionTemplate selectNextTemplate(Long userId, LocalDate missionDate) {
@@ -947,7 +1107,7 @@ public class MissionService {
     }
 
     /**
-     * fallback 미션 저장 후 AI 문구 생성을 요청하는 데 필요한 값만 담은 스냅샷이다.
+     * fallback 미션 저장 후 AI 자율 미션 후보 생성을 요청하는 데 필요한 값만 담은 스냅샷이다.
      *
      * 이 record는 트랜잭션 밖에서 사용되므로 JPA Entity 대신 문자열/ID 값만 들고 간다.
      */
@@ -986,5 +1146,23 @@ public class MissionService {
                     aiRequestId
             );
         }
+    }
+
+    /**
+     * ai 모듈이 반환한 후보 중 mission 서버 검증을 통과한 값만 담는다.
+     *
+     * 이 record가 만들어진 뒤에만 UserMission에 AI 후보를 반영하므로,
+     * 잘못된 enum/길이/CHALLENGE 정책 위반은 모두 seed fallback으로 남는다.
+     */
+    private record ValidatedGeneratedMission(
+            Long aiGenerationId,
+            String title,
+            String description,
+            String characterMessage,
+            String completionQuestion,
+            String completionCharacterResponse,
+            MissionCategoryType category,
+            MissionDifficultyType difficulty
+    ) {
     }
 }

@@ -11,9 +11,9 @@ import p5laris.ai.core.exception.ErrorCode;
 @RequiredArgsConstructor
 public enum AiErrorCode implements ErrorCode {
 
-    AI_INVALID_REQUEST("AI-001", "AI 미션 문구 생성 요청이 올바르지 않습니다."),
-    AI_FALLBACK_INVALID("AI-002", "fallback 미션 문구가 정책 검증을 통과하지 못했습니다."),
-    AI_GENERATION_FAILED("AI-003", "AI 미션 문구 생성에 실패했습니다."),
+    AI_INVALID_REQUEST("AI-001", "AI 미션 생성 요청이 올바르지 않습니다."),
+    AI_FALLBACK_INVALID("AI-002", "fallback 미션이 정책 검증을 통과하지 못했습니다."),
+    AI_GENERATION_FAILED("AI-003", "AI 미션 생성에 실패했습니다."),
     AI_DUPLICATED_REQUEST("AI-004", "이미 처리된 AI 요청 ID입니다."),
     AI_REQUEST_CONFLICT("AI-005", "같은 AI 요청 ID가 다른 내용으로 재사용되었습니다.");
 
