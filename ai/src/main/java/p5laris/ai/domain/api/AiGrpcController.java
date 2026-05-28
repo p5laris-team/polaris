@@ -11,6 +11,7 @@ import com.p5laris.proto.ai.v1.PingPongResponse;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.server.service.GrpcService;
 import p5laris.ai.domain.application.AiMissionTextService;
 import p5laris.ai.domain.application.dto.MissionTextGenerationCommand;
@@ -26,7 +27,10 @@ import p5laris.ai.domain.exception.AiException;
  */
 @GrpcService
 @RequiredArgsConstructor
+@Slf4j
 public class AiGrpcController extends AiServiceGrpc.AiServiceImplBase {
+
+    private static final String INTERNAL_ERROR_DESCRIPTION = "AI 서비스 처리 중 오류가 발생했습니다.";
 
     private final AiMissionTextService aiMissionTextService;
 
@@ -55,7 +59,8 @@ public class AiGrpcController extends AiServiceGrpc.AiServiceImplBase {
         } catch (AiException e) {
             responseObserver.onError(toStatus(e).withDescription(e.getMessage()).asRuntimeException());
         } catch (Exception e) {
-            responseObserver.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+            log.error("AI gRPC 처리 중 알 수 없는 예외가 발생했습니다. operation={}", "generateMissionTexts", e);
+            responseObserver.onError(Status.INTERNAL.withDescription(INTERNAL_ERROR_DESCRIPTION).asRuntimeException());
         }
     }
 
