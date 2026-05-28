@@ -766,8 +766,8 @@ PLAY      → affection 회복
 Mock 별조각 구매도 없다.
 모든 별조각 증감은 star_piece_transactions에 기록한다.
 미션 완료 보상은 missionId 기준 1회만 지급한다.
-공유 시도 보상 대상 여부는 하루 1회만 기록한다.
-현재 공유 보상은 지갑 적립 연동 전 단계다.
+공유 시도 보상은 하루 1회만 지급 대상이 될 수 있다.
+공유 보상은 share_logs와 character_outbox_events에 기록한 뒤 wallet 적립을 커밋 후 시도하고, 실패 시 outbox가 재처리한다.
 아이템 구매 실패 시 별조각은 차감하지 않는다.
 ```
 

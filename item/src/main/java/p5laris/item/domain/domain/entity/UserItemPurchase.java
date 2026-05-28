@@ -45,4 +45,30 @@ public class UserItemPurchase extends BaseEntity {
 
     @Column(name = "idempotency_key", length = 100, unique = true)
     private String idempotencyKey;
+
+    @Column(nullable = false, length = 20)
+    @Builder.Default
+    private String status = "COMPLETED";
+
+    @Column(name = "attempt_count", nullable = false)
+    @Builder.Default
+    private int attemptCount = 0;
+
+    @Column(name = "next_attempt_at")
+    private java.time.LocalDateTime nextAttemptAt;
+
+    public void updateStatus(String status) {
+        this.status = status;
+    }
+
+    public void updateStatusWithRetry(String status, java.time.LocalDateTime nextAttemptAt) {
+        this.status = status;
+        this.nextAttemptAt = nextAttemptAt;
+        this.attemptCount++;
+    }
+
+    public void updateSuccessData(int starPiece, Long transactionId) {
+        this.starPiece = starPiece;
+        this.transactionId = transactionId;
+    }
 }

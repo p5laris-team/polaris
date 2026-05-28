@@ -1,3 +1,6 @@
+server:
+  port: ${SERVER_PORT}
+
 spring:
   config:
     import: optional:file:.env[.properties]
@@ -60,3 +63,15 @@ mission:
     processing-timeout-seconds: ${MISSION_REWARD_OUTBOX_PROCESSING_TIMEOUT_SECONDS}
     retry-initial-delay-seconds: ${MISSION_REWARD_OUTBOX_RETRY_INITIAL_DELAY_SECONDS}
     retry-max-delay-seconds: ${MISSION_REWARD_OUTBOX_RETRY_MAX_DELAY_SECONDS}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      show-details: never
+  health:
+    db:
+      enabled: true

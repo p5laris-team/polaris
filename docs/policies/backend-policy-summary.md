@@ -133,7 +133,7 @@
 | --- | --- | --- |
 | 미션 완료 | 10 | wallet 적립 + `star_piece_transactions` 기록 |
 | 출석 | 10 | wallet 적립 + `attendance_records`, `star_piece_transactions` 기록 |
-| SNS 공유 시도 | 10 | `share_logs`에 일일 보상 대상 여부 기록. wallet 적립은 현재 연동 전 |
+| SNS 공유 시도 | 10 | `share_logs`와 `character_outbox_events`에 공유 보상 요청 기록. 커밋 후 wallet 적립을 즉시 시도하고 실패 시 outbox가 재처리 |
 
 ### 사용처
 
@@ -183,9 +183,10 @@
 ### 공유 보상
 
 - 공유 보상 기준은 공유 이미지 콘텐츠가 아니라 서버에 기록된 공유 이벤트다.
-- `share_logs`는 공유 시도, 일일 보상 여부, 멱등키를 저장한다.
+- `share_logs`는 공유 시도, 일일 보상 여부, 멱등키를 저장한다. 오늘 첫 공유 보상 대상이면 최초 저장 시 `reward_paid=false`이고, wallet 지급 성공 후 `true`로 갱신된다.
+- 공유 보상 요청은 `character_outbox_events`에 `event_type='SHARE_REWARD_REQUESTED'`, `payload jsonb` 형식으로 저장한다.
 - 공유 보상은 사용자별 하루 1회만 `reward_paid=true`가 될 수 있다.
-- 현재 공유 보상은 wallet 적립 연동 전 단계라 응답의 `wallet.starPiece`는 0일 수 있다.
+- wallet 적립은 character 트랜잭션 커밋 후 즉시 시도한다. 즉시 지급 실패 시 API는 빠르게 실패하고, outbox 스케줄러가 `next_attempt_at`, `attempt_count` 기준으로 재처리한다.
 - 실제 외부 SNS 게시 여부는 MVP에서 검증하지 않는다.
 
 ### 공유 유입

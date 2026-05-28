@@ -13,6 +13,10 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import p5laris.user.domain.domain.entity.User;
 import p5laris.user.domain.domain.repository.UserRepository;
+import p5laris.user.domain.domain.entity.OutboxEvent;
+import p5laris.user.domain.domain.repository.OutboxEventRepository;
+import p5laris.user.domain.application.event.NotificationRequestEvent;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Slf4j
 @Component
@@ -20,9 +24,8 @@ import p5laris.user.domain.domain.repository.UserRepository;
 public class AttendanceNotificationScheduler {
 
     private final UserRepository userRepository;
-
-    @GrpcClient("notification")
-    private NotificationServiceGrpc.NotificationServiceBlockingStub notificationServiceStub;
+    private final OutboxEventRepository outboxEventRepository;
+    private final ObjectMapper objectMapper;
 
     // 매일 오전 0시에 실행 (초 분 시 일 월 요일)
     @Scheduled(cron = "0 0 0 * * *", zone = "Asia/Seoul")
@@ -43,15 +46,24 @@ public class AttendanceNotificationScheduler {
 
             for (User user : activeUsersPage.getContent()) {
                 try {
-                    SendPushNotificationRequest request = SendPushNotificationRequest.newBuilder()
-                            .setUserId(user.getId())
-                            .setTitle("출석 체크 시간!")
-                            .setBody("새로운 하루가 시작되었습니다. 잊지 말고 오늘의 출석 보상을 받아가세요!")
-                            .setNotificationType(NotificationType.NOTIFICATION_TYPE_ATTENDANCE)
+                    NotificationRequestEvent event = new NotificationRequestEvent(
+                            user.getId(),
+                            "출석 체크 시간!",
+                            "새로운 하루가 시작되었습니다. 잊지 말고 오늘의 출석 보상을 받아가세요!",
+                            "NOTIFICATION_TYPE_ATTENDANCE"
+                    );
+
+                    OutboxEvent outboxEvent = OutboxEvent.builder()
+                            .aggregateType("NOTIFICATION_REQUEST")
+                            .aggregateId(user.getId())
+                            .eventType("PUSH_NOTIFICATION")
+                            .payload(objectMapper.writeValueAsString(event))
+                            .idempotencyKey("ATTENDANCE_NOTI_" + user.getId() + "_" + java.time.LocalDate.now())
+                            .status("PENDING")
+                            .nextAttemptAt(java.time.LocalDateTime.now())
                             .build();
 
-                    // gRPC 호출 (Notification 모듈에서 수신 동의 여부 필터링 및 비동기 처리 수행)
-                    notificationServiceStub.sendPushNotification(request);
+                    outboxEventRepository.save(outboxEvent);
                     totalSentCount++;
                 } catch (Exception e) {
                     log.error("Failed to request push notification for user: {}", user.getId(), e);

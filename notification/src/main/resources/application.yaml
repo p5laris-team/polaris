@@ -1,3 +1,6 @@
+server:
+  port: ${SERVER_PORT}
+
 spring:
   config:
     import: optional:file:.env[.properties]
@@ -37,4 +40,16 @@ grpc:
 
 firebase:
   credentials:
-    base64: ${FIREBASE_CREDENTIALS_BASE64:}
+    base64: ${FIREBASE_CREDENTIALS_BASE64:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      show-details: never
+  health:
+    db:
+      enabled: true

@@ -43,6 +43,11 @@ public class MissionDto {
             Integer completedCount,
             Integer rejectedCount,
             Integer remainingOfferCount,
+            Integer maxDailyRewardCount,
+            Integer completedRewardCount,
+            Integer remainingRewardCount,
+            Integer maxDailyRejectCount,
+            Integer remainingRejectCount,
             Long currentMissionId,
             List<TodayMissionItem> missions
     ) {
@@ -64,7 +69,34 @@ public class MissionDto {
             String characterMessage,
             String createdAt,
             String completedAt,
-            String rejectedAt
+            String rejectedAt,
+            String completionQuestion,
+            String answerPreview,
+            Boolean hasAnswer
+    ) {
+    }
+
+    /**
+     * 미션 상세 화면에서 완료 질문과 답변 전문까지 보여주기 위한 응답이다.
+     */
+    public record MissionDetailResponse(
+            Long id,
+            String missionDate,
+            Integer stackOrder,
+            String title,
+            String description,
+            String characterMessage,
+            String category,
+            String difficulty,
+            Integer rewardStarPiece,
+            String status,
+            String createdAt,
+            String completedAt,
+            String rejectedAt,
+            CompletionQuestion question,
+            CompletionAnswer answer,
+            String completionCharacterResponse,
+            Boolean hasAnswer
     ) {
     }
 
