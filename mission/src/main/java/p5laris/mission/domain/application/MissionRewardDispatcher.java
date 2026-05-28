@@ -1,14 +1,15 @@
 package p5laris.mission.domain.application;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
-import p5laris.mission.domain.domain.entity.MissionRewardOutbox;
+import p5laris.mission.domain.domain.entity.MissionOutboxEvent;
 import p5laris.mission.domain.domain.entity.UserMission;
-import p5laris.mission.domain.domain.enums.MissionRewardOutboxStatus;
-import p5laris.mission.domain.domain.repository.MissionRewardOutboxRepository;
+import p5laris.mission.domain.domain.enums.MissionOutboxEventStatus;
+import p5laris.mission.domain.domain.repository.MissionOutboxEventRepository;
 import p5laris.mission.domain.domain.repository.UserMissionRepository;
 import p5laris.mission.domain.exception.MissionErrorCode;
 import p5laris.mission.domain.exception.MissionException;
@@ -22,7 +23,7 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * mission_reward_outbox에 쌓인 미션 보상 지급 요청을 실제 wallet 모듈로 발송한다.
+ * mission_outbox_events에 쌓인 미션 보상 지급 요청을 실제 wallet 모듈로 발송한다.
  *
  * 미션 완료 트랜잭션은 outbox 저장까지만 책임지고, 이 클래스가 gRPC 호출과 성공/실패 상태 변경을 담당한다.
  * 성공하면 user_missions.idempotency_key에 같은 멱등키를 기록해 이후 같은 완료 요청이 와도 중복 지급하지 않는다.
@@ -32,12 +33,13 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class MissionRewardDispatcher {
 
-    private final MissionRewardOutboxRepository missionRewardOutboxRepository;
+    private final MissionOutboxEventRepository missionOutboxEventRepository;
     private final UserMissionRepository userMissionRepository;
     private final WalletRewardClient walletRewardClient;
     private final MissionRewardBackoffPolicy missionRewardBackoffPolicy;
     private final MissionRewardOutboxProperties missionRewardOutboxProperties;
     private final TransactionTemplate transactionTemplate;
+    private final ObjectMapper objectMapper = new ObjectMapper();
     private final Clock clock;
 
     public WalletRewardResult dispatchNow(Long outboxId) {
@@ -49,9 +51,10 @@ public class MissionRewardDispatcher {
 
     public int dispatchDue(int batchSize) {
         LocalDateTime now = LocalDateTime.now(clock);
-        List<Long> outboxIds = missionRewardOutboxRepository.findDispatchableIds(
-                MissionRewardOutboxStatus.PENDING,
-                MissionRewardOutboxStatus.PROCESSING,
+        List<Long> outboxIds = missionOutboxEventRepository.findDispatchableIds(
+                MissionOutboxEvent.EVENT_TYPE_MISSION_REWARD_REQUESTED,
+                MissionOutboxEventStatus.PENDING,
+                MissionOutboxEventStatus.PROCESSING,
                 now,
                 PageRequest.of(0, Math.max(1, batchSize))
         );
@@ -81,32 +84,65 @@ public class MissionRewardDispatcher {
     private Optional<RewardDispatchCommand> claim(Long outboxId, boolean immediateDispatch) {
         return transactionTemplate.execute(status -> {
             LocalDateTime now = LocalDateTime.now(clock);
-            MissionRewardOutbox outbox = missionRewardOutboxRepository.findByIdForUpdate(outboxId)
+            MissionOutboxEvent outbox = missionOutboxEventRepository.findByIdForUpdate(outboxId)
                     .orElse(null);
 
-            if (outbox == null || !canClaim(outbox, now, immediateDispatch)) {
+            if (outbox == null || !isMissionRewardEvent(outbox) || !canClaim(outbox, now, immediateDispatch)) {
                 return Optional.empty();
             }
 
             outbox.markProcessing(now.plusSeconds(missionRewardOutboxProperties.getProcessingTimeoutSeconds()));
-            return Optional.of(RewardDispatchCommand.from(outbox));
+            return Optional.of(toCommand(outbox));
         });
+    }
+
+    private boolean isMissionRewardEvent(MissionOutboxEvent outbox) {
+        return MissionOutboxEvent.AGGREGATE_TYPE_MISSION.equals(outbox.getAggregateType())
+                && MissionOutboxEvent.EVENT_TYPE_MISSION_REWARD_REQUESTED.equals(outbox.getEventType());
     }
 
     /*
      * 즉시 발송은 사용자가 방금 완료한 보상이라 nextAttemptAt 대기 없이 PENDING row를 바로 집는다.
      * 스케줄러 발송은 backoff 시간이 지난 row만 집어 과도한 재시도를 막는다.
      */
-    private boolean canClaim(MissionRewardOutbox outbox, LocalDateTime now, boolean immediateDispatch) {
+    private boolean canClaim(MissionOutboxEvent outbox, LocalDateTime now, boolean immediateDispatch) {
         if (!immediateDispatch) {
             return outbox.canBeClaimed(now);
         }
 
-        if (outbox.getStatus() == MissionRewardOutboxStatus.PENDING) {
+        if (outbox.getStatus() == MissionOutboxEventStatus.PENDING) {
             return true;
         }
-        return outbox.getStatus() == MissionRewardOutboxStatus.PROCESSING
+        return outbox.getStatus() == MissionOutboxEventStatus.PROCESSING
                 && !outbox.getNextAttemptAt().isAfter(now);
+    }
+
+    private RewardDispatchCommand toCommand(MissionOutboxEvent outbox) {
+        try {
+            MissionRewardRequestedPayload payload = objectMapper.treeToValue(
+                    outbox.getPayload(),
+                    MissionRewardRequestedPayload.class
+            );
+            // aggregate_id를 missionId의 기준값으로 보고, payload와 어긋나면 잘못된 이벤트로 판단한다.
+            Long missionId = outbox.getAggregateId();
+            if (payload.missionId() != null && !payload.missionId().equals(missionId)) {
+                throw new MissionException(MissionErrorCode.MISSION_REWARD_FAILED);
+            }
+            if (missionId == null || payload.userId() == null
+                    || payload.rewardStarPiece() == null || payload.rewardStarPiece() <= 0) {
+                throw new MissionException(MissionErrorCode.MISSION_REWARD_FAILED);
+            }
+
+            return new RewardDispatchCommand(
+                    outbox.getId(),
+                    missionId,
+                    payload.userId(),
+                    payload.rewardStarPiece(),
+                    outbox.getIdempotencyKey()
+            );
+        } catch (Exception e) {
+            throw new MissionException(MissionErrorCode.MISSION_REWARD_FAILED);
+        }
     }
 
     /*
@@ -136,7 +172,7 @@ public class MissionRewardDispatcher {
         transactionTemplate.executeWithoutResult(status -> {
             UserMission mission = userMissionRepository.findByIdAndUserIdForUpdate(command.missionId(), command.userId())
                     .orElseThrow(() -> new MissionException(MissionErrorCode.MISSION_NOT_FOUND));
-            MissionRewardOutbox outbox = missionRewardOutboxRepository.findByIdForUpdate(command.outboxId())
+            MissionOutboxEvent outbox = missionOutboxEventRepository.findByIdForUpdate(command.outboxId())
                     .orElseThrow(() -> new MissionException(MissionErrorCode.MISSION_REWARD_FAILED));
 
             if (!mission.isCompleted()) {
@@ -155,7 +191,7 @@ public class MissionRewardDispatcher {
      */
     private void markFailed(RewardDispatchCommand command, String errorMessage) {
         transactionTemplate.executeWithoutResult(status -> {
-            MissionRewardOutbox outbox = missionRewardOutboxRepository.findByIdForUpdate(command.outboxId())
+            MissionOutboxEvent outbox = missionOutboxEventRepository.findByIdForUpdate(command.outboxId())
                     .orElseThrow(() -> new MissionException(MissionErrorCode.MISSION_REWARD_FAILED));
             LocalDateTime now = LocalDateTime.now(clock);
             int nextAttemptCount = outbox.getAttemptCount() + 1;
@@ -175,14 +211,5 @@ public class MissionRewardDispatcher {
             String idempotencyKey
     ) {
 
-        private static RewardDispatchCommand from(MissionRewardOutbox outbox) {
-            return new RewardDispatchCommand(
-                    outbox.getId(),
-                    outbox.getMissionId(),
-                    outbox.getUserId(),
-                    outbox.getRewardStarPiece(),
-                    outbox.getIdempotencyKey()
-            );
-        }
     }
 }
