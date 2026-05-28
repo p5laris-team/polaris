@@ -100,6 +100,11 @@ public record UserEventLogEvent(
         metadata.put("routineGoal", profile.getRoutineGoal());
         metadata.put("activityPreference", profile.getActivityPreference());
         metadata.put("missionIntensity", profile.getMissionIntensity());
+        metadata.put("onboardingVersion", profile.getOnboardingVersion());
+        metadata.put("routineGoals", profile.getRoutineGoalsJson());
+        metadata.put("preferredTimeSlots", profile.getPreferredTimeSlotsJson());
+        metadata.put("missionPlaceContexts", profile.getMissionPlaceContextsJson());
+        metadata.put("avoidedMissionTags", profile.getAvoidedMissionTagsJson());
         return metadata;
     }
 }
