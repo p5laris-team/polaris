@@ -35,7 +35,7 @@ public class UserEventLogEventListener {
                     .nextAttemptAt(LocalDateTime.now())
                     .build();
                     
-            outboxEventRepository.save(outboxEvent);
+            outboxEventRepository.saveAndFlush(outboxEvent);
             log.debug("Saved UserEventLogEvent to Outbox. eventType={}, userId={}", event.eventType(), event.userId());
         } catch (Exception e) {
             log.error("Failed to save user event log to outbox. eventType={}, userId={}",
