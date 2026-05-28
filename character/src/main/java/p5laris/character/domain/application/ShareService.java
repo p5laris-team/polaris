@@ -17,6 +17,7 @@ import p5laris.character.domain.domain.repository.ShareLogRepository;
 import p5laris.character.domain.domain.repository.UserCharacterRepository;
 import p5laris.character.domain.exception.CharacterErrorCode;
 import p5laris.character.domain.exception.CharacterException;
+import p5laris.character.domain.infrastructure.grpc.ShareRewardWalletClient;
 
 import java.net.URI;
 import java.time.Instant;
