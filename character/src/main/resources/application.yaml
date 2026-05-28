@@ -1,3 +1,6 @@
+server:
+  port: ${SERVER_PORT}
+
 spring:
   config:
     import:
@@ -75,3 +78,15 @@ cloud:
 
 app:
   public-base-url: ${APP_PUBLIC_BASE_URL}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      show-details: never
+  health:
+    db:
+      enabled: true

@@ -1,3 +1,6 @@
+server:
+  port: ${SERVER_PORT}
+
 spring:
   application:
     name: event-log
@@ -25,3 +28,15 @@ grpc:
   server:
     port: ${GRPC_SERVER_PORT:9099}
     reflection-service-enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      show-details: never
+  health:
+    db:
+      enabled: true
