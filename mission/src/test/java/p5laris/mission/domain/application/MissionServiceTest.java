@@ -42,6 +42,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -453,6 +455,11 @@ class MissionServiceTest {
                 10,
                 "MISSION_REWARD:" + created.getMission().getId()
         );
+        verify(notificationPushClient, never()).sendMissionRewardRecoveredNotification(
+                USER_ID,
+                created.getMission().getId(),
+                10
+        );
     }
 
     @Test
@@ -587,6 +594,11 @@ class MissionServiceTest {
                 10,
                 "MISSION_REWARD:" + created.getMission().getId()
         );
+        verify(notificationPushClient, never()).sendMissionRewardRecoveredNotification(
+                USER_ID,
+                created.getMission().getId(),
+                10
+        );
     }
 
     @Test
@@ -623,6 +635,49 @@ class MissionServiceTest {
                 created.getMission().getId(),
                 10,
                 "MISSION_REWARD:" + created.getMission().getId()
+        );
+        verify(notificationPushClient).sendMissionRewardRecoveredNotification(
+                USER_ID,
+                created.getMission().getId(),
+                10
+        );
+    }
+
+    @Test
+    void 보상_outbox_재처리_성공_알림이_실패해도_보상_성공은_유지된다() {
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        missionService.startCompletionSession(USER_ID, created.getMission().getId());
+        when(walletRewardClient.earnMissionReward(anyLong(), anyLong(), anyInt(), anyString()))
+                .thenThrow(new MissionException(MissionErrorCode.MISSION_REWARD_FAILED))
+                .thenReturn(new WalletRewardResult(110, 9001L));
+        doThrow(new RuntimeException("notification unavailable"))
+                .when(notificationPushClient)
+                .sendMissionRewardRecoveredNotification(USER_ID, created.getMission().getId(), 10);
+
+        assertThatThrownBy(() -> missionService.submitCompletionAnswer(
+                USER_ID,
+                created.getMission().getId(),
+                "완료했어"
+        ))
+                .isInstanceOf(MissionException.class)
+                .extracting("errorCode")
+                .isEqualTo(MissionErrorCode.MISSION_REWARD_FAILED);
+
+        MissionOutboxEvent pendingOutbox = findRewardOutbox(created.getMission().getId());
+        ReflectionTestUtils.setField(pendingOutbox, "nextAttemptAt", LocalDateTime.now().minusSeconds(1));
+        missionOutboxEventRepository.saveAndFlush(pendingOutbox);
+
+        int succeededCount = missionRewardDispatcher.dispatchDue(10);
+
+        UserMission savedMission = userMissionRepository.findById(created.getMission().getId()).orElseThrow();
+        MissionOutboxEvent savedOutbox = findRewardOutbox(created.getMission().getId());
+        assertThat(succeededCount).isEqualTo(1);
+        assertThat(savedMission.getIdempotencyKey()).isEqualTo("MISSION_REWARD:" + created.getMission().getId());
+        assertThat(savedOutbox.getStatus()).isEqualTo(MissionOutboxEventStatus.SUCCEEDED);
+        verify(notificationPushClient).sendMissionRewardRecoveredNotification(
+                USER_ID,
+                created.getMission().getId(),
+                10
         );
     }
 
