@@ -1,5 +1,6 @@
 package p5laris.character.domain.domain.entity;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -13,7 +14,9 @@ import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import p5laris.character.domain.domain.enums.ShareRewardOutboxStatus;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+import p5laris.character.domain.domain.enums.CharacterOutboxEventStatus;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -21,8 +24,8 @@ import java.time.LocalDateTime;
 @Entity
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@Table(name = "share_reward_outbox")
-public class ShareRewardOutbox {
+@Table(name = "character_outbox_events")
+public class CharacterOutboxEvent {
 
     private static final int LAST_ERROR_MESSAGE_MAX_LENGTH = 500;
 
@@ -30,21 +33,25 @@ public class ShareRewardOutbox {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "share_log_id", nullable = false, unique = true)
-    private Long shareLogId;
+    @Column(name = "aggregate_type", nullable = false, length = 50)
+    private String aggregateType;
 
-    @Column(name = "user_id", nullable = false)
-    private Long userId;
+    @Column(name = "aggregate_id", nullable = false)
+    private Long aggregateId;
 
-    @Column(name = "reward_star_piece", nullable = false)
-    private int rewardStarPiece;
+    @Column(name = "event_type", nullable = false, length = 100)
+    private String eventType;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(nullable = false, columnDefinition = "jsonb")
+    private JsonNode payload;
 
     @Column(name = "idempotency_key", nullable = false, length = 120, unique = true)
     private String idempotencyKey;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
-    private ShareRewardOutboxStatus status;
+    private CharacterOutboxEventStatus status;
 
     @Column(name = "attempt_count", nullable = false)
     private int attemptCount;
@@ -61,25 +68,33 @@ public class ShareRewardOutbox {
     @Column(nullable = false)
     private Instant updatedAt;
 
-    public static ShareRewardOutbox pending(ShareLog shareLog, String idempotencyKey, LocalDateTime nextAttemptAt) {
-        ShareRewardOutbox outbox = new ShareRewardOutbox();
-        outbox.shareLogId = shareLog.getId();
-        outbox.userId = shareLog.getUserId();
-        outbox.rewardStarPiece = shareLog.getRewardStarPiece();
-        outbox.idempotencyKey = idempotencyKey;
-        outbox.status = ShareRewardOutboxStatus.PENDING;
-        outbox.attemptCount = 0;
-        outbox.nextAttemptAt = nextAttemptAt;
-        return outbox;
+    public static CharacterOutboxEvent pending(
+            String aggregateType,
+            Long aggregateId,
+            String eventType,
+            JsonNode payload,
+            String idempotencyKey,
+            LocalDateTime nextAttemptAt
+    ) {
+        CharacterOutboxEvent event = new CharacterOutboxEvent();
+        event.aggregateType = aggregateType;
+        event.aggregateId = aggregateId;
+        event.eventType = eventType;
+        event.payload = payload;
+        event.idempotencyKey = idempotencyKey;
+        event.status = CharacterOutboxEventStatus.PENDING;
+        event.attemptCount = 0;
+        event.nextAttemptAt = nextAttemptAt;
+        return event;
     }
 
     public void markProcessing(LocalDateTime lockExpiresAt) {
-        this.status = ShareRewardOutboxStatus.PROCESSING;
+        this.status = CharacterOutboxEventStatus.PROCESSING;
         this.nextAttemptAt = lockExpiresAt;
     }
 
     public void markSucceeded(LocalDateTime succeededAt) {
-        this.status = ShareRewardOutboxStatus.SUCCEEDED;
+        this.status = CharacterOutboxEventStatus.SUCCEEDED;
         this.nextAttemptAt = succeededAt;
         this.lastErrorMessage = null;
     }
@@ -89,12 +104,12 @@ public class ShareRewardOutbox {
         this.lastErrorMessage = truncate(errorMessage);
         this.nextAttemptAt = nextAttemptAt;
         this.status = this.attemptCount >= maxAttempts
-                ? ShareRewardOutboxStatus.FAILED
-                : ShareRewardOutboxStatus.PENDING;
+                ? CharacterOutboxEventStatus.FAILED
+                : CharacterOutboxEventStatus.PENDING;
     }
 
     public boolean canBeClaimed(LocalDateTime now) {
-        return (status == ShareRewardOutboxStatus.PENDING || status == ShareRewardOutboxStatus.PROCESSING)
+        return (status == CharacterOutboxEventStatus.PENDING || status == CharacterOutboxEventStatus.PROCESSING)
                 && !nextAttemptAt.isAfter(now);
     }
 

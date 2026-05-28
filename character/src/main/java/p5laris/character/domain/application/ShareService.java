@@ -1,18 +1,19 @@
 package p5laris.character.domain.application;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
+import p5laris.character.domain.domain.entity.CharacterOutboxEvent;
 import p5laris.character.domain.domain.entity.ShareCard;
 import p5laris.character.domain.domain.entity.ShareLog;
-import p5laris.character.domain.domain.entity.ShareRewardOutbox;
 import p5laris.character.domain.domain.entity.UserCharacter;
+import p5laris.character.domain.domain.repository.CharacterOutboxEventRepository;
 import p5laris.character.domain.domain.repository.ShareCardRepository;
 import p5laris.character.domain.domain.repository.ShareLogRepository;
-import p5laris.character.domain.domain.repository.ShareRewardOutboxRepository;
 import p5laris.character.domain.domain.repository.UserCharacterRepository;
 import p5laris.character.domain.exception.CharacterErrorCode;
 import p5laris.character.domain.exception.CharacterException;
@@ -46,12 +47,13 @@ public class ShareService {
 
     private final ShareCardRepository shareCardRepository;
     private final ShareLogRepository shareLogRepository;
-    private final ShareRewardOutboxRepository shareRewardOutboxRepository;
+    private final CharacterOutboxEventRepository characterOutboxEventRepository;
     private final S3StorageService s3StorageService;
     private final UserCharacterRepository userCharacterRepository;
     private final ShareRewardWalletClient shareRewardWalletClient;
     private final ShareRewardDispatcher shareRewardDispatcher;
     private final TransactionTemplate transactionTemplate;
+    private final ObjectMapper objectMapper;
 
     @Value("${app.public-base-url}")
     private String publicBaseUrl;
@@ -173,8 +175,8 @@ public class ShareService {
             ShareLog log = existingRewardLog.get();
             Long outboxId = log.isRewardPaid()
                     ? null
-                    : shareRewardOutboxRepository.findByShareLogId(log.getId())
-                            .map(ShareRewardOutbox::getId)
+                    : characterOutboxEventRepository.findByIdempotencyKey(rewardIdempotencyKey)
+                            .map(CharacterOutboxEvent::getId)
                             .orElse(null);
             return new ShareRewardCommand(log.getId(), outboxId, log.isRewardPaid(), log.getRewardStarPiece());
         }
@@ -207,12 +209,15 @@ public class ShareService {
             return new ShareRewardCommand(shareLog.getId(), null, false, rewardAmount);
         }
 
-        ShareRewardOutbox outbox = ShareRewardOutbox.pending(
-                shareLog,
+        CharacterOutboxEvent outbox = CharacterOutboxEvent.pending(
+                ShareRewardDispatcher.AGGREGATE_TYPE_SHARE_LOG,
+                shareLog.getId(),
+                ShareRewardDispatcher.EVENT_TYPE_SHARE_REWARD_REQUESTED,
+                objectMapper.valueToTree(new ShareRewardDispatcher.ShareRewardPayload(userId, rewardAmount)),
                 rewardIdempotencyKey,
                 LocalDateTime.now(SHARE_DATE_ZONE)
         );
-        shareRewardOutboxRepository.saveAndFlush(outbox);
+        characterOutboxEventRepository.saveAndFlush(outbox);
         return new ShareRewardCommand(shareLog.getId(), outbox.getId(), false, rewardAmount);
     }
 

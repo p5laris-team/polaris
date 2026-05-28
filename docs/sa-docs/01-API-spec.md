@@ -120,7 +120,7 @@ Base Pattern: /api/{domain}/v1/{resource}
 | 상점/보관함 아이템 | `GET /api/item/v1/items`, `GET /api/item/v1/user-items` | 응답에 `characterTypeId`, `effectType`, `imageUrl`이 포함된다. 캐릭터별 스킨 필터와 소모품 UI 매핑은 해당 필드를 기준으로 한다. |
 | 아이템 구매 | `POST /api/item/v1/item-purchases` | body의 `idempotencyKey`를 구매 재시도 멱등키로 사용한다. |
 | 공유 카드 | `GET /api/share/v1/presigned-url`, `POST /api/share/v1/share-cards` | 프론트가 canvas PNG를 presigned URL로 업로드한 뒤, `imageUrl`을 공유 카드 생성 요청에 전달한다. 백엔드는 업로드 URL을 검증하고 DB에는 object key/shareId를 저장한다. |
-| 공유 보상 | `POST /api/share/v1/share-events`, `GET /api/share/v1/share-events/today` | 공유 시도와 일일 보상 여부는 `share_logs` 기준으로 기록한다. 오늘 첫 보상 대상이면 user wallet gRPC `EarnStarPiece`를 호출하고, 응답의 `wallet.starPiece`에는 적립 후 지갑 잔액을 반환한다. |
+| 공유 보상 | `POST /api/share/v1/share-events`, `GET /api/share/v1/share-events/today` | 공유 시도와 일일 보상 여부는 `share_logs` 기준으로 기록한다. 오늘 첫 보상 대상이면 `character_outbox_events`에 `SHARE_REWARD_REQUESTED` 이벤트를 저장한 뒤 커밋 후 user wallet gRPC `EarnStarPiece`를 즉시 호출한다. 성공 시 `wallet.starPiece`에는 적립 후 지갑 잔액을 반환하고, 즉시 지급 실패 시 API는 빠르게 실패하지만 outbox 스케줄러가 재처리한다. |
 | 알림 | notification 목록/읽음/구독/설정 API | 푸시 발송 여부는 사용자 알림 설정, 방해금지 시간, FCM 토큰 상태에 따라 결정된다. |
 
 ---
@@ -1388,7 +1388,7 @@ AI 생성 결과는 `ai_mission_generations`, 사용 로그는 `ai_usage_logs`�
 
 **설명**  
 사용자가 공유 버튼을 눌렀다는 이벤트를 저장한다. 실제 외부 SNS 게시 여부는 MVP에서 검증하지 않고, 하루 1회 공유 시도 보상 대상 여부를 `share_logs`에 기록한다.
-오늘 첫 보상 대상이면 character 모듈이 user wallet gRPC `EarnStarPiece`를 호출해 별조각을 적립한다. `wallet.starPiece`는 적립 후 지갑 잔액이며, 이미 오늘 보상을 받은 요청은 기존 보상 로그와 현재 지갑 잔액 기준으로 replay 응답을 반환한다.
+오늘 첫 보상 대상이면 character 모듈은 `share_logs`와 `character_outbox_events`를 같은 짧은 트랜잭션에 저장한다. outbox 이벤트는 `aggregate_type='SHARE_LOG'`, `aggregate_id=shareLogId`, `event_type='SHARE_REWARD_REQUESTED'`, `payload jsonb={"userId":..., "rewardStarPiece":10}` 형식이다. 커밋 후 `ShareRewardDispatcher`가 user wallet gRPC `EarnStarPiece`를 즉시 호출한다. 성공 시 `wallet.starPiece`는 적립 후 지갑 잔액이며, 이미 오늘 보상을 받은 요청은 기존 보상 로그와 현재 지갑 잔액 기준으로 replay 응답을 반환한다. 즉시 지급 실패 시 API는 `SHARE_REWARD_FAILED`로 실패하고, 남은 outbox row는 스케줄러가 재처리한다.
 
 **Request**
 

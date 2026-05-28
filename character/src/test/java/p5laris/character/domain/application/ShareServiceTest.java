@@ -1,5 +1,7 @@
 package p5laris.character.domain.application;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -11,13 +13,13 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
 import p5laris.character.domain.domain.entity.CharacterType;
+import p5laris.character.domain.domain.entity.CharacterOutboxEvent;
 import p5laris.character.domain.domain.entity.ShareCard;
 import p5laris.character.domain.domain.entity.ShareLog;
-import p5laris.character.domain.domain.entity.ShareRewardOutbox;
 import p5laris.character.domain.domain.entity.UserCharacter;
+import p5laris.character.domain.domain.repository.CharacterOutboxEventRepository;
 import p5laris.character.domain.domain.repository.ShareCardRepository;
 import p5laris.character.domain.domain.repository.ShareLogRepository;
-import p5laris.character.domain.domain.repository.ShareRewardOutboxRepository;
 import p5laris.character.domain.domain.repository.UserCharacterRepository;
 import p5laris.character.domain.exception.CharacterErrorCode;
 import p5laris.character.domain.exception.CharacterException;
@@ -49,7 +51,7 @@ class ShareServiceTest {
     private ShareLogRepository shareLogRepository;
 
     @Mock
-    private ShareRewardOutboxRepository shareRewardOutboxRepository;
+    private CharacterOutboxEventRepository characterOutboxEventRepository;
 
     @Mock
     private S3StorageService s3StorageService;
@@ -65,6 +67,9 @@ class ShareServiceTest {
 
     @Mock
     private TransactionTemplate transactionTemplate;
+
+    @Mock
+    private ObjectMapper objectMapper;
 
     @InjectMocks
     private ShareService shareService;
@@ -115,7 +120,7 @@ class ShareServiceTest {
 
     @Test
     @DisplayName("createShareEvent credits wallet for today's first share reward")
-    void createShareEvent_firstReward_creditsWallet() {
+    void createShareEvent_firstReward_creditsWallet() throws Exception {
         runTransactionTemplateCallbacks();
         ShareCard card = createShareCard(800L, 1L, 10L);
         when(shareCardRepository.findById(800L)).thenReturn(Optional.of(card));
@@ -127,8 +132,11 @@ class ShareServiceTest {
             ReflectionTestUtils.setField(log, "id", 900L);
             return log;
         });
-        when(shareRewardOutboxRepository.saveAndFlush(any(ShareRewardOutbox.class))).thenAnswer(invocation -> {
-            ShareRewardOutbox outbox = invocation.getArgument(0);
+        when(objectMapper.valueToTree(any())).thenReturn(JsonNodeFactory.instance.objectNode()
+                .put("userId", 1L)
+                .put("rewardStarPiece", 10));
+        when(characterOutboxEventRepository.saveAndFlush(any(CharacterOutboxEvent.class))).thenAnswer(invocation -> {
+            CharacterOutboxEvent outbox = invocation.getArgument(0);
             ReflectionTestUtils.setField(outbox, "id", 950L);
             return outbox;
         });
@@ -141,7 +149,7 @@ class ShareServiceTest {
         assertTrue(result.rewardPaid());
         assertEquals(10, result.rewardStarPiece());
         assertEquals(110, result.walletStarPiece());
-        verify(shareRewardOutboxRepository).saveAndFlush(any(ShareRewardOutbox.class));
+        verify(characterOutboxEventRepository).saveAndFlush(any(CharacterOutboxEvent.class));
         verify(shareRewardDispatcher).dispatchNow(950L);
         verify(shareRewardWalletClient, never()).getWalletStarPiece(anyLong());
     }

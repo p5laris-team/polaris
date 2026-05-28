@@ -1,15 +1,16 @@
 package p5laris.character.domain.application;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
+import p5laris.character.domain.domain.entity.CharacterOutboxEvent;
 import p5laris.character.domain.domain.entity.ShareLog;
-import p5laris.character.domain.domain.entity.ShareRewardOutbox;
-import p5laris.character.domain.domain.enums.ShareRewardOutboxStatus;
+import p5laris.character.domain.domain.enums.CharacterOutboxEventStatus;
+import p5laris.character.domain.domain.repository.CharacterOutboxEventRepository;
 import p5laris.character.domain.domain.repository.ShareLogRepository;
-import p5laris.character.domain.domain.repository.ShareRewardOutboxRepository;
 import p5laris.character.domain.exception.CharacterErrorCode;
 import p5laris.character.domain.exception.CharacterException;
 import p5laris.character.domain.infrastructure.config.ShareRewardOutboxProperties;
@@ -25,12 +26,16 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class ShareRewardDispatcher {
 
-    private final ShareRewardOutboxRepository shareRewardOutboxRepository;
+    public static final String AGGREGATE_TYPE_SHARE_LOG = "SHARE_LOG";
+    public static final String EVENT_TYPE_SHARE_REWARD_REQUESTED = "SHARE_REWARD_REQUESTED";
+
+    private final CharacterOutboxEventRepository characterOutboxEventRepository;
     private final ShareLogRepository shareLogRepository;
     private final ShareRewardWalletClient shareRewardWalletClient;
     private final ShareRewardBackoffPolicy shareRewardBackoffPolicy;
     private final ShareRewardOutboxProperties properties;
     private final TransactionTemplate transactionTemplate;
+    private final ObjectMapper objectMapper;
     private final Clock clock;
 
     public ShareRewardWalletClient.WalletRewardResult dispatchNow(Long outboxId) {
@@ -41,9 +46,10 @@ public class ShareRewardDispatcher {
 
     public int dispatchDue(int batchSize) {
         LocalDateTime now = LocalDateTime.now(clock);
-        List<Long> outboxIds = shareRewardOutboxRepository.findDispatchableIds(
-                ShareRewardOutboxStatus.PENDING,
-                ShareRewardOutboxStatus.PROCESSING,
+        List<Long> outboxIds = characterOutboxEventRepository.findDispatchableIds(
+                EVENT_TYPE_SHARE_REWARD_REQUESTED,
+                CharacterOutboxEventStatus.PENDING,
+                CharacterOutboxEventStatus.PROCESSING,
                 now,
                 PageRequest.of(0, Math.max(1, batchSize))
         );
@@ -69,28 +75,48 @@ public class ShareRewardDispatcher {
     private Optional<RewardDispatchCommand> claim(Long outboxId, boolean immediateDispatch) {
         return transactionTemplate.execute(status -> {
             LocalDateTime now = LocalDateTime.now(clock);
-            ShareRewardOutbox outbox = shareRewardOutboxRepository.findByIdForUpdate(outboxId)
+            CharacterOutboxEvent outbox = characterOutboxEventRepository.findByIdForUpdate(outboxId)
                     .orElse(null);
 
-            if (outbox == null || !canClaim(outbox, now, immediateDispatch)) {
+            if (outbox == null || !isShareRewardEvent(outbox) || !canClaim(outbox, now, immediateDispatch)) {
                 return Optional.empty();
             }
 
             outbox.markProcessing(now.plusSeconds(properties.getProcessingTimeoutSeconds()));
-            return Optional.of(RewardDispatchCommand.from(outbox));
+            return Optional.of(toCommand(outbox));
         });
     }
 
-    private boolean canClaim(ShareRewardOutbox outbox, LocalDateTime now, boolean immediateDispatch) {
+    private boolean isShareRewardEvent(CharacterOutboxEvent outbox) {
+        return AGGREGATE_TYPE_SHARE_LOG.equals(outbox.getAggregateType())
+                && EVENT_TYPE_SHARE_REWARD_REQUESTED.equals(outbox.getEventType());
+    }
+
+    private boolean canClaim(CharacterOutboxEvent outbox, LocalDateTime now, boolean immediateDispatch) {
         if (!immediateDispatch) {
             return outbox.canBeClaimed(now);
         }
 
-        if (outbox.getStatus() == ShareRewardOutboxStatus.PENDING) {
+        if (outbox.getStatus() == CharacterOutboxEventStatus.PENDING) {
             return true;
         }
-        return outbox.getStatus() == ShareRewardOutboxStatus.PROCESSING
+        return outbox.getStatus() == CharacterOutboxEventStatus.PROCESSING
                 && !outbox.getNextAttemptAt().isAfter(now);
+    }
+
+    private RewardDispatchCommand toCommand(CharacterOutboxEvent outbox) {
+        try {
+            ShareRewardPayload payload = objectMapper.treeToValue(outbox.getPayload(), ShareRewardPayload.class);
+            return new RewardDispatchCommand(
+                    outbox.getId(),
+                    outbox.getAggregateId(),
+                    payload.userId(),
+                    payload.rewardStarPiece(),
+                    outbox.getIdempotencyKey()
+            );
+        } catch (Exception e) {
+            throw new CharacterException(CharacterErrorCode.SHARE_REWARD_FAILED);
+        }
     }
 
     private ShareRewardWalletClient.WalletRewardResult dispatchClaimed(RewardDispatchCommand command) {
@@ -114,9 +140,9 @@ public class ShareRewardDispatcher {
 
     private void markSucceeded(RewardDispatchCommand command) {
         transactionTemplate.executeWithoutResult(status -> {
-            ShareLog shareLog = shareLogRepository.findById(command.shareLogId())
+            ShareLog shareLog = shareLogRepository.findByIdForUpdate(command.shareLogId())
                     .orElseThrow(() -> new CharacterException(CharacterErrorCode.SHARE_REWARD_FAILED));
-            ShareRewardOutbox outbox = shareRewardOutboxRepository.findByIdForUpdate(command.outboxId())
+            CharacterOutboxEvent outbox = characterOutboxEventRepository.findByIdForUpdate(command.outboxId())
                     .orElseThrow(() -> new CharacterException(CharacterErrorCode.SHARE_REWARD_FAILED));
 
             if (!shareLog.isRewardPaid()) {
@@ -128,7 +154,7 @@ public class ShareRewardDispatcher {
 
     private void markFailed(RewardDispatchCommand command, String errorMessage) {
         transactionTemplate.executeWithoutResult(status -> {
-            ShareRewardOutbox outbox = shareRewardOutboxRepository.findByIdForUpdate(command.outboxId())
+            CharacterOutboxEvent outbox = characterOutboxEventRepository.findByIdForUpdate(command.outboxId())
                     .orElseThrow(() -> new CharacterException(CharacterErrorCode.SHARE_REWARD_FAILED));
             LocalDateTime now = LocalDateTime.now(clock);
             int nextAttemptCount = outbox.getAttemptCount() + 1;
@@ -140,6 +166,9 @@ public class ShareRewardDispatcher {
         });
     }
 
+    public record ShareRewardPayload(Long userId, int rewardStarPiece) {
+    }
+
     private record RewardDispatchCommand(
             Long outboxId,
             Long shareLogId,
@@ -147,15 +176,5 @@ public class ShareRewardDispatcher {
             int rewardStarPiece,
             String idempotencyKey
     ) {
-
-        private static RewardDispatchCommand from(ShareRewardOutbox outbox) {
-            return new RewardDispatchCommand(
-                    outbox.getId(),
-                    outbox.getShareLogId(),
-                    outbox.getUserId(),
-                    outbox.getRewardStarPiece(),
-                    outbox.getIdempotencyKey()
-            );
-        }
     }
 }

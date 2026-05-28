@@ -1,6 +1,6 @@
 package p5laris.character.domain.domain.enums;
 
-public enum ShareRewardOutboxStatus {
+public enum CharacterOutboxEventStatus {
     PENDING,
     PROCESSING,
     SUCCEEDED,
