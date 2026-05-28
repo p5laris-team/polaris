@@ -123,7 +123,7 @@ class MissionControllerValidationTest {
 
     @Test
     void missionId가_양수가_아니면_400을_반환한다() throws Exception {
-        when(missionGatewayService.rejectMission(LOGIN_USER_ID, 0L))
+        when(missionGatewayService.rejectMission(LOGIN_USER_ID, 0L, null))
                 .thenThrow(new BusinessException(CommonErrorCode.INVALID_INPUT_VALUE));
 
         mockMvc.perform(post("/api/mission/v1/missions/0/rejections")

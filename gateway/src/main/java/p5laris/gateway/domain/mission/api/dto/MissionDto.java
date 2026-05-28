@@ -128,6 +128,17 @@ public class MissionDto {
     }
 
     /**
+     * 미션 거절 이유는 선택 입력이다. 비어 있으면 mission 서버가 JUST_SKIP으로 저장한다.
+     */
+    public record RejectMissionRequest(
+            String reasonCode,
+
+            @Size(max = 100)
+            String reasonText
+    ) {
+    }
+
+    /**
      * 완료 버튼을 눌렀을 때 생성되거나 재사용되는 완료 질문 세션 응답이다.
      */
     public record CompletionSessionResponse(
@@ -169,6 +180,35 @@ public class MissionDto {
             MissionReward reward,
             WalletSnapshot wallet,
             String characterMessage
+    ) {
+    }
+
+    /**
+     * 거절 이유 또는 완료 만족도 피드백 저장 요청이다.
+     */
+    public record UpsertMissionFeedbackRequest(
+            @NotBlank
+            String feedbackType,
+
+            String reaction,
+
+            String reasonCode,
+
+            @Size(max = 100)
+            String reasonText
+    ) {
+    }
+
+    /**
+     * 저장된 미션 피드백 요약이다.
+     */
+    public record MissionFeedbackResponse(
+            Long missionId,
+            String feedbackType,
+            String reaction,
+            String reasonCode,
+            String reasonText,
+            String updatedAt
     ) {
     }
 
