@@ -1,5 +1,7 @@
 package p5laris.character.domain.application;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -8,10 +10,14 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.support.TransactionCallback;
+import org.springframework.transaction.support.TransactionTemplate;
 import p5laris.character.domain.domain.entity.CharacterType;
+import p5laris.character.domain.domain.entity.CharacterOutboxEvent;
 import p5laris.character.domain.domain.entity.ShareCard;
 import p5laris.character.domain.domain.entity.ShareLog;
 import p5laris.character.domain.domain.entity.UserCharacter;
+import p5laris.character.domain.domain.repository.CharacterOutboxEventRepository;
 import p5laris.character.domain.domain.repository.ShareCardRepository;
 import p5laris.character.domain.domain.repository.ShareLogRepository;
 import p5laris.character.domain.domain.repository.UserCharacterRepository;
@@ -45,6 +51,9 @@ class ShareServiceTest {
     private ShareLogRepository shareLogRepository;
 
     @Mock
+    private CharacterOutboxEventRepository characterOutboxEventRepository;
+
+    @Mock
     private S3StorageService s3StorageService;
 
     @Mock
@@ -52,6 +61,15 @@ class ShareServiceTest {
 
     @Mock
     private ShareRewardWalletClient shareRewardWalletClient;
+
+    @Mock
+    private ShareRewardDispatcher shareRewardDispatcher;
+
+    @Mock
+    private TransactionTemplate transactionTemplate;
+
+    @Mock
+    private ObjectMapper objectMapper;
 
     @InjectMocks
     private ShareService shareService;
@@ -102,7 +120,8 @@ class ShareServiceTest {
 
     @Test
     @DisplayName("createShareEvent credits wallet for today's first share reward")
-    void createShareEvent_firstReward_creditsWallet() {
+    void createShareEvent_firstReward_creditsWallet() throws Exception {
+        runTransactionTemplateCallbacks();
         ShareCard card = createShareCard(800L, 1L, 10L);
         when(shareCardRepository.findById(800L)).thenReturn(Optional.of(card));
         when(shareLogRepository.findByIdempotencyKey(anyString())).thenReturn(Optional.empty());
@@ -113,7 +132,15 @@ class ShareServiceTest {
             ReflectionTestUtils.setField(log, "id", 900L);
             return log;
         });
-        when(shareRewardWalletClient.earnShareReward(anyLong(), anyLong(), anyInt(), anyString()))
+        when(objectMapper.valueToTree(any())).thenReturn(JsonNodeFactory.instance.objectNode()
+                .put("userId", 1L)
+                .put("rewardStarPiece", 10));
+        when(characterOutboxEventRepository.saveAndFlush(any(CharacterOutboxEvent.class))).thenAnswer(invocation -> {
+            CharacterOutboxEvent outbox = invocation.getArgument(0);
+            ReflectionTestUtils.setField(outbox, "id", 950L);
+            return outbox;
+        });
+        when(shareRewardDispatcher.dispatchNow(950L))
                 .thenReturn(new ShareRewardWalletClient.WalletRewardResult(110, 700L));
 
         var result = shareService.createShareEvent(1L, 800L, "KAKAO", "LINK", "client-key");
@@ -122,18 +149,15 @@ class ShareServiceTest {
         assertTrue(result.rewardPaid());
         assertEquals(10, result.rewardStarPiece());
         assertEquals(110, result.walletStarPiece());
-        verify(shareRewardWalletClient).earnShareReward(
-                1L,
-                900L,
-                10,
-                "SHARE_REWARD:1:" + LocalDate.now(java.time.ZoneId.of("Asia/Seoul"))
-        );
+        verify(characterOutboxEventRepository).saveAndFlush(any(CharacterOutboxEvent.class));
+        verify(shareRewardDispatcher).dispatchNow(950L);
         verify(shareRewardWalletClient, never()).getWalletStarPiece(anyLong());
     }
 
     @Test
     @DisplayName("createShareEvent replays existing daily reward without crediting wallet again")
     void createShareEvent_existingReward_replaysWithoutCredit() {
+        runTransactionTemplateCallbacks();
         ShareCard card = createShareCard(800L, 1L, 10L);
         ShareLog existingLog = ShareLog.builder()
                 .userId(1L)
@@ -160,6 +184,13 @@ class ShareServiceTest {
         assertEquals(10, result.rewardStarPiece());
         assertEquals(110, result.walletStarPiece());
         verify(shareRewardWalletClient, never()).earnShareReward(anyLong(), anyLong(), anyInt(), anyString());
+    }
+
+    private void runTransactionTemplateCallbacks() {
+        when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+            TransactionCallback<?> callback = invocation.getArgument(0);
+            return callback.doInTransaction(null);
+        });
     }
 
     private UserCharacter createCharacter(Long characterId, Long userId) {

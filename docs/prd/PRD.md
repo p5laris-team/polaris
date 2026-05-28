@@ -1440,10 +1440,10 @@ MVP에서는 텍스트 1문항만 구현한다.
 | --- | --- |
 | 미션 완료 | 10 |
 | 출석 | 10 |
-| SNS 공유 시도 | 10 보상 대상 여부 기록 |
+| SNS 공유 시도 | 10 보상 요청 기록 및 wallet 적립 |
 
 SNS 공유 시도는 `share_logs`에 보상 대상 여부와 보상 수량을 기록한다.
-다만 현재 MVP 코드에서는 지갑 적립 연동 전 단계이므로 실제 별조각 잔액 증가는 미션 완료와 출석 보상에서 발생한다.
+오늘 첫 공유 보상 대상이면 `character_outbox_events`에 `SHARE_REWARD_REQUESTED` 이벤트를 함께 저장하고, 커밋 후 wallet 적립을 즉시 시도한다. 즉시 지급 실패 시 API는 빠르게 실패하지만 outbox 스케줄러가 재처리한다.
 
 ---
 
@@ -1641,8 +1641,9 @@ MVP에서는 아래 방식을 지원한다.
 
 ```
 SNS 공유 버튼 클릭 시 하루 1회 보상 대상 여부를 기록한다.
-보상 대상이면 share_logs.reward_paid=true, reward_star_piece=10으로 저장한다.
-현재 MVP 코드에서는 지갑 적립은 연결하지 않는다.
+보상 대상이면 `share_logs.reward_paid=false`, `reward_star_piece=10`으로 먼저 저장하고, `character_outbox_events`에 `SHARE_REWARD_REQUESTED` 이벤트를 저장한다.
+커밋 후 wallet 적립을 즉시 시도하며, 성공하면 `share_logs.reward_paid=true`와 outbox `status=SUCCEEDED`로 갱신한다.
+즉시 지급 실패 시 API는 빠르게 실패하고, outbox 스케줄러가 `next_attempt_at` 기준으로 재처리한다.
 실제 외부 게시 검증은 MVP에서 하지 않는다
 공유 실제 완료 여부를 100% 검증하기 어려우므로 MVP에서는 share intent reward로 처리
 ```

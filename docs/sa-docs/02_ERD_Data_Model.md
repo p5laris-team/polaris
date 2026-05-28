@@ -297,7 +297,7 @@ partial unique(user_id, image_url) where image_url is not null
 | shared_at | timestamp | 공유 시각 |
 | share_date | date | 공유 보상 기준일 |
 | reward_star_piece | int | 공유 보상 수량 |
-| reward_paid | boolean | 보상 수령 여부 |
+| reward_paid | boolean | wallet 지급 성공 여부. 최초 공유 이벤트 저장 시 false이고 outbox 처리 성공 후 true |
 | idempotency_key | varchar unique | 공유 보상 중복 지급 방지 키 |
 
 ### 제약 / 인덱스
@@ -312,6 +312,49 @@ partial unique(user_id, share_date) where reward_paid = true
 ```
 공유 클릭 수집 API는 현재 DB 테이블을 만들지 않고 애플리케이션 로그만 남긴다.
 공유카드 이미지의 콘텐츠 자체는 신뢰하지 않고, share_logs와 보상 멱등키를 보상 기준으로 사용한다.
+오늘 첫 공유 보상 대상이면 share_logs와 character_outbox_events를 같은 트랜잭션에 저장한다.
+```
+
+---
+
+## 1.5.3 `character_outbox_events`
+
+character 모듈에서 외부 모듈 호출 또는 향후 Kafka 발행이 필요한 이벤트를 저장하는 공용 outbox 테이블이다.
+현재 공유 보상 지급 요청은 `SHARE_REWARD_REQUESTED` 이벤트로 저장하고, user wallet gRPC 지급 실패 시 스케줄러가 재처리한다.
+
+| 컬럼 | 타입 | 설명 |
+| --- | --- | --- |
+| id | bigint PK | outbox 이벤트 ID |
+| aggregate_type | varchar | 이벤트가 속한 aggregate 타입. 예: `SHARE_LOG` |
+| aggregate_id | bigint | aggregate ID. 공유 보상은 share_logs.id |
+| event_type | varchar | 이벤트 타입. 예: `SHARE_REWARD_REQUESTED` |
+| payload | jsonb | 이벤트 처리에 필요한 JSON payload |
+| idempotency_key | varchar(120) unique | 외부 호출/발행 멱등키 |
+| status | varchar | PENDING / PROCESSING / SUCCEEDED / FAILED |
+| attempt_count | int | 재시도 횟수 |
+| next_attempt_at | timestamp | 다음 처리 가능 시각 |
+| last_error_message | text nullable | 마지막 실패 메시지 |
+| created_at | timestamp | 생성일 |
+| updated_at | timestamp | 수정일 |
+
+### 제약 / 인덱스
+
+```
+unique(idempotency_key)
+check(attempt_count >= 0)
+check(status in ('PENDING', 'PROCESSING', 'SUCCEEDED', 'FAILED'))
+index(status, next_attempt_at)
+index(event_type, status, next_attempt_at)
+index(aggregate_type, aggregate_id, event_type)
+```
+
+### 공유 보상 payload 예
+
+```json
+{
+  "userId": 1,
+  "rewardStarPiece": 10
+}
 ```
 
 ---

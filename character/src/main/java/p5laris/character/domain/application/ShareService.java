@@ -1,22 +1,28 @@
 package p5laris.character.domain.application;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
+import p5laris.character.domain.domain.entity.CharacterOutboxEvent;
 import p5laris.character.domain.domain.entity.ShareCard;
 import p5laris.character.domain.domain.entity.ShareLog;
 import p5laris.character.domain.domain.entity.UserCharacter;
+import p5laris.character.domain.domain.repository.CharacterOutboxEventRepository;
 import p5laris.character.domain.domain.repository.ShareCardRepository;
 import p5laris.character.domain.domain.repository.ShareLogRepository;
 import p5laris.character.domain.domain.repository.UserCharacterRepository;
 import p5laris.character.domain.exception.CharacterErrorCode;
 import p5laris.character.domain.exception.CharacterException;
+import p5laris.character.domain.infrastructure.grpc.ShareRewardWalletClient;
 
 import java.net.URI;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
@@ -43,8 +49,13 @@ public class ShareService {
     private final ShareCardRepository shareCardRepository;
     private final ShareLogRepository shareLogRepository;
     private final org.springframework.context.ApplicationEventPublisher eventPublisher;
+    private final CharacterOutboxEventRepository characterOutboxEventRepository;
     private final S3StorageService s3StorageService;
     private final UserCharacterRepository userCharacterRepository;
+    private final ShareRewardWalletClient shareRewardWalletClient;
+    private final ShareRewardDispatcher shareRewardDispatcher;
+    private final TransactionTemplate transactionTemplate;
+    private final ObjectMapper objectMapper;
 
     @Value("${app.public-base-url}")
     private String publicBaseUrl;
@@ -127,10 +138,30 @@ public class ShareService {
      * TODO [Wallet Domain Integration]: call wallet service to credit rewardStarPiece if rewardPaid=true.
      * Currently rewardPaid is determined and stored, but no actual credit is made.
      */
-    @Transactional
     public ShareEventResult createShareEvent(Long userId, Long shareCardId,
                                              String platform, String shareType,
                                              String idempotencyKey) {
+        ShareRewardCommand command = transactionTemplate.execute(status ->
+                recordShareEvent(userId, shareCardId, platform, shareType, idempotencyKey)
+        );
+
+        if (command.rewardOutboxId() != null) {
+            int walletStarPiece = shareRewardDispatcher.dispatchNow(command.rewardOutboxId()).starPiece();
+            return new ShareEventResult(command.shareLogId(), true, command.rewardStarPiece(), walletStarPiece);
+        }
+
+        int walletStarPiece = shareRewardWalletClient.getWalletStarPiece(userId);
+        return new ShareEventResult(
+                command.shareLogId(),
+                command.rewardPaid(),
+                command.rewardStarPiece(),
+                walletStarPiece
+        );
+    }
+
+    private ShareRewardCommand recordShareEvent(Long userId, Long shareCardId,
+                                                String platform, String shareType,
+                                                String idempotencyKey) {
         ShareCard card = shareCardRepository.findById(shareCardId)
                 .orElseThrow(() -> new CharacterException(CharacterErrorCode.SHARE_CARD_NOT_FOUND));
         if (!card.getUserId().equals(userId)) {
@@ -145,14 +176,19 @@ public class ShareService {
         var existingRewardLog = shareLogRepository.findByIdempotencyKey(rewardIdempotencyKey);
         if (existingRewardLog.isPresent()) {
             ShareLog log = existingRewardLog.get();
-            return new ShareEventResult(log.getId(), log.isRewardPaid(), log.getRewardStarPiece(), 0);
+            Long outboxId = log.isRewardPaid()
+                    ? null
+                    : characterOutboxEventRepository.findByIdempotencyKey(rewardIdempotencyKey)
+                            .map(CharacterOutboxEvent::getId)
+                            .orElse(null);
+            return new ShareRewardCommand(log.getId(), outboxId, log.isRewardPaid(), log.getRewardStarPiece());
         }
 
         boolean alreadyRewarded = shareLogRepository.existsByUserIdAndShareDateAndRewardPaidTrue(userId, today);
-        boolean rewardPaid = !alreadyRewarded;
-        int rewardAmount = rewardPaid ? SHARE_REWARD_STAR_PIECE : 0;
+        boolean rewardEligible = !alreadyRewarded;
+        int rewardAmount = rewardEligible ? SHARE_REWARD_STAR_PIECE : 0;
 
-        String finalIdempotencyKey = rewardPaid
+        String finalIdempotencyKey = rewardEligible
                 ? rewardIdempotencyKey
                 : (idempotencyKey != null && !idempotencyKey.isBlank()
                     ? idempotencyKey
@@ -167,11 +203,24 @@ public class ShareService {
                 .sharedAt(Instant.now())
                 .shareDate(today)
                 .rewardStarPiece(rewardAmount)
-                .rewardPaid(rewardPaid)
+                .rewardPaid(false)
                 .idempotencyKey(finalIdempotencyKey)
                 .build();
         shareLogRepository.save(shareLog);
 
+        if (!rewardEligible) {
+            return new ShareRewardCommand(shareLog.getId(), null, false, rewardAmount);
+        }
+
+        CharacterOutboxEvent outbox = CharacterOutboxEvent.pending(
+                ShareRewardDispatcher.AGGREGATE_TYPE_SHARE_LOG,
+                shareLog.getId(),
+                ShareRewardDispatcher.EVENT_TYPE_SHARE_REWARD_REQUESTED,
+                objectMapper.valueToTree(new ShareRewardDispatcher.ShareRewardPayload(userId, rewardAmount)),
+                rewardIdempotencyKey,
+                LocalDateTime.now(SHARE_DATE_ZONE)
+        );
+        characterOutboxEventRepository.saveAndFlush(outbox);
         // TODO [Wallet Domain Integration]: if rewardPaid, call walletService.credit(userId, rewardAmount).
         // Example (uncomment after wallet domain is ready):
         // if (rewardPaid) {
@@ -180,7 +229,7 @@ public class ShareService {
 
         eventPublisher.publishEvent(p5laris.character.domain.application.event.ShareEventLogEvent.shareCompleted(shareLog));
 
-        return new ShareEventResult(shareLog.getId(), rewardPaid, rewardAmount, 0);
+        return new ShareRewardCommand(shareLog.getId(), outbox.getId(), false, rewardAmount);
     }
 
     // ---------- §9.4 GetShareLink (Public) ----------
@@ -321,4 +370,5 @@ public class ShareService {
     public record ShareLinkResult(String shareId, String characterName, String imageUrl, String headline, String signupUrl) {}
     public record ShareClickResult(String shareId, boolean recorded) {}
     public record TodayShareEventStatusResult(boolean rewardClaimed, String lastSharedAt) {}
+    private record ShareRewardCommand(Long shareLogId, Long rewardOutboxId, boolean rewardPaid, int rewardStarPiece) {}
 }
