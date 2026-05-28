@@ -125,19 +125,31 @@ public class UserMission extends BaseEntity {
     }
 
     /**
-     * ai 모듈이 만든 캐릭터 말투 문구를 실제 유저 미션에 반영한다.
+     * 검증을 통과한 AI 자율 미션 후보를 실제 유저 미션에 반영한다.
      *
-     * 미션 제목/설명/카테고리/난이도/보상은 seed template 기준을 유지하고,
-     * 사용자에게 보이는 캐릭터 제안 문구와 완료 후 반응만 AI 결과로 교체한다.
+     * 처음에는 seed template fallback row로 저장하지만,
+     * AI 후보가 안전 검증을 통과하면 template 연결을 끊고 AI가 만든 제목/설명/문구를 사용한다.
+     * 보상은 AI가 아니라 mission 서비스의 난이도별 보상 정책으로 계산된 값만 받는다.
      */
-    public void applyGeneratedTexts(
+    public void applyGeneratedMission(
             Long aiGenerationId,
+            String title,
+            String description,
             String characterMessage,
-            String completionCharacterResponse
+            String completionCharacterResponse,
+            MissionCategoryType category,
+            MissionDifficultyType difficulty,
+            int rewardStarPiece
     ) {
+        this.missionTemplateId = null;
         this.aiGenerationId = aiGenerationId;
+        this.title = title;
+        this.description = description;
         this.characterMessage = characterMessage;
         this.completionCharacterResponse = completionCharacterResponse;
+        this.category = category;
+        this.difficulty = difficulty;
+        this.rewardStarPiece = rewardStarPiece;
     }
 
     // OFFERED/ANSWERING 상태 미션을 REJECTED로 바꾸고 거절 시각을 기록한다.
