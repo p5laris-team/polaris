@@ -10,6 +10,7 @@ service MissionService {
   rpc PingPong(PingPongRequest) returns (PingPongResponse);
   rpc GetCurrentMission(GetCurrentMissionRequest) returns (GetCurrentMissionResponse);
   rpc GetTodayMissions(GetTodayMissionsRequest) returns (GetTodayMissionsResponse);
+  rpc GetMissionDetail(GetMissionDetailRequest) returns (GetMissionDetailResponse);
   rpc CreateNextMission(CreateNextMissionRequest) returns (CreateNextMissionResponse);
   rpc RejectMission(RejectMissionRequest) returns (RejectMissionResponse);
   rpc StartCompletionSession(StartCompletionSessionRequest) returns (StartCompletionSessionResponse);
@@ -43,6 +44,7 @@ message GetCurrentMissionResponse {
 
 message GetTodayMissionsRequest {
   int64 user_id = 1;
+  optional string mission_date = 2;
 }
 
 message GetTodayMissionsResponse {
@@ -54,6 +56,20 @@ message GetTodayMissionsResponse {
   int32 remaining_offer_count = 6;
   optional int64 current_mission_id = 7;
   repeated TodayMission missions = 8;
+  int32 max_daily_reward_count = 9;
+  int32 completed_reward_count = 10;
+  int32 remaining_reward_count = 11;
+  int32 max_daily_reject_count = 12;
+  int32 remaining_reject_count = 13;
+}
+
+message GetMissionDetailRequest {
+  int64 user_id = 1;
+  int64 mission_id = 2;
+}
+
+message GetMissionDetailResponse {
+  MissionDetail mission = 1;
 }
 
 message CreateNextMissionRequest {
@@ -133,6 +149,29 @@ message TodayMission {
   string created_at = 9;
   string completed_at = 10;
   string rejected_at = 11;
+  string completion_question = 12;
+  string answer_preview = 13;
+  bool has_answer = 14;
+}
+
+message MissionDetail {
+  int64 id = 1;
+  string mission_date = 2;
+  int32 stack_order = 3;
+  string title = 4;
+  string description = 5;
+  string character_message = 6;
+  MissionCategory category = 7;
+  MissionDifficulty difficulty = 8;
+  int32 reward_star_piece = 9;
+  MissionStatus status = 10;
+  string created_at = 11;
+  string completed_at = 12;
+  string rejected_at = 13;
+  CompletionQuestion question = 14;
+  CompletionAnswer answer = 15;
+  string completion_character_response = 16;
+  bool has_answer = 17;
 }
 
 message MissionSummary {

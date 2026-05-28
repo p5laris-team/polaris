@@ -4,9 +4,12 @@ import com.p5laris.proto.mission.v1.CreateNextMissionRequest;
 import com.p5laris.proto.mission.v1.CreateNextMissionResponse;
 import com.p5laris.proto.mission.v1.GetCurrentMissionRequest;
 import com.p5laris.proto.mission.v1.GetCurrentMissionResponse;
+import com.p5laris.proto.mission.v1.GetMissionDetailRequest;
+import com.p5laris.proto.mission.v1.GetMissionDetailResponse;
 import com.p5laris.proto.mission.v1.GetTodayMissionsRequest;
 import com.p5laris.proto.mission.v1.GetTodayMissionsResponse;
 import com.p5laris.proto.mission.v1.Mission;
+import com.p5laris.proto.mission.v1.MissionDetail;
 import com.p5laris.proto.mission.v1.MissionServiceGrpc;
 import com.p5laris.proto.mission.v1.RejectMissionRequest;
 import com.p5laris.proto.mission.v1.RejectMissionResponse;
@@ -24,6 +27,8 @@ import p5laris.gateway.domain.mission.exception.MissionGatewayErrorCode;
 import p5laris.gateway.domain.mission.exception.MissionGatewayException;
 import p5laris.gateway.global.exception.BusinessException;
 import p5laris.gateway.global.exception.CommonErrorCode;
+
+import java.time.LocalDate;
 
 /**
  * mission gRPC 서버를 호출하고 REST DTO로 변환하는 gateway adapter다.
@@ -61,11 +66,22 @@ public class MissionGatewayService {
      * 오늘 미션 히스토리 화면에 필요한 stack 목록과 집계 정보를 조회한다.
      */
     public MissionDto.TodayMissionsResponse getTodayMissions(Long userId) {
+        return getMissionHistory(userId, null);
+    }
+
+    /**
+     * 특정 날짜 미션 히스토리 화면에 필요한 stack 목록과 집계 정보를 조회한다.
+     */
+    public MissionDto.TodayMissionsResponse getMissionHistory(Long userId, LocalDate missionDate) {
         try {
+            GetTodayMissionsRequest.Builder request = GetTodayMissionsRequest.newBuilder()
+                    .setUserId(userId);
+            if (missionDate != null) {
+                request.setMissionDate(missionDate.toString());
+            }
+
             GetTodayMissionsResponse response = missionStub.getTodayMissions(
-                    GetTodayMissionsRequest.newBuilder()
-                            .setUserId(userId)
-                            .build()
+                    request.build()
             );
 
             return new MissionDto.TodayMissionsResponse(
@@ -75,11 +91,36 @@ public class MissionGatewayService {
                     response.getCompletedCount(),
                     response.getRejectedCount(),
                     response.getRemainingOfferCount(),
+                    response.getMaxDailyRewardCount(),
+                    response.getCompletedRewardCount(),
+                    response.getRemainingRewardCount(),
+                    response.getMaxDailyRejectCount(),
+                    response.getRemainingRejectCount(),
                     response.hasCurrentMissionId() ? response.getCurrentMissionId() : null,
                     response.getMissionsList().stream()
                             .map(this::toTodayMissionItem)
                             .toList()
             );
+        } catch (StatusRuntimeException e) {
+            throw toGatewayException(e);
+        }
+    }
+
+    /**
+     * 미션 1개의 상세 정보와 완료 답변 전문을 조회한다.
+     */
+    public MissionDto.MissionDetailResponse getMissionDetail(Long userId, Long missionId) {
+        validateMissionId(missionId);
+
+        try {
+            GetMissionDetailResponse response = missionStub.getMissionDetail(
+                    GetMissionDetailRequest.newBuilder()
+                            .setUserId(userId)
+                            .setMissionId(missionId)
+                            .build()
+            );
+
+            return toMissionDetailResponse(response.getMission());
         } catch (StatusRuntimeException e) {
             throw toGatewayException(e);
         }
@@ -232,7 +273,57 @@ public class MissionGatewayService {
                 mission.getCharacterMessage(),
                 emptyToNull(mission.getCreatedAt()),
                 emptyToNull(mission.getCompletedAt()),
-                emptyToNull(mission.getRejectedAt())
+                emptyToNull(mission.getRejectedAt()),
+                emptyToNull(mission.getCompletionQuestion()),
+                emptyToNull(mission.getAnswerPreview()),
+                mission.getHasAnswer()
+        );
+    }
+
+    private MissionDto.MissionDetailResponse toMissionDetailResponse(MissionDetail mission) {
+        return new MissionDto.MissionDetailResponse(
+                mission.getId(),
+                mission.getMissionDate(),
+                mission.getStackOrder(),
+                mission.getTitle(),
+                mission.getDescription(),
+                mission.getCharacterMessage(),
+                toRestMissionCategory(mission.getCategory().name()),
+                toRestMissionDifficulty(mission.getDifficulty().name()),
+                mission.getRewardStarPiece(),
+                toRestMissionStatus(mission.getStatus().name()),
+                emptyToNull(mission.getCreatedAt()),
+                emptyToNull(mission.getCompletedAt()),
+                emptyToNull(mission.getRejectedAt()),
+                toCompletionQuestionOrNull(mission),
+                toCompletionAnswerOrNull(mission),
+                emptyToNull(mission.getCompletionCharacterResponse()),
+                mission.getHasAnswer()
+        );
+    }
+
+    private MissionDto.CompletionQuestion toCompletionQuestionOrNull(MissionDetail mission) {
+        if (!mission.hasQuestion()) {
+            return null;
+        }
+
+        return new MissionDto.CompletionQuestion(
+                mission.getQuestion().getId(),
+                mission.getQuestion().getText(),
+                toRestCompletionInputType(mission.getQuestion().getInputType().name()),
+                mission.getQuestion().getMinLength(),
+                mission.getQuestion().getMaxLength()
+        );
+    }
+
+    private MissionDto.CompletionAnswer toCompletionAnswerOrNull(MissionDetail mission) {
+        if (!mission.getHasAnswer()) {
+            return null;
+        }
+
+        return new MissionDto.CompletionAnswer(
+                mission.getAnswer().getText(),
+                mission.getAnswer().getAnsweredAt()
         );
     }
 
@@ -318,11 +409,19 @@ public class MissionGatewayService {
             case NOT_FOUND -> new MissionGatewayException(toNotFoundErrorCode(description));
             case INVALID_ARGUMENT -> new MissionGatewayException(MissionGatewayErrorCode.MISSION_ANSWER_INVALID);
             case ALREADY_EXISTS -> new MissionGatewayException(MissionGatewayErrorCode.MISSION_ALREADY_COMPLETED);
-            case RESOURCE_EXHAUSTED -> new MissionGatewayException(MissionGatewayErrorCode.MISSION_DAILY_LIMIT_EXCEEDED);
+            case RESOURCE_EXHAUSTED -> new MissionGatewayException(toResourceExhaustedErrorCode(description));
             case FAILED_PRECONDITION -> new MissionGatewayException(toFailedPreconditionErrorCode(description));
             case UNAVAILABLE -> new MissionGatewayException(toUnavailableErrorCode(description));
             default -> new BusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
         };
+    }
+
+    private MissionGatewayErrorCode toResourceExhaustedErrorCode(String description) {
+        if (contains(description, "거절")) {
+            return MissionGatewayErrorCode.MISSION_REJECT_LIMIT_EXCEEDED;
+        }
+
+        return MissionGatewayErrorCode.MISSION_DAILY_LIMIT_EXCEEDED;
     }
 
     private MissionGatewayErrorCode toNotFoundErrorCode(String description) {
