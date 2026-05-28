@@ -17,7 +17,6 @@ import p5laris.character.domain.domain.repository.ShareLogRepository;
 import p5laris.character.domain.domain.repository.UserCharacterRepository;
 import p5laris.character.domain.exception.CharacterErrorCode;
 import p5laris.character.domain.exception.CharacterException;
-import p5laris.character.domain.infrastructure.grpc.ShareRewardWalletClient;
 
 import java.net.URI;
 import java.time.Instant;
@@ -32,7 +31,8 @@ import java.util.UUID;
  * Share service handling §9 share APIs.
  *
  * ShareCard / ShareLog entities live in the character module.
- * Wallet reward (star piece) is credited through the user wallet gRPC service.
+ * Wallet reward (star piece) is handled via:
+ * TODO [Wallet Domain Integration]: call wallet service to credit star pieces on share reward.
  */
 @Slf4j
 @Service
@@ -47,6 +47,7 @@ public class ShareService {
 
     private final ShareCardRepository shareCardRepository;
     private final ShareLogRepository shareLogRepository;
+    private final org.springframework.context.ApplicationEventPublisher eventPublisher;
     private final CharacterOutboxEventRepository characterOutboxEventRepository;
     private final S3StorageService s3StorageService;
     private final UserCharacterRepository userCharacterRepository;
@@ -92,6 +93,7 @@ public class ShareService {
                             .shareUrl(shareId)
                             .build();
                     shareCardRepository.save(card);
+                    eventPublisher.publishEvent(p5laris.character.domain.application.event.ShareEventLogEvent.shareCardCreated(card));
 
                     return new ShareCardResult(
                             card.getId(),
@@ -132,8 +134,8 @@ public class ShareService {
      * API spec 9.3 POST /api/share/v1/share-events
      *
      * Wallet credit:
-     * If this is today's first rewarded share, credit star pieces through the user wallet service
-     * using the server-generated daily reward idempotency key.
+     * TODO [Wallet Domain Integration]: call wallet service to credit rewardStarPiece if rewardPaid=true.
+     * Currently rewardPaid is determined and stored, but no actual credit is made.
      */
     public ShareEventResult createShareEvent(Long userId, Long shareCardId,
                                              String platform, String shareType,
@@ -203,7 +205,7 @@ public class ShareService {
                 .rewardPaid(false)
                 .idempotencyKey(finalIdempotencyKey)
                 .build();
-        shareLogRepository.saveAndFlush(shareLog);
+        shareLogRepository.save(shareLog);
 
         if (!rewardEligible) {
             return new ShareRewardCommand(shareLog.getId(), null, false, rewardAmount);
@@ -218,6 +220,14 @@ public class ShareService {
                 LocalDateTime.now(SHARE_DATE_ZONE)
         );
         characterOutboxEventRepository.saveAndFlush(outbox);
+        // TODO [Wallet Domain Integration]: if rewardPaid, call walletService.credit(userId, rewardAmount).
+        // Example (uncomment after wallet domain is ready):
+        // if (rewardPaid) {
+        //     walletService.credit(userId, rewardAmount, "SHARE_REWARD");
+        // }
+
+        eventPublisher.publishEvent(p5laris.character.domain.application.event.ShareEventLogEvent.shareCompleted(shareLog));
+
         return new ShareRewardCommand(shareLog.getId(), outbox.getId(), false, rewardAmount);
     }
 
