@@ -58,7 +58,8 @@ public class AiMissionTextClient {
                     response.getCompletionCharacterResponse(),
                     response.getCategory(),
                     response.getDifficulty(),
-                    response.getFallbackUsed()
+                    response.getFallbackUsed(),
+                    response.getRequestId()
             ));
         } catch (StatusRuntimeException e) {
             log.warn("AI 자율 미션 후보 생성 실패. requestId={}, status={}",

@@ -1025,7 +1025,8 @@ class MissionServiceTest {
                 "AI가 만든 완료 반응",
                 category,
                 difficulty,
-                fallbackUsed
+                fallbackUsed,
+                "request-" + aiGenerationId
         );
     }
 

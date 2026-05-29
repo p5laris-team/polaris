@@ -65,6 +65,7 @@ class AiEventLogEventListenerTest {
 
         JsonNode properties = objectMapper.readTree(request.getPropertiesJson());
         assertThat(properties.get("characterId").asLong()).isEqualTo(2001L);
+        assertThat(properties.get("requestId").asText()).isEqualTo("request-1");
         assertThat(properties.get("missionTemplateId").asLong()).isEqualTo(3001L);
         assertThat(properties.get("provider").asText()).isEqualTo("GEMINI");
         assertThat(properties.get("model").asText()).isEqualTo("gemini-2.5-flash");
@@ -89,6 +90,7 @@ class AiEventLogEventListenerTest {
 
     private AiEventLogEvent event() {
         Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("requestId", "request-1");
         metadata.put("characterId", 2001L);
         metadata.put("missionTemplateId", 3001L);
         metadata.put("promptTemplateId", 4L);

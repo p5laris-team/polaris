@@ -20,6 +20,7 @@ import com.p5laris.proto.mission.v1.TodayMission;
 import com.p5laris.proto.mission.v1.UpsertMissionFeedbackResponse;
 import com.p5laris.proto.mission.v1.WalletSnapshot;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -76,6 +77,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class MissionService {
 
     /*
@@ -393,13 +395,21 @@ public class MissionService {
             AiMissionTextResult generatedText
     ) {
         if (generatedText.fallbackUsed()) {
-            return Optional.empty();
+            return rejectGeneratedMission(
+                    fallbackMission,
+                    generatedText,
+                    AiMissionCandidateRejectionReason.AI_FALLBACK_USED
+            );
         }
 
         Optional<MissionCategoryType> category = toMissionCategory(generatedText.category());
         Optional<MissionDifficultyType> difficulty = toMissionDifficulty(generatedText.difficulty());
         if (category.isEmpty() || difficulty.isEmpty()) {
-            return Optional.empty();
+            return rejectGeneratedMission(
+                    fallbackMission,
+                    generatedText,
+                    AiMissionCandidateRejectionReason.INVALID_CATEGORY_OR_DIFFICULTY
+            );
         }
 
         if (difficulty.get() == MissionDifficultyType.CHALLENGE
@@ -409,7 +419,11 @@ public class MissionService {
                         MissionDifficultyType.CHALLENGE,
                         fallbackMission.getId()
                 )) {
-            return Optional.empty();
+            return rejectGeneratedMission(
+                    fallbackMission,
+                    generatedText,
+                    AiMissionCandidateRejectionReason.CHALLENGE_LIMIT_EXCEEDED
+            );
         }
 
         String title = normalizeText(generatedText.title(), AUTONOMOUS_TITLE_MAX_LENGTH);
@@ -424,19 +438,44 @@ public class MissionService {
                 || description == null
                 || characterMessage == null
                 || completionQuestion == null
-                || completionCharacterResponse == null
-                || containsCharacterInterpretation(title, description)
-                || containsProhibitedExpression(title, description, characterMessage, completionQuestion, completionCharacterResponse)
-                || !isAllowedForMissionTimeSlot(
-                        fallbackMission,
-                        category.get(),
-                        title,
-                        description,
-                        characterMessage,
-                        completionQuestion,
-                        completionCharacterResponse
-                )) {
-            return Optional.empty();
+                || completionCharacterResponse == null) {
+            return rejectGeneratedMission(
+                    fallbackMission,
+                    generatedText,
+                    AiMissionCandidateRejectionReason.INVALID_TEXT_LENGTH
+            );
+        }
+
+        if (containsCharacterInterpretation(title, description)) {
+            return rejectGeneratedMission(
+                    fallbackMission,
+                    generatedText,
+                    AiMissionCandidateRejectionReason.CHARACTER_TONE_IN_TITLE
+            );
+        }
+
+        if (containsProhibitedExpression(title, description, characterMessage, completionQuestion, completionCharacterResponse)) {
+            return rejectGeneratedMission(
+                    fallbackMission,
+                    generatedText,
+                    AiMissionCandidateRejectionReason.PROHIBITED_EXPRESSION
+            );
+        }
+
+        if (!isAllowedForMissionTimeSlot(
+                fallbackMission,
+                category.get(),
+                title,
+                description,
+                characterMessage,
+                completionQuestion,
+                completionCharacterResponse
+        )) {
+            return rejectGeneratedMission(
+                    fallbackMission,
+                    generatedText,
+                    AiMissionCandidateRejectionReason.TIME_SLOT_POLICY_VIOLATION
+            );
         }
 
         return Optional.of(new ValidatedGeneratedMission(
@@ -449,6 +488,25 @@ public class MissionService {
                 category.get(),
                 difficulty.get()
         ));
+    }
+
+    private Optional<ValidatedGeneratedMission> rejectGeneratedMission(
+            UserMission fallbackMission,
+            AiMissionTextResult generatedText,
+            AiMissionCandidateRejectionReason reason
+    ) {
+        log.info(
+                "AI 자율 미션 후보를 seed fallback으로 대체합니다. reason={}, userId={}, missionId={}, aiGenerationId={}, requestId={}, candidateCategory={}, candidateDifficulty={}, fallbackUsed={}",
+                reason,
+                fallbackMission.getUserId(),
+                fallbackMission.getId(),
+                generatedText.aiGenerationId(),
+                generatedText.requestId(),
+                generatedText.category(),
+                generatedText.difficulty(),
+                generatedText.fallbackUsed()
+        );
+        return Optional.empty();
     }
 
     // 제목/설명은 일반 한국어 미션 문장이어야 하며, 캐릭터 해석 형식은 캐릭터 문구에만 허용한다.
@@ -1187,5 +1245,15 @@ public class MissionService {
             MissionCategoryType category,
             MissionDifficultyType difficulty
     ) {
+    }
+
+    private enum AiMissionCandidateRejectionReason {
+        AI_FALLBACK_USED,
+        INVALID_CATEGORY_OR_DIFFICULTY,
+        CHALLENGE_LIMIT_EXCEEDED,
+        INVALID_TEXT_LENGTH,
+        CHARACTER_TONE_IN_TITLE,
+        PROHIBITED_EXPRESSION,
+        TIME_SLOT_POLICY_VIOLATION
     }
 }
