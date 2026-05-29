@@ -19,16 +19,20 @@ import org.springframework.test.util.ReflectionTestUtils;
 import p5laris.mission.domain.domain.entity.MissionCompletionAnswer;
 import p5laris.mission.domain.domain.entity.MissionFeedback;
 import p5laris.mission.domain.domain.entity.MissionOutboxEvent;
+import p5laris.mission.domain.domain.entity.UserMemory;
 import p5laris.mission.domain.domain.entity.UserMission;
 import p5laris.mission.domain.domain.enums.MissionFeedbackReaction;
 import p5laris.mission.domain.domain.enums.MissionFeedbackReasonCode;
 import p5laris.mission.domain.domain.enums.MissionFeedbackType;
 import p5laris.mission.domain.domain.enums.MissionOutboxEventStatus;
+import p5laris.mission.domain.domain.enums.UserMemorySourceType;
+import p5laris.mission.domain.domain.enums.UserMemoryType;
 import p5laris.mission.domain.domain.enums.UserMissionStatus;
 import p5laris.mission.domain.domain.repository.MissionCompletionAnswerRepository;
 import p5laris.mission.domain.domain.repository.MissionFeedbackRepository;
 import p5laris.mission.domain.domain.repository.MissionOutboxEventRepository;
 import p5laris.mission.domain.domain.repository.MissionTemplateRepository;
+import p5laris.mission.domain.domain.repository.UserMemoryRepository;
 import p5laris.mission.domain.domain.repository.UserMissionRepository;
 import p5laris.mission.domain.exception.MissionErrorCode;
 import p5laris.mission.domain.exception.MissionException;
@@ -99,6 +103,9 @@ class MissionServiceTest {
     private MissionFeedbackRepository missionFeedbackRepository;
 
     @Autowired
+    private UserMemoryRepository userMemoryRepository;
+
+    @Autowired
     private MissionOutboxEventRepository missionOutboxEventRepository;
 
     @Autowired
@@ -121,6 +128,7 @@ class MissionServiceTest {
 
     @BeforeEach
     void setUp() {
+        userMemoryRepository.deleteAll();
         missionOutboxEventRepository.deleteAll();
         missionFeedbackRepository.deleteAll();
         missionCompletionAnswerRepository.deleteAll();
@@ -426,6 +434,11 @@ class MissionServiceTest {
         MissionFeedback feedback = findFeedback(created.getMission().getId(), MissionFeedbackType.REJECTION);
         assertThat(feedback.getReasonCode()).isEqualTo(MissionFeedbackReasonCode.JUST_SKIP);
         assertThat(feedback.getReasonText()).isNull();
+        assertThat(userMemoryRepository.findBySourceTypeAndSourceIdAndMemoryType(
+                UserMemorySourceType.MISSION_FEEDBACK,
+                feedback.getId(),
+                UserMemoryType.MISSION_REJECTION
+        )).isEmpty();
     }
 
     @Test
@@ -440,8 +453,16 @@ class MissionServiceTest {
         );
 
         MissionFeedback feedback = findFeedback(created.getMission().getId(), MissionFeedbackType.REJECTION);
+        UserMemory memory = findMemory(
+                UserMemorySourceType.MISSION_FEEDBACK,
+                feedback.getId(),
+                UserMemoryType.MISSION_REJECTION
+        );
         assertThat(feedback.getReasonCode()).isEqualTo(MissionFeedbackReasonCode.TOO_HARD);
         assertThat(feedback.getReasonText()).isEqualTo("오늘은 몸이 무거워");
+        assertThat(memory.getContent()).contains("오늘은 몸이 무거워", "TOO_HARD");
+        assertThat(memory.getMetadataJson().get("missionId").asLong()).isEqualTo(created.getMission().getId());
+        assertThat(memory.getMetadataJson().get("reasonCode").asText()).isEqualTo("TOO_HARD");
     }
 
     @Test
@@ -682,6 +703,14 @@ class MissionServiceTest {
         assertThat(savedMission.getIdempotencyKey()).isEqualTo("MISSION_REWARD:" + created.getMission().getId());
         assertThat(savedAnswer.getAnswerText()).isEqualTo("물 한 컵을 마셨어");
         assertThat(savedAnswer.getAnsweredAt()).isNotNull();
+        UserMemory memory = findMemory(
+                UserMemorySourceType.MISSION_COMPLETION_ANSWER,
+                savedAnswer.getId(),
+                UserMemoryType.MISSION_COMPLETION
+        );
+        assertThat(memory.getContent()).contains("물 한 컵을 마셨어");
+        assertThat(memory.getImportance()).isEqualTo(70);
+        assertThat(memory.getMetadataJson().get("missionId").asLong()).isEqualTo(created.getMission().getId());
         assertThat(savedOutbox.getStatus()).isEqualTo(MissionOutboxEventStatus.SUCCEEDED);
         assertThat(savedOutbox.getAttemptCount()).isZero();
         assertThat(savedOutbox.getIdempotencyKey()).isEqualTo("MISSION_REWARD:" + created.getMission().getId());
@@ -722,12 +751,25 @@ class MissionServiceTest {
         );
 
         MissionFeedback feedback = findFeedback(created.getMission().getId(), MissionFeedbackType.SATISFACTION);
+        UserMemory memory = findMemory(
+                UserMemorySourceType.MISSION_FEEDBACK,
+                feedback.getId(),
+                UserMemoryType.MISSION_SATISFACTION
+        );
         assertThat(liked.getReaction().name()).isEqualTo("MISSION_FEEDBACK_REACTION_LIKE");
         assertThat(disliked.getReaction().name()).isEqualTo("MISSION_FEEDBACK_REACTION_DISLIKE");
         assertThat(feedback.getReaction()).isEqualTo(MissionFeedbackReaction.DISLIKE);
+        assertThat(memory.getContent()).contains("별로였어요");
+        assertThat(memory.getImportance()).isEqualTo(75);
+        assertThat(memory.getMetadataJson().get("reaction").asText()).isEqualTo("DISLIKE");
         assertThat(missionFeedbackRepository.findAll())
                 .filteredOn(saved -> saved.getMissionId().equals(created.getMission().getId())
                         && saved.getFeedbackType() == MissionFeedbackType.SATISFACTION)
+                .hasSize(1);
+        assertThat(userMemoryRepository.findAll())
+                .filteredOn(saved -> saved.getSourceType() == UserMemorySourceType.MISSION_FEEDBACK
+                        && saved.getSourceId().equals(feedback.getId())
+                        && saved.getMemoryType() == UserMemoryType.MISSION_SATISFACTION)
                 .hasSize(1);
     }
 
@@ -995,6 +1037,16 @@ class MissionServiceTest {
     private MissionFeedback findFeedback(Long missionId, MissionFeedbackType feedbackType) {
         return missionFeedbackRepository
                 .findByUserIdAndMissionIdAndFeedbackType(USER_ID, missionId, feedbackType)
+                .orElseThrow();
+    }
+
+    private UserMemory findMemory(
+            UserMemorySourceType sourceType,
+            Long sourceId,
+            UserMemoryType memoryType
+    ) {
+        return userMemoryRepository
+                .findBySourceTypeAndSourceIdAndMemoryType(sourceType, sourceId, memoryType)
                 .orElseThrow();
     }
 
