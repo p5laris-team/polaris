@@ -27,6 +27,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import p5laris.mission.domain.application.event.MissionEventLogEvent;
+import p5laris.mission.domain.application.memory.MissionMemoryRecorder;
 import p5laris.mission.domain.application.personalization.MissionPersonalizationContext;
 import p5laris.mission.domain.application.personalization.MissionPersonalizationContextBuilder;
 import p5laris.mission.domain.application.time.MissionTimePolicy;
@@ -131,6 +132,7 @@ public class MissionService {
     private final AiMissionTextClient aiMissionTextClient;
     private final CharacterProfileClient characterProfileClient;
     private final MissionPersonalizationContextBuilder missionPersonalizationContextBuilder;
+    private final MissionMemoryRecorder missionMemoryRecorder;
     private final WalletRewardClient walletRewardClient;
     private final MissionRewardDispatcher missionRewardDispatcher;
     private final TransactionTemplate transactionTemplate;
@@ -623,7 +625,8 @@ public class MissionService {
 
         LocalDateTime now = LocalDateTime.now(clock);
         mission.reject(now);
-        upsertRejectionFeedback(mission, reasonCode, reasonText);
+        MissionFeedback feedback = upsertRejectionFeedback(mission, reasonCode, reasonText);
+        missionMemoryRecorder.recordRejection(mission, feedback);
         eventPublisher.publishEvent(MissionEventLogEvent.missionRejected(mission, toOccurredAt(now)));
 
         return RejectMissionResponse.newBuilder()
@@ -654,12 +657,14 @@ public class MissionService {
         if (feedbackType == MissionFeedbackType.SATISFACTION) {
             validateSatisfactionFeedback(mission, reaction);
             MissionFeedback feedback = upsertSatisfactionFeedback(mission, reaction);
+            missionMemoryRecorder.recordSatisfaction(mission, feedback);
             return toFeedbackResponse(feedback);
         }
 
         if (feedbackType == MissionFeedbackType.REJECTION) {
             validateRejectionFeedback(mission);
             MissionFeedback feedback = upsertRejectionFeedback(mission, reasonCode, reasonText);
+            missionMemoryRecorder.recordRejection(mission, feedback);
             return toFeedbackResponse(feedback);
         }
 
@@ -739,6 +744,8 @@ public class MissionService {
                 throw new MissionException(MissionErrorCode.MISSION_ALREADY_COMPLETED);
             }
 
+            missionMemoryRecorder.recordCompletion(mission, answer);
+
             if (mission.isRewardPaid()) {
                 return new MissionCompletionContext(mission, answer, true, rewardIdempotencyKey, null);
             }
@@ -763,6 +770,7 @@ public class MissionService {
         LocalDateTime now = LocalDateTime.now(clock);
         answer.submit(normalizedAnswer, now);
         mission.complete(now);
+        missionMemoryRecorder.recordCompletion(mission, answer);
         eventPublisher.publishEvent(MissionEventLogEvent.missionCompleted(mission, answer, toOccurredAt(now)));
         MissionOutboxEvent outbox = ensureRewardOutbox(mission, rewardIdempotencyKey, now);
 
