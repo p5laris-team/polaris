@@ -47,11 +47,19 @@ class ItemServiceTest {
     @Mock
     private com.p5laris.proto.user.v1.WalletServiceGrpc.WalletServiceBlockingStub walletStub;
 
+    @Mock
+    private org.springframework.transaction.support.TransactionTemplate transactionTemplate;
+
     @InjectMocks
     private ItemService itemService;
 
     @BeforeEach
     void setUp() {
+        lenient().when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+            org.springframework.transaction.support.TransactionCallback<?> callback = invocation.getArgument(0);
+            return callback.doInTransaction(null);
+        });
+
         ReflectionTestUtils.setField(itemService, "cdnBaseUrl", "https://d24c6my56k1w5v.cloudfront.net");
         ReflectionTestUtils.setField(itemService, "walletStub", walletStub);
     }
@@ -251,6 +259,8 @@ class ItemServiceTest {
 
         when(userItemPurchaseRepository.save(any(UserItemPurchase.class)))
                 .thenReturn(savedPurchase);
+        when(userItemPurchaseRepository.findById(500L))
+                .thenReturn(Optional.of(savedPurchase));
 
         // when
         com.p5laris.proto.item.v1.PurchaseItemResponse response = itemService.purchaseItem(request);
@@ -265,7 +275,7 @@ class ItemServiceTest {
         assertThat(response.getTransactionId()).isEqualTo(12345L);
 
         verify(walletStub, times(1)).spendStarPiece(any());
-        verify(userItemRepository, times(1)).save(any());
-        verify(userItemPurchaseRepository, times(1)).save(any());
+        verify(userItemRepository, times(2)).save(any());
+        verify(userItemPurchaseRepository, times(2)).save(any());
     }
 }

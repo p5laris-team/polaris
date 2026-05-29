@@ -60,6 +60,7 @@ public class WalletService {
         return transactionRepository.save(tx);
     }
 
+    // 별조각 차감
     @Transactional
     public StarPieceTransaction spendStarPiece(Long userId, int amount, String reason, String refType, Long refId, String idempotencyKey) {
         if (amount < 0) throw new IllegalArgumentException("Amount must be positive");

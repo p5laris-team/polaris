@@ -207,7 +207,7 @@ public class ItemService {
 
         SpendStarPieceResponse spendResponse = null;
         try {
-            // Transaction 2: User 서버로 별조각 차감 API(gRPC) 호출 (트랜잭션 밖에서 실행)
+            // Transaction 2: User 서버로 별조각 차감 API(gRPC) 호출
             spendResponse = walletStub.spendStarPiece(
                 SpendStarPieceRequest.newBuilder()
                     .setUserId(userId)
@@ -246,9 +246,7 @@ public class ItemService {
         // Transaction 2: 성공 처리 및 유저 인벤토리 지급
         UserItemPurchase completedPurchase = transactionTemplate.execute(status -> {
             UserItemPurchase p = userItemPurchaseRepository.findById(pendingPurchase.getId()).orElseThrow();
-            
-            // starPiece, transactionId 등 업데이트 불가하므로 Reflection이나 새 엔티티 복사가 필요하지만, 엔티티 Setter가 없다면?
-            // 실제 구현상 UserItemPurchase 엔티티에 필드 갱신 메서드가 필요함 (아래에서 엔티티 수정 필요)
+
             p.updateStatus("COMPLETED");
             p.updateSuccessData(finalSpendResponse.getStarPiece(), finalSpendResponse.getTransactionId());
             
