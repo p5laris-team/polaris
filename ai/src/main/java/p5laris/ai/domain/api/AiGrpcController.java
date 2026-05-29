@@ -5,6 +5,8 @@ import com.p5laris.proto.ai.v1.AiGenerationStatus;
 import com.p5laris.proto.ai.v1.AiServiceGrpc;
 import com.p5laris.proto.ai.v1.GenerateMissionTextsRequest;
 import com.p5laris.proto.ai.v1.GenerateMissionTextsResponse;
+import com.p5laris.proto.ai.v1.GenerateTextEmbeddingRequest;
+import com.p5laris.proto.ai.v1.GenerateTextEmbeddingResponse;
 import com.p5laris.proto.ai.v1.HealthStatus;
 import com.p5laris.proto.ai.v1.PingPongRequest;
 import com.p5laris.proto.ai.v1.PingPongResponse;
@@ -14,8 +16,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.server.service.GrpcService;
 import p5laris.ai.domain.application.AiMissionTextService;
+import p5laris.ai.domain.application.AiTextEmbeddingService;
 import p5laris.ai.domain.application.dto.MissionTextGenerationCommand;
 import p5laris.ai.domain.application.dto.MissionTextGenerationResult;
+import p5laris.ai.domain.application.dto.TextEmbeddingCommand;
+import p5laris.ai.domain.application.dto.TextEmbeddingResult;
 import p5laris.ai.domain.exception.AiErrorCode;
 import p5laris.ai.domain.exception.AiException;
 
@@ -33,6 +38,7 @@ public class AiGrpcController extends AiServiceGrpc.AiServiceImplBase {
     private static final String INTERNAL_ERROR_DESCRIPTION = "AI 서비스 처리 중 오류가 발생했습니다.";
 
     private final AiMissionTextService aiMissionTextService;
+    private final AiTextEmbeddingService aiTextEmbeddingService;
 
     // AI gRPC 서버가 살아 있는지 확인하는 단순 헬스체크 메서드다.
     @Override
@@ -64,6 +70,24 @@ public class AiGrpcController extends AiServiceGrpc.AiServiceImplBase {
         }
     }
 
+    // 사용자 기억 RAG 검색에 사용할 text embedding을 생성한다.
+    @Override
+    public void generateTextEmbedding(
+            GenerateTextEmbeddingRequest request,
+            StreamObserver<GenerateTextEmbeddingResponse> responseObserver
+    ) {
+        try {
+            TextEmbeddingResult result = aiTextEmbeddingService.generateTextEmbedding(toCommand(request));
+            responseObserver.onNext(toResponse(result));
+            responseObserver.onCompleted();
+        } catch (AiException e) {
+            responseObserver.onError(toStatus(e).withDescription(e.getMessage()).asRuntimeException());
+        } catch (Exception e) {
+            log.error("AI gRPC 처리 중 알 수 없는 예외가 발생했습니다. operation={}", "generateTextEmbedding", e);
+            responseObserver.onError(Status.INTERNAL.withDescription(INTERNAL_ERROR_DESCRIPTION).asRuntimeException());
+        }
+    }
+
     // proto request는 내부 계층에 직접 넘기지 않고 command로 변환한다.
     private MissionTextGenerationCommand toCommand(GenerateMissionTextsRequest request) {
         return new MissionTextGenerationCommand(
@@ -80,6 +104,16 @@ public class AiGrpcController extends AiServiceGrpc.AiServiceImplBase {
                 request.getFallbackCompletionResponse(),
                 request.getOnboardingContextJson(),
                 request.getRecentMissionContextJson(),
+                request.getRequestId()
+        );
+    }
+
+    private TextEmbeddingCommand toCommand(GenerateTextEmbeddingRequest request) {
+        return new TextEmbeddingCommand(
+                request.getUserId(),
+                request.getText(),
+                request.getModel(),
+                request.getDimension(),
                 request.getRequestId()
         );
     }
@@ -104,6 +138,15 @@ public class AiGrpcController extends AiServiceGrpc.AiServiceImplBase {
         }
 
         return builder.build();
+    }
+
+    private GenerateTextEmbeddingResponse toResponse(TextEmbeddingResult result) {
+        return GenerateTextEmbeddingResponse.newBuilder()
+                .setModel(result.model())
+                .setDimension(result.dimension())
+                .addAllValues(result.values())
+                .setRequestId(result.requestId())
+                .build();
     }
 
     // 내부 enum과 proto enum은 타입이 다르므로 명시적으로 매핑한다.
@@ -136,7 +179,7 @@ public class AiGrpcController extends AiServiceGrpc.AiServiceImplBase {
             case AI_INVALID_REQUEST -> Status.INVALID_ARGUMENT;
             case AI_DUPLICATED_REQUEST, AI_REQUEST_CONFLICT -> Status.ALREADY_EXISTS;
             case AI_FALLBACK_INVALID -> Status.FAILED_PRECONDITION;
-            case AI_GENERATION_FAILED -> Status.INTERNAL;
+            case AI_GENERATION_FAILED, AI_EMBEDDING_FAILED -> Status.INTERNAL;
         };
     }
 }
