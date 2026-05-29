@@ -39,18 +39,37 @@ class RuleBasedMissionTextGeneratorTest {
         assertThat(characterMessages).allSatisfy(this::assertMumuText);
     }
 
+    @Test
+    void 쪼리_문구도_미션_문맥에_따라_안전한_밈_말투로_분산된다() {
+        Set<String> characterMessages = LongStream.rangeClosed(3001L, 3012L)
+                .mapToObj(templateId -> generator.generate(validCommand("JJORY", templateId, UUID.randomUUID().toString())))
+                .map(MissionTextCandidate::characterMessage)
+                .collect(Collectors.toSet());
+
+        assertThat(characterMessages).hasSizeGreaterThan(1);
+        assertThat(characterMessages)
+                .allSatisfy(message -> assertThat(message)
+                        .doesNotContain("욕", "한심", "왜 못")
+                        .matches(".*(가보자고|인정|작전|선방|가능|나쁘지 않음).*"));
+    }
+
     private void assertMumuText(String text) {
         assertThat(text)
                 .startsWith("무")
                 .contains("(해석:")
+                .contains("무무가")
                 .endsWith(")");
     }
 
     private MissionTextGenerationCommand validCommand(Long missionTemplateId, String requestId) {
+        return validCommand("MUMU", missionTemplateId, requestId);
+    }
+
+    private MissionTextGenerationCommand validCommand(String characterType, Long missionTemplateId, String requestId) {
         return new MissionTextGenerationCommand(
                 1001L,
                 2001L,
-                "MUMU",
+                characterType,
                 missionTemplateId,
                 "물 한 컵 마시기",
                 "지금 자리에서 물 한 컵을 천천히 마셔보세요.",

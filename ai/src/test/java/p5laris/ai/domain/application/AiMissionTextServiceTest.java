@@ -26,7 +26,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 // 외부 Gemini 응답은 네트워크와 rate limit에 영향을 받으므로, 서비스 통합 테스트는 rule-based 경로로 고정한다.
 @SpringBootTest(properties = {
         "grpc.server.port=0",
-        "ai.provider.enabled=false"
+        "ai.provider.enabled=false",
+        "spring.ai.model.embedding.text=none",
+        "ai.embedding.enabled=false",
+        "ai.embedding.model=gemini-embedding-001",
+        "ai.embedding.dimension=768"
 })
 class AiMissionTextServiceTest {
 
@@ -216,6 +220,7 @@ class AiMissionTextServiceTest {
         assertThat(text)
                 .startsWith("무")
                 .contains("(해석:")
+                .contains("무무가")
                 .endsWith(")");
     }
 
