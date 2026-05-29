@@ -30,6 +30,8 @@ import p5laris.mission.domain.application.event.MissionEventLogEvent;
 import p5laris.mission.domain.application.memory.MissionMemoryRecorder;
 import p5laris.mission.domain.application.personalization.MissionPersonalizationContext;
 import p5laris.mission.domain.application.personalization.MissionPersonalizationContextBuilder;
+import p5laris.mission.domain.application.personalization.MissionRagContextService;
+import p5laris.mission.domain.application.personalization.MissionRagQuery;
 import p5laris.mission.domain.application.time.MissionTimePolicy;
 import p5laris.mission.domain.application.time.MissionTimeSlot;
 import p5laris.mission.domain.domain.entity.MissionCompletionAnswer;
@@ -132,6 +134,7 @@ public class MissionService {
     private final AiMissionTextClient aiMissionTextClient;
     private final CharacterProfileClient characterProfileClient;
     private final MissionPersonalizationContextBuilder missionPersonalizationContextBuilder;
+    private final MissionRagContextService missionRagContextService;
     private final MissionMemoryRecorder missionMemoryRecorder;
     private final WalletRewardClient walletRewardClient;
     private final MissionRewardDispatcher missionRewardDispatcher;
@@ -333,6 +336,19 @@ public class MissionService {
             MissionCreationContext context,
             MissionPersonalizationContext personalizationContext
     ) {
+        String recentMissionContextJson = missionRagContextService.enrich(
+                context.userId(),
+                new MissionRagQuery(
+                        context.userId(),
+                        context.missionTemplateId(),
+                        context.baseTitle(),
+                        context.baseDescription(),
+                        context.category(),
+                        context.difficulty()
+                ),
+                personalizationContext.recentMissionContextJson()
+        );
+
         return characterProfileClient.findActiveCharacterTypeCode(context.userId(), context.characterId())
                 .flatMap(characterType -> aiMissionTextClient.generateMissionTexts(new AiMissionTextRequest(
                         context.userId(),
@@ -347,7 +363,7 @@ public class MissionService {
                         context.fallbackQuestion(),
                         context.fallbackCompletionResponse(),
                         personalizationContext.onboardingContextJson(),
-                        personalizationContext.recentMissionContextJson(),
+                        recentMissionContextJson,
                         context.aiRequestId()
                 )));
     }
