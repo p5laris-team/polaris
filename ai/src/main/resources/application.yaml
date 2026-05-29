@@ -11,6 +11,8 @@ spring:
   ai:
     model:
       chat: ${SPRING_AI_MODEL_CHAT}
+      embedding:
+        text: ${SPRING_AI_MODEL_EMBEDDING}
     google:
       genai:
         api-key: ${GEMINI_API_KEY}
@@ -22,6 +24,12 @@ spring:
             max-output-tokens: ${AI_PROVIDER_MAX_OUTPUT_TOKENS}
             thinking-budget: ${AI_PROVIDER_THINKING_BUDGET}
             include-thoughts: ${AI_PROVIDER_INCLUDE_THOUGHTS}
+        embedding:
+          api-key: ${GEMINI_API_KEY}
+          text:
+            options:
+              model: ${AI_EMBEDDING_MODEL}
+              dimensions: ${AI_EMBEDDING_DIMENSION}
 
   data:
     redis:
@@ -76,6 +84,10 @@ ai:
     enabled: ${AI_PROVIDER_ENABLED}
     type: ${AI_PROVIDER_TYPE}
     model: ${AI_PROVIDER_MODEL}
+  embedding:
+    enabled: ${AI_EMBEDDING_ENABLED}
+    model: ${AI_EMBEDDING_MODEL}
+    dimension: ${AI_EMBEDDING_DIMENSION}
   rate-limit:
     enabled: ${AI_RATE_LIMIT_ENABLED}
     backend: ${AI_RATE_LIMIT_BACKEND}

@@ -46,44 +46,69 @@ public enum CharacterToneType {
     JJORY {
         @Override
         public String characterMessage(String baseTitle, long variationSeed) {
-            return shorten(baseTitle, 28) + ". 이 정도면 작은 모험임. 반박은 안 받음.";
+            return pick(variationSeed, 0, JJORY_CHARACTER_MESSAGE_PATTERNS)
+                    .formatted(shorten(baseTitle, 24));
         }
 
         @Override
         public String completionQuestion(long variationSeed) {
-            return "해보니까 어땠음? 한 줄이면 됨.";
+            return pick(variationSeed, 1, JJORY_COMPLETION_QUESTIONS);
         }
 
         @Override
         public String completionResponse(long variationSeed) {
-            return "완료했네. 꽤 큰일임. 인정.";
+            return pick(variationSeed, 2, JJORY_COMPLETION_RESPONSES);
         }
     };
 
     private static final int VARIANT_SALT_UNIT = 1_000_003;
 
     private static final String[] MUMU_CHARACTER_MESSAGE_PATTERNS = {
-            "무... 무무... (해석: %s 해보자는 뜻이에요.)",
-            "무우... 무...? (해석: %s, 지금 살짝 해보자는 뜻이에요.)",
-            "무...! 무무! (해석: %s 하면 무무가 옆에서 반짝일게요.)",
-            "무무... 무... (해석: %s부터 작게 시작해보자는 뜻이에요.)",
-            "무...? 무우... (해석: %s, 부담 없이 한 번만 해봐도 괜찮아요.)"
+            "무... 무무... (해석: 무무가 %s 해보자고 하는 것 같아요.)",
+            "무우... 무...? (해석: 무무가 %s, 지금 살짝 해보면 어떠냐고 하네요.)",
+            "무...! 무무! (해석: 무무가 %s 하면 옆에서 같이 반짝여 주겠다고 해요.)",
+            "무무... 무... (해석: 무무가 %s부터 작게 시작해보자고 하는 것 같아요.)",
+            "무...? 무우... (해석: 무무가 %s, 부담 없이 한 번만 해봐도 괜찮다고 하네요.)"
     };
 
     private static final String[] MUMU_COMPLETION_QUESTIONS = {
-            "무...? 무무... (해석: 해보고 나서 어땠나요?)",
-            "무우...? (해석: 끝내고 나니 기분이 조금 달라졌나요?)",
-            "무... 무무? (해석: 해본 뒤에 제일 먼저 든 생각은 뭐였나요?)",
-            "무무...? 무... (해석: 작은 변화가 있었나요?)",
-            "무...? (해석: 지금 상태를 한 줄로 남겨볼까요?)"
+            "무...? 무무... (해석: 무무가 해보고 나서 어땠는지 궁금해하는 것 같아요.)",
+            "무우...? (해석: 무무가 끝내고 나니 기분이 조금 달라졌냐고 묻고 있어요.)",
+            "무... 무무? (해석: 무무가 해본 뒤 제일 먼저 든 생각을 듣고 싶어 하네요.)",
+            "무무...? 무... (해석: 무무가 작은 변화가 있었는지 살짝 물어보는 것 같아요.)",
+            "무...? (해석: 무무가 지금 상태를 한 줄로 남겨보자고 하네요.)"
     };
 
     private static final String[] MUMU_COMPLETION_RESPONSES = {
-            "무... 무무... (해석: 무무가 조용히 좋아하고 있어요.)",
-            "무우...! 무무... (해석: 잘했어요. 무무가 별조각처럼 기억할게요.)",
-            "무...! (해석: 작은 완료도 충분히 반짝였어요.)",
-            "무무... 무... (해석: 오늘의 한 걸음을 무무가 기억해둘게요.)",
-            "무...? 무무! (해석: 방금 해낸 거, 무무는 분명히 봤어요.)"
+            "무... 무무... (해석: 무무가 조용히 좋아하고 있는 것 같아요.)",
+            "무우...! 무무... (해석: 무무가 잘했다고, 오늘 일을 반짝 기억하겠다고 하네요.)",
+            "무...! (해석: 무무가 작은 완료도 충분히 멋졌다고 하는 것 같아요.)",
+            "무무... 무... (해석: 무무가 오늘의 한 걸음을 기억해두겠다고 해요.)",
+            "무...? 무무! (해석: 무무가 방금 해낸 걸 분명히 봤다고 하네요.)"
+    };
+
+    private static final String[] JJORY_CHARACTER_MESSAGE_PATTERNS = {
+            "%s. 이 정도면 시작 각임. 가보자고.",
+            "%s. 귀찮아 보여도 1회차는 가능함. 인정.",
+            "%s. 오늘의 작전은 이거임. 부담은 작게.",
+            "%s. 크게 안 해도 됨. 선방 루트로 가자.",
+            "%s. 이건 좀 가능. 나쁘지 않음."
+    };
+
+    private static final String[] JJORY_COMPLETION_QUESTIONS = {
+            "해보니까 어땠음? 한 줄이면 됨.",
+            "완료 소감 있음? 짧게만 남겨도 인정.",
+            "이 미션, 생각보다 할 만했음?",
+            "끝내고 나니 상태 어때? 솔직 후기 받음.",
+            "오늘의 작전 결과 어땠음?"
+    };
+
+    private static final String[] JJORY_COMPLETION_RESPONSES = {
+            "완료했네. 이 정도면 선방. 인정.",
+            "작전 성공임. 방금 한 거 꽤 괜찮았음.",
+            "오, 해냈음. 오늘의 나 꽤 괜찮음.",
+            "이걸 해내네. 작은 승리로 기록함.",
+            "나쁘지 않음. 아니, 꽤 좋음."
     };
 
     public abstract String characterMessage(String baseTitle, long variationSeed);
