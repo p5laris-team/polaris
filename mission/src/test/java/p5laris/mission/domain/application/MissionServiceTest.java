@@ -39,6 +39,7 @@ import p5laris.mission.domain.exception.MissionException;
 import p5laris.mission.domain.infrastructure.grpc.AiMissionTextClient;
 import p5laris.mission.domain.infrastructure.grpc.AiMissionTextRequest;
 import p5laris.mission.domain.infrastructure.grpc.AiMissionTextResult;
+import p5laris.mission.domain.infrastructure.grpc.AiTextEmbeddingClient;
 import p5laris.mission.domain.infrastructure.grpc.CharacterProfileClient;
 import p5laris.mission.domain.infrastructure.grpc.NotificationPushClient;
 import p5laris.mission.domain.infrastructure.grpc.OnboardingProfileClient;
@@ -69,6 +70,19 @@ import static org.mockito.Mockito.when;
 @SpringBootTest(properties = {
         "grpc.server.port=0",
         "grpc.client.notification.address=static://localhost:9098",
+        "mission.rag.enabled=false",
+        "mission.rag.embedding-model=gemini-embedding-001",
+        "mission.rag.embedding-dimension=768",
+        "mission.rag.top-k=5",
+        "mission.rag.fallback-to-recent-memory=true",
+        "mission.memory-embedding.enabled=false",
+        "mission.memory-embedding.fixed-delay-ms=60000",
+        "mission.memory-embedding.initial-delay-ms=60000",
+        "mission.memory-embedding.batch-size=20",
+        "mission.memory-embedding.max-attempts=3",
+        "mission.memory-embedding.processing-timeout-seconds=60",
+        "mission.memory-embedding.retry-initial-delay-seconds=60",
+        "mission.memory-embedding.retry-max-delay-seconds=1800",
         "mission.reward-outbox.enabled=false",
         "mission.reward-outbox.fixed-delay-ms=60000",
         "mission.reward-outbox.initial-delay-ms=60000",
@@ -118,6 +132,9 @@ class MissionServiceTest {
     private AiMissionTextClient aiMissionTextClient;
 
     @MockitoBean
+    private AiTextEmbeddingClient aiTextEmbeddingClient;
+
+    @MockitoBean
     private CharacterProfileClient characterProfileClient;
 
     @MockitoBean
@@ -133,7 +150,7 @@ class MissionServiceTest {
         missionFeedbackRepository.deleteAll();
         missionCompletionAnswerRepository.deleteAll();
         userMissionRepository.deleteAll();
-        reset(walletRewardClient, aiMissionTextClient, characterProfileClient, onboardingProfileClient, notificationPushClient);
+        reset(walletRewardClient, aiMissionTextClient, aiTextEmbeddingClient, characterProfileClient, onboardingProfileClient, notificationPushClient);
         when(walletRewardClient.earnMissionReward(anyLong(), anyLong(), anyInt(), anyString()))
                 .thenReturn(new WalletRewardResult(110, 9001L));
         when(walletRewardClient.getWalletStarPiece(anyLong()))
@@ -362,6 +379,9 @@ class MissionServiceTest {
                 .contains("\"blockedMissionKeywords\"")
                 .contains("\"memoryPolicy\"")
                 .contains("\"referenceOnly\":true")
+                .contains("\"diversityPolicy\"")
+                .contains("\"avoidSameActionFamily\":true")
+                .contains("\"avoidSameCoreObject\":true")
                 .contains("\"userMemories\":[]")
                 .contains("\"recentMissions\"");
     }

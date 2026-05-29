@@ -122,6 +122,7 @@ public class MissionPersonalizationContextBuilder {
         context.put("environmentContext", environmentContext(targetDate));
         context.put("policyContext", policyContext(challengeAlreadyUsedToday));
         context.put("memoryPolicy", memoryPolicy(recentMemories));
+        context.put("diversityPolicy", diversityPolicy());
         context.put("recentMissions", recentMissions.stream()
                 .map(mission -> missionContext(
                         mission,
@@ -132,6 +133,17 @@ public class MissionPersonalizationContextBuilder {
         context.put("userMemories", recentMemories.stream()
                 .map(this::memoryContext)
                 .toList());
+        return context;
+    }
+
+    private Map<String, Object> diversityPolicy() {
+        Map<String, Object> context = new LinkedHashMap<>();
+        context.put("referenceRecentMissionCount", RECENT_MISSION_LIMIT);
+        context.put("avoidExactTitleCopy", true);
+        context.put("avoidSameActionFamily", true);
+        context.put("avoidSameCoreObject", true);
+        context.put("avoidOverusedWords", List.of("빛", "반짝", "작은", "잠시", "천천히"));
+        context.put("instruction", "recentMissions의 title/category/status를 보고 같은 행동군과 같은 핵심 사물을 반복하지 않는다.");
         return context;
     }
 
