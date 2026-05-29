@@ -360,7 +360,33 @@ class MissionServiceTest {
                 .contains("\"timeSlotPolicy\"")
                 .contains("\"blockedCategories\"")
                 .contains("\"blockedMissionKeywords\"")
+                .contains("\"memoryPolicy\"")
+                .contains("\"referenceOnly\":true")
+                .contains("\"userMemories\":[]")
                 .contains("\"recentMissions\"");
+    }
+
+    @Test
+    void 사용자_기억_context를_AI_생성_요청에_포함한다() {
+        ArgumentCaptor<AiMissionTextRequest> requestCaptor = ArgumentCaptor.forClass(AiMissionTextRequest.class);
+        CreateNextMissionResponse first = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        missionService.startCompletionSession(USER_ID, first.getMission().getId());
+        missionService.submitCompletionAnswer(USER_ID, first.getMission().getId(), "어깨가 덜 뻐근했어");
+
+        missionService.createNextMission(USER_ID, CHARACTER_ID, first.getMission().getId());
+
+        verify(aiMissionTextClient, times(2)).generateMissionTexts(requestCaptor.capture());
+        String secondContext = requestCaptor.getAllValues().get(1).recentMissionContextJson();
+        assertThat(secondContext)
+                .contains("\"memoryPolicy\"")
+                .contains("\"available\":true")
+                .contains("\"referenceOnly\":true")
+                .contains("\"userMemories\"")
+                .contains("\"type\":\"MISSION_COMPLETION\"")
+                .contains("\"sourceType\":\"MISSION_COMPLETION_ANSWER\"")
+                .contains("어깨가 덜 뻐근했어")
+                .contains("\"importance\":70")
+                .contains("\"metadata\"");
     }
 
     @Test
