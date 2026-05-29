@@ -31,6 +31,29 @@ public class OnboardingProfile extends BaseEntity {
     private String activityPreference;
     private String missionIntensity;
 
+    @Builder.Default
+    private int onboardingVersion = 1;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "routine_goals_json", columnDefinition = "jsonb")
+    @Builder.Default
+    private String routineGoalsJson = "[]";
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "preferred_time_slots_json", columnDefinition = "jsonb")
+    @Builder.Default
+    private String preferredTimeSlotsJson = "[]";
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "mission_place_contexts_json", columnDefinition = "jsonb")
+    @Builder.Default
+    private String missionPlaceContextsJson = "[]";
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "avoided_mission_tags_json", columnDefinition = "jsonb")
+    @Builder.Default
+    private String avoidedMissionTagsJson = "[]";
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
     private String answersJson;
@@ -43,7 +66,12 @@ public class OnboardingProfile extends BaseEntity {
     public void updateProfile(String livingType, String wakeUpTime, String sleepTime, 
                               String preferredMissionTime, String routineGoal, 
                               String missionIntensity, String activityPreference,
-                              String answersJson, boolean completed) {
+                              String answersJson, boolean completed,
+                              int onboardingVersion,
+                              String routineGoalsJson,
+                              String preferredTimeSlotsJson,
+                              String missionPlaceContextsJson,
+                              String avoidedMissionTagsJson) {
         this.livingType = livingType;
         this.wakeUpTime = wakeUpTime;
         this.sleepTime = sleepTime;
@@ -51,6 +79,11 @@ public class OnboardingProfile extends BaseEntity {
         this.routineGoal = routineGoal;
         this.missionIntensity = missionIntensity;
         this.activityPreference = activityPreference;
+        this.onboardingVersion = onboardingVersion;
+        this.routineGoalsJson = routineGoalsJson;
+        this.preferredTimeSlotsJson = preferredTimeSlotsJson;
+        this.missionPlaceContextsJson = missionPlaceContextsJson;
+        this.avoidedMissionTagsJson = avoidedMissionTagsJson;
         this.answersJson = answersJson;
         this.completed = completed;
         if (completed && this.completedAt == null) {

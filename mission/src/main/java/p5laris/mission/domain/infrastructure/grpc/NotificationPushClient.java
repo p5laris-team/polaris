@@ -17,6 +17,7 @@ public class NotificationPushClient {
 
     private static final String MISSION_OFFER_TITLE = "새 미션이 도착했어요";
     private static final String DEFAULT_MISSION_OFFER_BODY = "새 미션을 해볼까요?";
+    private static final String MISSION_REWARD_RECOVERED_TITLE = "별조각 지급이 완료됐어요";
 
     @GrpcClient("notification")
     private NotificationServiceGrpc.NotificationServiceBlockingStub notificationStub;
@@ -43,11 +44,35 @@ public class NotificationPushClient {
         );
     }
 
+    /**
+     * 미션 보상이 즉시 지급되지 못하고 outbox 재처리로 나중에 성공했을 때 사용자에게 안내한다.
+     */
+    public void sendMissionRewardRecoveredNotification(
+            Long userId,
+            Long missionId,
+            int rewardStarPiece
+    ) {
+        notificationStub.sendPushNotification(
+                SendPushNotificationRequest.newBuilder()
+                        .setUserId(userId)
+                        .setTitle(MISSION_REWARD_RECOVERED_TITLE)
+                        .setBody(toMissionRewardRecoveredBody(rewardStarPiece))
+                        .setNotificationType(NotificationType.NOTIFICATION_TYPE_MISSION)
+                        .setTargetType(TargetType.TARGET_TYPE_MISSION)
+                        .setTargetId(missionId)
+                        .build()
+        );
+    }
+
     private String toMissionOfferBody(String missionTitle) {
         if (missionTitle == null || missionTitle.isBlank()) {
             return DEFAULT_MISSION_OFFER_BODY;
         }
 
         return missionTitle.trim() + " 미션을 해볼까요?";
+    }
+
+    private String toMissionRewardRecoveredBody(int rewardStarPiece) {
+        return "미션 보상 " + rewardStarPiece + " 별조각이 방금 들어왔어요.";
     }
 }

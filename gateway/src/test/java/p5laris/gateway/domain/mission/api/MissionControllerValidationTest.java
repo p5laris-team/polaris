@@ -123,7 +123,7 @@ class MissionControllerValidationTest {
 
     @Test
     void missionId가_양수가_아니면_400을_반환한다() throws Exception {
-        when(missionGatewayService.rejectMission(LOGIN_USER_ID, 0L))
+        when(missionGatewayService.rejectMission(LOGIN_USER_ID, 0L, null))
                 .thenThrow(new BusinessException(CommonErrorCode.INVALID_INPUT_VALUE));
 
         mockMvc.perform(post("/api/mission/v1/missions/0/rejections")
@@ -149,11 +149,16 @@ class MissionControllerValidationTest {
     void 오늘_미션_stack_조회는_현재_미션_id와_목록을_반환한다() throws Exception {
         MissionDto.TodayMissionsResponse response = new MissionDto.TodayMissionsResponse(
                 "2026-05-21",
-                15,
+                20,
                 2,
                 1,
                 0,
-                13,
+                19,
+                20,
+                1,
+                19,
+                10,
+                10,
                 12L,
                 List.of(new MissionDto.TodayMissionItem(
                         11L,
@@ -166,7 +171,10 @@ class MissionControllerValidationTest {
                         "좋아, 오늘도 한 걸음이야.",
                         "2026-05-21T09:00:00",
                         "2026-05-21T09:10:00",
-                        null
+                        null,
+                        "해보고 나서 어땠어?",
+                        "물을 마셨어",
+                        true
                 ))
         );
         when(missionGatewayService.getTodayMissions(LOGIN_USER_ID)).thenReturn(response);

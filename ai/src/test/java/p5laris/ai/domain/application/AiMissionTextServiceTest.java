@@ -57,15 +57,19 @@ class AiMissionTextServiceTest {
         assertThat(result.status()).isEqualTo(AiGenerationStatus.SUCCESS);
         assertThat(result.fallbackUsed()).isFalse();
         assertThat(result.errorType()).isNull();
+        assertThat(result.title()).isEqualTo(command.baseTitle());
+        assertThat(result.description()).isEqualTo(command.baseDescription());
         assertThat(result.characterMessage()).contains("천천히");
         assertThat(result.completionQuestion()).isNotBlank();
         assertThat(result.completionCharacterResponse()).isNotBlank();
+        assertThat(result.category()).isEqualTo(command.category());
+        assertThat(result.difficulty()).isEqualTo(command.difficulty());
         assertThat(result.aiGenerationId()).isPositive();
         assertThat(aiMissionGenerationRepository.count()).isEqualTo(1);
         assertThat(aiUsageLogRepository.count()).isEqualTo(1);
         assertThat(aiUsageLogRepository.findByRequestId(command.requestId()).orElseThrow().getStatus())
                 .isEqualTo(AiUsageStatus.SUCCESS);
-        assertThat(promptTemplateRepository.findFirstByCategoryAndActiveTrueOrderByVersionDescIdDesc(PromptCategory.CHARACTER_TONE))
+        assertThat(promptTemplateRepository.findFirstByCategoryAndActiveTrueOrderByVersionDescIdDesc(PromptCategory.MISSION_GENERATION))
                 .isPresent();
     }
 
@@ -78,9 +82,13 @@ class AiMissionTextServiceTest {
         assertThat(result.status()).isEqualTo(AiGenerationStatus.FALLBACK);
         assertThat(result.fallbackUsed()).isTrue();
         assertThat(result.errorType()).isEqualTo(AiErrorType.INVALID_OUTPUT);
+        assertThat(result.title()).isEqualTo(command.baseTitle());
+        assertThat(result.description()).isEqualTo(command.baseDescription());
         assertThat(result.characterMessage()).isEqualTo(command.fallbackCharacterMessage());
         assertThat(result.completionQuestion()).isEqualTo(command.fallbackQuestion());
         assertThat(result.completionCharacterResponse()).isEqualTo(command.fallbackCompletionResponse());
+        assertThat(result.category()).isEqualTo(command.category());
+        assertThat(result.difficulty()).isEqualTo(command.difficulty());
         assertThat(aiMissionGenerationRepository.count()).isEqualTo(1);
         var savedGeneration = aiMissionGenerationRepository.findByRequestId(command.requestId()).orElseThrow();
         var usageLog = aiUsageLogRepository.findByRequestId(command.requestId()).orElseThrow();
@@ -151,9 +159,13 @@ class AiMissionTextServiceTest {
         MissionTextGenerationResult second = aiMissionTextService.generateMissionTexts(command);
 
         assertThat(second.aiGenerationId()).isEqualTo(first.aiGenerationId());
+        assertThat(second.title()).isEqualTo(first.title());
+        assertThat(second.description()).isEqualTo(first.description());
         assertThat(second.characterMessage()).isEqualTo(first.characterMessage());
         assertThat(second.completionQuestion()).isEqualTo(first.completionQuestion());
         assertThat(second.completionCharacterResponse()).isEqualTo(first.completionCharacterResponse());
+        assertThat(second.category()).isEqualTo(first.category());
+        assertThat(second.difficulty()).isEqualTo(first.difficulty());
         assertThat(aiMissionGenerationRepository.count()).isEqualTo(1);
         assertThat(aiUsageLogRepository.count()).isEqualTo(1);
     }

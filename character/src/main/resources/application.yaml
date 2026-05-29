@@ -1,3 +1,6 @@
+server:
+  port: ${SERVER_PORT}
+
 spring:
   config:
     import:
@@ -45,6 +48,9 @@ grpc:
     notification:
       address: ${NOTIFICATION_GRPC_ADDRESS}
       negotiationType: plaintext
+    event-log:
+      address: ${EVENT_LOG_GRPC_ADDRESS}
+      negotiationType: plaintext
 
 character:
   state-notification:
@@ -75,3 +81,15 @@ cloud:
 
 app:
   public-base-url: ${APP_PUBLIC_BASE_URL}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      show-details: never
+  health:
+    db:
+      enabled: true

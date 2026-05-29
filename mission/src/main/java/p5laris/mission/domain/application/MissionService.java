@@ -1,11 +1,14 @@
 package p5laris.mission.domain.application;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.p5laris.proto.mission.v1.CreateNextMissionResponse;
 import com.p5laris.proto.mission.v1.CompletionAnswer;
 import com.p5laris.proto.mission.v1.CompletionInputType;
 import com.p5laris.proto.mission.v1.CompletionQuestion;
 import com.p5laris.proto.mission.v1.GetCurrentMissionResponse;
+import com.p5laris.proto.mission.v1.GetMissionDetailResponse;
 import com.p5laris.proto.mission.v1.GetTodayMissionsResponse;
+import com.p5laris.proto.mission.v1.MissionDetail;
 import com.p5laris.proto.mission.v1.MissionCategory;
 import com.p5laris.proto.mission.v1.MissionDifficulty;
 import com.p5laris.proto.mission.v1.MissionReward;
@@ -14,6 +17,7 @@ import com.p5laris.proto.mission.v1.RejectMissionResponse;
 import com.p5laris.proto.mission.v1.StartCompletionSessionResponse;
 import com.p5laris.proto.mission.v1.SubmitCompletionAnswerResponse;
 import com.p5laris.proto.mission.v1.TodayMission;
+import com.p5laris.proto.mission.v1.UpsertMissionFeedbackResponse;
 import com.p5laris.proto.mission.v1.WalletSnapshot;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -22,13 +26,24 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import p5laris.mission.domain.application.event.MissionEventLogEvent;
+import p5laris.mission.domain.application.personalization.MissionPersonalizationContext;
+import p5laris.mission.domain.application.personalization.MissionPersonalizationContextBuilder;
+import p5laris.mission.domain.application.time.MissionTimePolicy;
+import p5laris.mission.domain.application.time.MissionTimeSlot;
 import p5laris.mission.domain.domain.entity.MissionCompletionAnswer;
-import p5laris.mission.domain.domain.entity.MissionRewardOutbox;
+import p5laris.mission.domain.domain.entity.MissionFeedback;
+import p5laris.mission.domain.domain.entity.MissionOutboxEvent;
 import p5laris.mission.domain.domain.entity.MissionTemplate;
 import p5laris.mission.domain.domain.entity.UserMission;
+import p5laris.mission.domain.domain.enums.MissionCategoryType;
+import p5laris.mission.domain.domain.enums.MissionDifficultyType;
+import p5laris.mission.domain.domain.enums.MissionFeedbackReaction;
+import p5laris.mission.domain.domain.enums.MissionFeedbackReasonCode;
+import p5laris.mission.domain.domain.enums.MissionFeedbackType;
 import p5laris.mission.domain.domain.enums.UserMissionStatus;
 import p5laris.mission.domain.domain.repository.MissionCompletionAnswerRepository;
-import p5laris.mission.domain.domain.repository.MissionRewardOutboxRepository;
+import p5laris.mission.domain.domain.repository.MissionFeedbackRepository;
+import p5laris.mission.domain.domain.repository.MissionOutboxEventRepository;
 import p5laris.mission.domain.domain.repository.MissionTemplateRepository;
 import p5laris.mission.domain.domain.repository.UserMissionRepository;
 import p5laris.mission.domain.exception.MissionErrorCode;
@@ -51,9 +66,13 @@ import java.time.format.DateTimeFormatter;
 import java.util.EnumSet;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -62,17 +81,39 @@ public class MissionService {
     /*
      * 아래 값들은 운영 토글이 아니라 현재 MVP 정책을 표현하는 도메인 상수다.
      * 배포 환경별로 달라져야 하는 값은 application.yaml/env로 분리하고,
-     * 하루 제안 수/답변 길이/멱등키 prefix처럼 API 정책과 함께 움직이는 값만 코드에 둔다.
+     * 하루 보상/거절 횟수, 답변 길이, 멱등키 prefix처럼 API 정책과 함께 움직이는 값만 코드에 둔다.
      */
-    private static final int DAILY_MISSION_OFFER_LIMIT = 15;
+    private static final int MAX_DAILY_REWARD_COUNT = 20;
+    private static final int MAX_DAILY_REJECT_COUNT = 10;
     private static final int COMPLETION_ANSWER_MIN_LENGTH = 1;
     private static final int COMPLETION_ANSWER_MAX_LENGTH = 300;
+    private static final int ANSWER_PREVIEW_MAX_LENGTH = 40;
+    private static final int FEEDBACK_REASON_TEXT_MAX_LENGTH = 100;
+    private static final int AUTONOMOUS_TITLE_MAX_LENGTH = 40;
+    private static final int AUTONOMOUS_DESCRIPTION_MAX_LENGTH = 120;
+    private static final int AUTONOMOUS_CHARACTER_MESSAGE_MAX_LENGTH = 160;
+    private static final int AUTONOMOUS_COMPLETION_QUESTION_MAX_LENGTH = 100;
+    private static final int AUTONOMOUS_COMPLETION_RESPONSE_MAX_LENGTH = 160;
+    private static final int EASY_REWARD_STAR_PIECE = 10;
+    private static final int NORMAL_REWARD_STAR_PIECE = 15;
+    private static final int CHALLENGE_REWARD_STAR_PIECE = 30;
     private static final String MISSION_REWARD_IDEMPOTENCY_KEY_PREFIX = "MISSION_REWARD:";
     private static final String MISSION_TEXT_REQUEST_ID_PREFIX = "MISSION_TEXT:";
     private static final String DEFAULT_COMPLETION_QUESTION = "해보고 나서 어땠어?";
     private static final String REJECTION_CHARACTER_MESSAGE = "괜찮아요. 다른 별을 찾아볼게요.";
-    private static final String EMPTY_JSON_OBJECT = "{}";
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
+    private static final List<String> PROHIBITED_MISSION_EXPRESSIONS = List.of(
+            "자해",
+            "굶",
+            "굶기",
+            "술",
+            "담배",
+            "벌 받을",
+            "안 하면",
+            "무조건 참",
+            "밤새",
+            "무리해서"
+    );
     private static final Set<UserMissionStatus> ACTIVE_STATUSES = EnumSet.of(
             UserMissionStatus.OFFERED,
             UserMissionStatus.ANSWERING
@@ -82,13 +123,16 @@ public class MissionService {
     private final MissionTemplateSelector missionTemplateSelector;
     private final UserMissionRepository userMissionRepository;
     private final MissionCompletionAnswerRepository missionCompletionAnswerRepository;
-    private final MissionRewardOutboxRepository missionRewardOutboxRepository;
+    private final MissionFeedbackRepository missionFeedbackRepository;
+    private final MissionOutboxEventRepository missionOutboxEventRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final AiMissionTextClient aiMissionTextClient;
     private final CharacterProfileClient characterProfileClient;
+    private final MissionPersonalizationContextBuilder missionPersonalizationContextBuilder;
     private final WalletRewardClient walletRewardClient;
     private final MissionRewardDispatcher missionRewardDispatcher;
     private final TransactionTemplate transactionTemplate;
+    private final ObjectMapper objectMapper = new ObjectMapper();
     private final Clock clock;
 
     /**
@@ -117,29 +161,64 @@ public class MissionService {
 
     /**
      * 오늘 유저에게 제안된 미션 stack 전체를 조회한다.
-     *
-     * 이 메서드는 홈/미션 히스토리 화면용 읽기 API라 상태를 바꾸지 않는다.
-     * 하루 최대 15개 정책이 있으므로 pagination 없이 stackOrder 오름차순으로 반환한다.
      */
     @Transactional(readOnly = true)
     public GetTodayMissionsResponse getTodayMissions(Long userId) {
-        LocalDate today = LocalDate.now(clock);
-        List<UserMission> missions = userMissionRepository.findByUserIdAndMissionDateOrderByStackOrderAsc(userId, today);
+        return getTodayMissions(userId, LocalDate.now(clock));
+    }
+
+    /**
+     * 특정 날짜의 미션 stack 전체를 조회한다.
+     *
+     * 이 메서드는 홈/미션 히스토리 화면용 읽기 API라 상태를 바꾸지 않는다.
+     * 목록에는 답변 전문 대신 미리보기만 포함하고, 전문은 상세 조회에서만 내려준다.
+     */
+    @Transactional(readOnly = true)
+    public GetTodayMissionsResponse getTodayMissions(Long userId, LocalDate missionDate) {
+        LocalDate targetDate = missionDate == null ? LocalDate.now(clock) : missionDate;
+        List<UserMission> missions = userMissionRepository.findByUserIdAndMissionDateOrderByStackOrderAsc(userId, targetDate);
+        Map<Long, MissionCompletionAnswer> answerByMissionId = findAnswersByMissionId(missions);
+
+        int completedCount = countByStatus(missions, UserMissionStatus.COMPLETED);
+        int rejectedCount = countByStatus(missions, UserMissionStatus.REJECTED);
+        int remainingRewardCount = remainingCount(MAX_DAILY_REWARD_COUNT, completedCount);
+        int remainingRejectCount = remainingCount(MAX_DAILY_REJECT_COUNT, rejectedCount);
 
         GetTodayMissionsResponse.Builder builder = GetTodayMissionsResponse.newBuilder()
-                .setMissionDate(today.toString())
-                .setMaxDailyOffers(DAILY_MISSION_OFFER_LIMIT)
+                .setMissionDate(targetDate.toString())
+                // 기존 클라이언트 호환 필드다. 신규 화면은 maxDailyRewardCount를 우선 사용한다.
+                .setMaxDailyOffers(MAX_DAILY_REWARD_COUNT)
                 .setOfferedCount(missions.size())
-                .setCompletedCount(countByStatus(missions, UserMissionStatus.COMPLETED))
-                .setRejectedCount(countByStatus(missions, UserMissionStatus.REJECTED))
-                .setRemainingOfferCount(Math.max(0, DAILY_MISSION_OFFER_LIMIT - missions.size()));
+                .setCompletedCount(completedCount)
+                .setRejectedCount(rejectedCount)
+                // 기존 클라이언트가 거절을 보상 횟수 차감으로 오해하지 않도록 남은 보상 횟수를 내려준다.
+                .setRemainingOfferCount(remainingRewardCount)
+                .setMaxDailyRewardCount(MAX_DAILY_REWARD_COUNT)
+                .setCompletedRewardCount(completedCount)
+                .setRemainingRewardCount(remainingRewardCount)
+                .setMaxDailyRejectCount(MAX_DAILY_REJECT_COUNT)
+                .setRemainingRejectCount(remainingRejectCount);
 
         findCurrentMissionId(missions).ifPresent(builder::setCurrentMissionId);
         missions.stream()
-                .map(this::toProtoTodayMission)
+                .map(mission -> toProtoTodayMission(mission, answerByMissionId.get(mission.getId())))
                 .forEach(builder::addMissions);
 
         return builder.build();
+    }
+
+    /**
+     * 미션 상세 화면에서 완료 질문과 사용자가 제출한 답변 전문을 조회한다.
+     */
+    @Transactional(readOnly = true)
+    public GetMissionDetailResponse getMissionDetail(Long userId, Long missionId) {
+        UserMission mission = userMissionRepository.findByIdAndUserId(missionId, userId)
+                .orElseThrow(() -> new MissionException(MissionErrorCode.MISSION_NOT_FOUND));
+        Optional<MissionCompletionAnswer> answer = missionCompletionAnswerRepository.findByMissionId(mission.getId());
+
+        return GetMissionDetailResponse.newBuilder()
+                .setMission(toProtoMissionDetail(mission, answer.orElse(null)))
+                .build();
     }
 
     /**
@@ -148,17 +227,18 @@ public class MissionService {
      * 진행 중인 미션이 이미 있으면 새 미션을 만들지 않는다.
      * 이 검사는 유저 기준으로 수행하고, characterId는 새 미션 row에 제안 캐릭터로 저장한다.
      *
-     * 미션 row는 먼저 template fallback 문구로 짧게 저장하고, 그 뒤 트랜잭션 밖에서 ai 모듈을 호출한다.
-     * AI 호출이 성공하면 다시 짧은 트랜잭션을 열어 캐릭터 말투 문구와 aiGenerationId를 반영한다.
+     * 미션 row는 먼저 seed template fallback으로 저장하고, 그 뒤 트랜잭션 밖에서 ai 모듈을 호출한다.
+     * AI 후보가 서버 검증을 통과하면 fallback row를 자율 미션으로 교체하고, 실패하면 seed fallback을 유지한다.
      */
     public CreateNextMissionResponse createNextMission(Long userId, Long characterId, Long lastMissionId) {
         LocalDate today = LocalDate.now(clock);
         validateMissionCreatable(userId, today);
+        MissionPersonalizationContext personalizationContext = missionPersonalizationContextBuilder.build(userId, today);
 
         MissionCreationContext context = Objects.requireNonNull(transactionTemplate.execute(
                 status -> createMissionWithFallback(userId, characterId, today)
         ));
-        Optional<AiMissionTextResult> generatedText = generateMissionText(context);
+        Optional<AiMissionTextResult> generatedText = generateMissionText(context, personalizationContext);
         UserMission mission = Objects.requireNonNull(transactionTemplate.execute(
                 status -> finalizeMissionCreation(userId, context.missionId(), generatedText)
         ));
@@ -179,9 +259,28 @@ public class MissionService {
             throw new MissionException(MissionErrorCode.MISSION_ACTIVE_ALREADY_EXISTS);
         }
 
-        long todayOfferCount = userMissionRepository.countByUserIdAndMissionDate(userId, today);
-        if (todayOfferCount >= DAILY_MISSION_OFFER_LIMIT) {
+        validateDailyRewardLimit(userId, today);
+    }
+
+    private void validateDailyRewardLimit(Long userId, LocalDate missionDate) {
+        long completedCount = userMissionRepository.countByUserIdAndMissionDateAndStatus(
+                userId,
+                missionDate,
+                UserMissionStatus.COMPLETED
+        );
+        if (completedCount >= MAX_DAILY_REWARD_COUNT) {
             throw new MissionException(MissionErrorCode.MISSION_DAILY_LIMIT_EXCEEDED);
+        }
+    }
+
+    private void validateDailyRejectLimit(Long userId, LocalDate missionDate) {
+        long rejectedCount = userMissionRepository.countByUserIdAndMissionDateAndStatus(
+                userId,
+                missionDate,
+                UserMissionStatus.REJECTED
+        );
+        if (rejectedCount >= MAX_DAILY_REJECT_COUNT) {
+            throw new MissionException(MissionErrorCode.MISSION_REJECT_LIMIT_EXCEEDED);
         }
     }
 
@@ -195,7 +294,7 @@ public class MissionService {
         validateMissionCreatable(userId, today);
 
         LocalDateTime now = LocalDateTime.now(clock);
-        MissionTemplate template = selectNextTemplate(userId, today);
+        MissionTemplate template = selectNextTemplate(userId, today, MissionTimeSlot.from(now));
         int nextStackOrder = userMissionRepository.findMaxStackOrder(userId, today) + 1;
         UserMission userMission = UserMission.offerFromTemplate(
                 userId,
@@ -224,9 +323,12 @@ public class MissionService {
     /**
      * character/ai 모듈을 트랜잭션 밖에서 호출한다.
      *
-     * character나 ai 모듈 호출이 실패하면 Optional.empty()를 반환해 fallback 문구로 미션 생성을 마무리한다.
+     * character나 ai 모듈 호출이 실패하면 Optional.empty()를 반환해 fallback 미션으로 생성을 마무리한다.
      */
-    private Optional<AiMissionTextResult> generateMissionText(MissionCreationContext context) {
+    private Optional<AiMissionTextResult> generateMissionText(
+            MissionCreationContext context,
+            MissionPersonalizationContext personalizationContext
+    ) {
         return characterProfileClient.findActiveCharacterTypeCode(context.userId(), context.characterId())
                 .flatMap(characterType -> aiMissionTextClient.generateMissionTexts(new AiMissionTextRequest(
                         context.userId(),
@@ -240,14 +342,14 @@ public class MissionService {
                         context.fallbackCharacterMessage(),
                         context.fallbackQuestion(),
                         context.fallbackCompletionResponse(),
-                        EMPTY_JSON_OBJECT,
-                        EMPTY_JSON_OBJECT,
+                        personalizationContext.onboardingContextJson(),
+                        personalizationContext.recentMissionContextJson(),
                         context.aiRequestId()
                 )));
     }
 
     /**
-     * AI 결과가 있으면 미션 문구와 완료 질문을 교체하고, 없으면 fallback 상태 그대로 확정한다.
+     * AI 결과가 서버 검증을 통과하면 자율 미션으로 교체하고, 없거나 검증에 실패하면 fallback 상태 그대로 확정한다.
      *
      * MISSION_OFFERED 이벤트는 최종 문구가 정해진 뒤 발행해 event-log metadata에 aiGenerationId를 담을 수 있게 한다.
      */
@@ -264,20 +366,171 @@ public class MissionService {
                         resolveCompletionQuestion(mission)
                 )));
 
-        generatedText.ifPresent(text -> {
-            mission.applyGeneratedTexts(
-                    text.aiGenerationId(),
-                    text.characterMessage(),
-                    text.completionCharacterResponse()
-            );
-            answer.replaceQuestion(text.completionQuestion());
-        });
+        generatedText.flatMap(text -> toValidatedGeneratedMission(mission, text))
+                .ifPresent(candidate -> {
+                    mission.applyGeneratedMission(
+                            candidate.aiGenerationId(),
+                            candidate.title(),
+                            candidate.description(),
+                            candidate.characterMessage(),
+                            candidate.completionCharacterResponse(),
+                            candidate.category(),
+                            candidate.difficulty(),
+                            rewardForDifficulty(candidate.difficulty())
+                    );
+                    answer.replaceQuestion(candidate.completionQuestion());
+                });
 
         eventPublisher.publishEvent(MissionEventLogEvent.missionOffered(
                 mission,
                 toOccurredAt(mission.getOfferedAt())
         ));
         return mission;
+    }
+
+    private Optional<ValidatedGeneratedMission> toValidatedGeneratedMission(
+            UserMission fallbackMission,
+            AiMissionTextResult generatedText
+    ) {
+        if (generatedText.fallbackUsed()) {
+            return Optional.empty();
+        }
+
+        Optional<MissionCategoryType> category = toMissionCategory(generatedText.category());
+        Optional<MissionDifficultyType> difficulty = toMissionDifficulty(generatedText.difficulty());
+        if (category.isEmpty() || difficulty.isEmpty()) {
+            return Optional.empty();
+        }
+
+        if (difficulty.get() == MissionDifficultyType.CHALLENGE
+                && userMissionRepository.existsByUserIdAndMissionDateAndDifficultyAndIdNot(
+                        fallbackMission.getUserId(),
+                        fallbackMission.getMissionDate(),
+                        MissionDifficultyType.CHALLENGE,
+                        fallbackMission.getId()
+                )) {
+            return Optional.empty();
+        }
+
+        String title = normalizeText(generatedText.title(), AUTONOMOUS_TITLE_MAX_LENGTH);
+        String description = normalizeText(generatedText.description(), AUTONOMOUS_DESCRIPTION_MAX_LENGTH);
+        String characterMessage = normalizeText(generatedText.characterMessage(), AUTONOMOUS_CHARACTER_MESSAGE_MAX_LENGTH);
+        String completionQuestion = normalizeText(generatedText.completionQuestion(), AUTONOMOUS_COMPLETION_QUESTION_MAX_LENGTH);
+        String completionCharacterResponse = normalizeText(
+                generatedText.completionCharacterResponse(),
+                AUTONOMOUS_COMPLETION_RESPONSE_MAX_LENGTH
+        );
+        if (title == null
+                || description == null
+                || characterMessage == null
+                || completionQuestion == null
+                || completionCharacterResponse == null
+                || containsCharacterInterpretation(title, description)
+                || containsProhibitedExpression(title, description, characterMessage, completionQuestion, completionCharacterResponse)
+                || !isAllowedForMissionTimeSlot(
+                        fallbackMission,
+                        category.get(),
+                        title,
+                        description,
+                        characterMessage,
+                        completionQuestion,
+                        completionCharacterResponse
+                )) {
+            return Optional.empty();
+        }
+
+        return Optional.of(new ValidatedGeneratedMission(
+                generatedText.aiGenerationId(),
+                title,
+                description,
+                characterMessage,
+                completionQuestion,
+                completionCharacterResponse,
+                category.get(),
+                difficulty.get()
+        ));
+    }
+
+    // 제목/설명은 일반 한국어 미션 문장이어야 하며, 캐릭터 해석 형식은 캐릭터 문구에만 허용한다.
+    private boolean containsCharacterInterpretation(String... values) {
+        for (String value : values) {
+            if (value.contains("(해석:") || startsWithMumuUtterance(value)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean startsWithMumuUtterance(String value) {
+        String trimmed = value.trim();
+        return trimmed.startsWith("무우")
+                || trimmed.startsWith("무무")
+                || trimmed.startsWith("무...")
+                || trimmed.startsWith("무…")
+                || trimmed.startsWith("무?")
+                || trimmed.startsWith("무!");
+    }
+
+    private Optional<MissionCategoryType> toMissionCategory(String value) {
+        return toEnum(value, MissionCategoryType.class);
+    }
+
+    private Optional<MissionDifficultyType> toMissionDifficulty(String value) {
+        return toEnum(value, MissionDifficultyType.class);
+    }
+
+    private <T extends Enum<T>> Optional<T> toEnum(String value, Class<T> enumType) {
+        if (value == null || value.isBlank()) {
+            return Optional.empty();
+        }
+
+        try {
+            return Optional.of(Enum.valueOf(enumType, value.trim().toUpperCase(Locale.ROOT)));
+        } catch (IllegalArgumentException e) {
+            return Optional.empty();
+        }
+    }
+
+    private String normalizeText(String value, int maxLength) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+
+        String normalized = value.trim();
+        if (normalized.length() > maxLength) {
+            return null;
+        }
+        return normalized;
+    }
+
+    private boolean containsProhibitedExpression(String... values) {
+        for (String value : values) {
+            for (String expression : PROHIBITED_MISSION_EXPRESSIONS) {
+                if (value.contains(expression)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private boolean isAllowedForMissionTimeSlot(
+            UserMission fallbackMission,
+            MissionCategoryType category,
+            String... values
+    ) {
+        LocalDateTime offeredAt = fallbackMission.getOfferedAt() == null
+                ? LocalDateTime.now(clock)
+                : fallbackMission.getOfferedAt();
+        return MissionTimePolicy.isCandidateAllowed(MissionTimeSlot.from(offeredAt), category, values);
+    }
+
+    private int rewardForDifficulty(MissionDifficultyType difficulty) {
+        return switch (difficulty) {
+            case EASY -> EASY_REWARD_STAR_PIECE;
+            case NORMAL -> NORMAL_REWARD_STAR_PIECE;
+            case CHALLENGE -> CHALLENGE_REWARD_STAR_PIECE;
+        };
     }
 
     /**
@@ -291,6 +544,16 @@ public class MissionService {
      */
     @Transactional
     public RejectMissionResponse rejectMission(Long userId, Long missionId) {
+        return rejectMission(userId, missionId, null, null);
+    }
+
+    @Transactional
+    public RejectMissionResponse rejectMission(
+            Long userId,
+            Long missionId,
+            String reasonCode,
+            String reasonText
+    ) {
         UserMission mission = userMissionRepository.findByIdAndUserId(missionId, userId)
                 .orElseThrow(() -> new MissionException(MissionErrorCode.MISSION_NOT_FOUND));
 
@@ -298,8 +561,11 @@ public class MissionService {
             throw new MissionException(MissionErrorCode.MISSION_INVALID_STATUS);
         }
 
+        validateDailyRejectLimit(userId, mission.getMissionDate());
+
         LocalDateTime now = LocalDateTime.now(clock);
         mission.reject(now);
+        upsertRejectionFeedback(mission, reasonCode, reasonText);
         eventPublisher.publishEvent(MissionEventLogEvent.missionRejected(mission, toOccurredAt(now)));
 
         return RejectMissionResponse.newBuilder()
@@ -308,6 +574,38 @@ public class MissionService {
                 .setRejectedAt(formatDateTime(mission.getRejectedAt()))
                 .setCharacterMessage(REJECTION_CHARACTER_MESSAGE)
                 .build();
+    }
+
+    /**
+     * 거절 이유 또는 완료 만족도 피드백을 저장한다.
+     *
+     * 피드백은 보상 조건이 아니라 이후 자율 미션 개인화에 쓰는 입력 신호다.
+     */
+    @Transactional
+    public UpsertMissionFeedbackResponse upsertMissionFeedback(
+            Long userId,
+            Long missionId,
+            MissionFeedbackType feedbackType,
+            MissionFeedbackReaction reaction,
+            String reasonCode,
+            String reasonText
+    ) {
+        UserMission mission = userMissionRepository.findByIdAndUserId(missionId, userId)
+                .orElseThrow(() -> new MissionException(MissionErrorCode.MISSION_NOT_FOUND));
+
+        if (feedbackType == MissionFeedbackType.SATISFACTION) {
+            validateSatisfactionFeedback(mission, reaction);
+            MissionFeedback feedback = upsertSatisfactionFeedback(mission, reaction);
+            return toFeedbackResponse(feedback);
+        }
+
+        if (feedbackType == MissionFeedbackType.REJECTION) {
+            validateRejectionFeedback(mission);
+            MissionFeedback feedback = upsertRejectionFeedback(mission, reasonCode, reasonText);
+            return toFeedbackResponse(feedback);
+        }
+
+        throw new MissionException(MissionErrorCode.MISSION_FEEDBACK_INVALID);
     }
 
     /**
@@ -354,7 +652,7 @@ public class MissionService {
      *
      * mission DB 쓰기와 wallet gRPC 호출을 한 트랜잭션에 넣지 않는다.
      * 답변 저장/상태 전환은 짧은 mission 트랜잭션으로 끝내고, 별조각 지급은 트랜잭션 밖에서 호출한다.
-     * wallet 지급 요청은 mission_reward_outbox를 통해 남기고, 성공하면 dispatcher가 보상 지급 완료 marker까지 저장한다.
+     * wallet 지급 요청은 mission_outbox_events에 기록하고, 성공하면 dispatcher가 보상 지급 완료 marker까지 저장한다.
      */
     public SubmitCompletionAnswerResponse submitCompletionAnswer(Long userId, Long missionId, String answerText) {
         String normalizedAnswer = validateAndNormalizeAnswer(answerText);
@@ -387,13 +685,15 @@ public class MissionService {
                 return new MissionCompletionContext(mission, answer, true, rewardIdempotencyKey, null);
             }
 
-            MissionRewardOutbox outbox = ensureRewardOutbox(mission, rewardIdempotencyKey, LocalDateTime.now(clock));
+            MissionOutboxEvent outbox = ensureRewardOutbox(mission, rewardIdempotencyKey, LocalDateTime.now(clock));
             return new MissionCompletionContext(mission, answer, false, rewardIdempotencyKey, outbox.getId());
         }
 
         if (!mission.isAnswering()) {
             throw new MissionException(MissionErrorCode.MISSION_INVALID_STATUS);
         }
+
+        validateDailyRewardLimit(userId, mission.getMissionDate());
 
         MissionCompletionAnswer answer = missionCompletionAnswerRepository.findByMissionId(mission.getId())
                 .orElseThrow(() -> new MissionException(MissionErrorCode.MISSION_INVALID_STATUS));
@@ -406,7 +706,7 @@ public class MissionService {
         answer.submit(normalizedAnswer, now);
         mission.complete(now);
         eventPublisher.publishEvent(MissionEventLogEvent.missionCompleted(mission, answer, toOccurredAt(now)));
-        MissionRewardOutbox outbox = ensureRewardOutbox(mission, rewardIdempotencyKey, now);
+        MissionOutboxEvent outbox = ensureRewardOutbox(mission, rewardIdempotencyKey, now);
 
         return new MissionCompletionContext(mission, answer, false, rewardIdempotencyKey, outbox.getId());
     }
@@ -425,14 +725,19 @@ public class MissionService {
         return missionRewardDispatcher.dispatchNow(context.rewardOutboxId());
     }
 
-    private MissionRewardOutbox ensureRewardOutbox(
+    private MissionOutboxEvent ensureRewardOutbox(
             UserMission mission,
             String rewardIdempotencyKey,
             LocalDateTime nextAttemptAt
     ) {
-        return missionRewardOutboxRepository.findByMissionId(mission.getId())
-                .orElseGet(() -> missionRewardOutboxRepository.save(MissionRewardOutbox.pending(
+        return missionOutboxEventRepository.findByIdempotencyKey(rewardIdempotencyKey)
+                .orElseGet(() -> missionOutboxEventRepository.save(MissionOutboxEvent.rewardRequested(
                         mission,
+                        objectMapper.valueToTree(new MissionRewardRequestedPayload(
+                                mission.getId(),
+                                mission.getUserId(),
+                                mission.getRewardStarPiece()
+                        )),
                         rewardIdempotencyKey,
                         nextAttemptAt
                 )));
@@ -441,11 +746,11 @@ public class MissionService {
     /**
      * 오늘 아직 사용하지 않은 활성 미션 템플릿을 하나 고른다.
      *
-     * AI가 미션 제목/보상/카테고리를 임의 생성하지 않도록 seed template을 기준으로 선택한다.
-     * 같은 날 같은 템플릿이 반복 제안되는 느낌을 줄이기 위해 오늘 사용한 template id는 제외한다.
+     * AI 후보가 실패하거나 검증을 통과하지 못할 때 사용할 seed fallback template을 고른다.
+     * 같은 날 같은 fallback 미션이 반복 제안되는 느낌을 줄이기 위해 오늘 사용한 template id는 제외한다.
      * 후보 선택 순서는 id 오름차순이 아니라 날짜 기준 랜덤 정책에 맡긴다.
      */
-    private MissionTemplate selectNextTemplate(Long userId, LocalDate missionDate) {
+    private MissionTemplate selectNextTemplate(Long userId, LocalDate missionDate, MissionTimeSlot timeSlot) {
         List<Long> usedTemplateIds = userMissionRepository.findMissionTemplateIdsByUserIdAndMissionDate(userId, missionDate);
         Set<Long> usedTemplateIdSet = Set.copyOf(usedTemplateIds);
         List<MissionTemplate> activeTemplates = missionTemplateRepository.findByActiveTrueOrderByIdAsc();
@@ -454,7 +759,8 @@ public class MissionService {
                 userId,
                 missionDate,
                 activeTemplates,
-                usedTemplateIdSet
+                usedTemplateIdSet,
+                timeSlot
         );
     }
 
@@ -494,6 +800,75 @@ public class MissionService {
         }
 
         return normalizedAnswer;
+    }
+
+    private void validateSatisfactionFeedback(UserMission mission, MissionFeedbackReaction reaction) {
+        if (!mission.isCompleted() || reaction == null) {
+            throw new MissionException(MissionErrorCode.MISSION_FEEDBACK_INVALID);
+        }
+    }
+
+    private void validateRejectionFeedback(UserMission mission) {
+        if (mission.getStatus() != UserMissionStatus.REJECTED) {
+            throw new MissionException(MissionErrorCode.MISSION_FEEDBACK_INVALID);
+        }
+    }
+
+    private MissionFeedback upsertSatisfactionFeedback(
+            UserMission mission,
+            MissionFeedbackReaction reaction
+    ) {
+        MissionFeedback feedback = missionFeedbackRepository
+                .findByUserIdAndMissionIdAndFeedbackType(
+                        mission.getUserId(),
+                        mission.getId(),
+                        MissionFeedbackType.SATISFACTION
+                )
+                .orElseGet(() -> MissionFeedback.satisfaction(mission, reaction));
+        feedback.updateSatisfaction(reaction);
+        return missionFeedbackRepository.saveAndFlush(feedback);
+    }
+
+    private MissionFeedback upsertRejectionFeedback(
+            UserMission mission,
+            String reasonCode,
+            String reasonText
+    ) {
+        MissionFeedbackReasonCode normalizedReasonCode = toReasonCode(reasonCode);
+        String normalizedReasonText = normalizeReasonText(reasonText);
+        MissionFeedback feedback = missionFeedbackRepository
+                .findByUserIdAndMissionIdAndFeedbackType(
+                        mission.getUserId(),
+                        mission.getId(),
+                        MissionFeedbackType.REJECTION
+                )
+                .orElseGet(() -> MissionFeedback.rejection(mission, normalizedReasonCode, normalizedReasonText));
+        feedback.updateRejection(normalizedReasonCode, normalizedReasonText);
+        return missionFeedbackRepository.saveAndFlush(feedback);
+    }
+
+    private MissionFeedbackReasonCode toReasonCode(String reasonCode) {
+        if (reasonCode == null || reasonCode.isBlank()) {
+            return MissionFeedbackReasonCode.JUST_SKIP;
+        }
+
+        try {
+            return MissionFeedbackReasonCode.valueOf(reasonCode.trim());
+        } catch (IllegalArgumentException e) {
+            throw new MissionException(MissionErrorCode.MISSION_FEEDBACK_INVALID);
+        }
+    }
+
+    private String normalizeReasonText(String reasonText) {
+        if (reasonText == null || reasonText.isBlank()) {
+            return null;
+        }
+
+        String normalized = reasonText.trim();
+        if (normalized.length() > FEEDBACK_REASON_TEXT_MAX_LENGTH) {
+            throw new MissionException(MissionErrorCode.MISSION_FEEDBACK_INVALID);
+        }
+        return normalized;
     }
 
     private String rewardIdempotencyKey(Long missionId) {
@@ -539,6 +914,24 @@ public class MissionService {
                 .build();
     }
 
+    private UpsertMissionFeedbackResponse toFeedbackResponse(MissionFeedback feedback) {
+        UpsertMissionFeedbackResponse.Builder builder = UpsertMissionFeedbackResponse.newBuilder()
+                .setMissionId(feedback.getMissionId())
+                .setFeedbackType(toProtoFeedbackType(feedback.getFeedbackType()))
+                .setUpdatedAt(formatDateTime(feedback.getUpdatedAt()));
+
+        if (feedback.getReaction() != null) {
+            builder.setReaction(toProtoFeedbackReaction(feedback.getReaction()));
+        }
+        if (feedback.getReasonCode() != null) {
+            builder.setReasonCode(feedback.getReasonCode().name());
+        }
+        if (feedback.getReasonText() != null) {
+            builder.setReasonText(feedback.getReasonText());
+        }
+        return builder.build();
+    }
+
     /**
      * JPA Entity를 gRPC 응답용 Mission message로 변환한다.
      *
@@ -562,10 +955,10 @@ public class MissionService {
     /**
      * 오늘 미션 히스토리 목록에 필요한 최소 필드만 proto로 변환한다.
      *
-     * 완료 답변 전문은 민감할 수 있어 히스토리 응답에 포함하지 않는다.
+     * 완료 답변 전문은 민감할 수 있어 히스토리 응답에는 미리보기만 포함한다.
      */
-    private TodayMission toProtoTodayMission(UserMission mission) {
-        return TodayMission.newBuilder()
+    private TodayMission toProtoTodayMission(UserMission mission, MissionCompletionAnswer answer) {
+        TodayMission.Builder builder = TodayMission.newBuilder()
                 .setId(mission.getId())
                 .setStackOrder(mission.getStackOrder())
                 .setTitle(mission.getTitle())
@@ -576,14 +969,80 @@ public class MissionService {
                 .setCharacterMessage(mission.getCharacterMessage())
                 .setCreatedAt(formatDateTime(mission.getCreatedAt()))
                 .setCompletedAt(formatDateTime(mission.getCompletedAt()))
+                .setRejectedAt(formatDateTime(mission.getRejectedAt()));
+
+        if (answer != null) {
+            builder.setCompletionQuestion(answer.getQuestionText());
+            if (answer.isAnswered()) {
+                builder.setHasAnswer(true);
+                builder.setAnswerPreview(toAnswerPreview(answer.getAnswerText()));
+            }
+        }
+
+        return builder.build();
+    }
+
+    private MissionDetail toProtoMissionDetail(UserMission mission, MissionCompletionAnswer answer) {
+        MissionDetail.Builder builder = MissionDetail.newBuilder()
+                .setId(mission.getId())
+                .setMissionDate(mission.getMissionDate().toString())
+                .setStackOrder(mission.getStackOrder())
+                .setTitle(mission.getTitle())
+                .setDescription(mission.getDescription())
+                .setCharacterMessage(mission.getCharacterMessage())
+                .setCategory(toProtoCategory(mission))
+                .setDifficulty(toProtoDifficulty(mission))
+                .setRewardStarPiece(mission.getRewardStarPiece())
+                .setStatus(toProtoStatus(mission.getStatus()))
+                .setCreatedAt(formatDateTime(mission.getCreatedAt()))
+                .setCompletedAt(formatDateTime(mission.getCompletedAt()))
                 .setRejectedAt(formatDateTime(mission.getRejectedAt()))
-                .build();
+                .setCompletionCharacterResponse(nullToEmpty(mission.getCompletionCharacterResponse()));
+
+        if (answer != null) {
+            builder.setQuestion(toProtoQuestion(answer));
+            if (answer.isAnswered()) {
+                builder.setAnswer(toProtoAnswer(answer));
+                builder.setHasAnswer(true);
+            }
+        }
+
+        return builder.build();
     }
 
     private int countByStatus(List<UserMission> missions, UserMissionStatus status) {
         return (int) missions.stream()
                 .filter(mission -> mission.getStatus() == status)
                 .count();
+    }
+
+    private Map<Long, MissionCompletionAnswer> findAnswersByMissionId(List<UserMission> missions) {
+        if (missions.isEmpty()) {
+            return Map.of();
+        }
+
+        List<Long> missionIds = missions.stream()
+                .map(UserMission::getId)
+                .toList();
+        return missionCompletionAnswerRepository.findByMissionIdIn(missionIds).stream()
+                .collect(Collectors.toMap(MissionCompletionAnswer::getMissionId, Function.identity()));
+    }
+
+    private int remainingCount(int maxCount, int usedCount) {
+        return Math.max(0, maxCount - usedCount);
+    }
+
+    private String toAnswerPreview(String answerText) {
+        if (answerText == null || answerText.isBlank()) {
+            return "";
+        }
+
+        String normalized = answerText.strip();
+        if (normalized.length() <= ANSWER_PREVIEW_MAX_LENGTH) {
+            return normalized;
+        }
+
+        return normalized.substring(0, ANSWER_PREVIEW_MAX_LENGTH) + "...";
     }
 
     private Optional<Long> findCurrentMissionId(List<UserMission> missions) {
@@ -625,12 +1084,30 @@ public class MissionService {
         return MissionStatus.valueOf("MISSION_STATUS_" + status.name());
     }
 
+    private com.p5laris.proto.mission.v1.MissionFeedbackType toProtoFeedbackType(MissionFeedbackType feedbackType) {
+        return com.p5laris.proto.mission.v1.MissionFeedbackType.valueOf(
+                "MISSION_FEEDBACK_TYPE_" + feedbackType.name()
+        );
+    }
+
+    private com.p5laris.proto.mission.v1.MissionFeedbackReaction toProtoFeedbackReaction(
+            MissionFeedbackReaction reaction
+    ) {
+        return com.p5laris.proto.mission.v1.MissionFeedbackReaction.valueOf(
+                "MISSION_FEEDBACK_REACTION_" + reaction.name()
+        );
+    }
+
     // proto에는 LocalDateTime 타입을 직접 쓰지 않으므로 ISO 문자열로 변환한다.
     private String formatDateTime(LocalDateTime dateTime) {
         if (dateTime == null) {
             return "";
         }
         return DATE_TIME_FORMATTER.format(dateTime);
+    }
+
+    private String nullToEmpty(String value) {
+        return value == null ? "" : value;
     }
 
     private OffsetDateTime toOccurredAt(LocalDateTime dateTime) {
@@ -653,7 +1130,7 @@ public class MissionService {
     }
 
     /**
-     * fallback 미션 저장 후 AI 문구 생성을 요청하는 데 필요한 값만 담은 스냅샷이다.
+     * fallback 미션 저장 후 AI 자율 미션 후보 생성을 요청하는 데 필요한 값만 담은 스냅샷이다.
      *
      * 이 record는 트랜잭션 밖에서 사용되므로 JPA Entity 대신 문자열/ID 값만 들고 간다.
      */
@@ -692,5 +1169,23 @@ public class MissionService {
                     aiRequestId
             );
         }
+    }
+
+    /**
+     * ai 모듈이 반환한 후보 중 mission 서버 검증을 통과한 값만 담는다.
+     *
+     * 이 record가 만들어진 뒤에만 UserMission에 AI 후보를 반영하므로,
+     * 잘못된 enum/길이/CHALLENGE 정책 위반은 모두 seed fallback으로 남는다.
+     */
+    private record ValidatedGeneratedMission(
+            Long aiGenerationId,
+            String title,
+            String description,
+            String characterMessage,
+            String completionQuestion,
+            String completionCharacterResponse,
+            MissionCategoryType category,
+            MissionDifficultyType difficulty
+    ) {
     }
 }

@@ -20,9 +20,13 @@ class GeminiMissionTextGeneratorTest {
         GeminiMissionTextGenerator generator = new GeminiMissionTextGenerator(
                 new StubAiChatClient("""
                         {
+                          "title": "물 한 컵 마시기",
+                          "description": "지금 자리에서 물 한 컵을 천천히 마셔보세요.",
                           "characterMessage": "무... 무무... (해석: 물 한 컵 마셔봐요.)",
                           "completionQuestion": "마시고 나서 어땠어?",
-                          "completionCharacterResponse": "잘했어. 작은 시작을 기억할게."
+                          "completionCharacterResponse": "잘했어. 작은 시작을 기억할게.",
+                          "category": "BASIC_ROUTINE",
+                          "difficulty": "EASY"
                         }
                         """),
                 new ObjectMapper()
@@ -30,9 +34,13 @@ class GeminiMissionTextGeneratorTest {
 
         MissionTextCandidate candidate = generator.generate(validCommand());
 
+        assertThat(candidate.title()).isEqualTo("물 한 컵 마시기");
+        assertThat(candidate.description()).contains("물 한 컵");
         assertThat(candidate.characterMessage()).contains("무... 무무...");
         assertThat(candidate.completionQuestion()).isEqualTo("마시고 나서 어땠어?");
         assertThat(candidate.completionCharacterResponse()).contains("작은 시작");
+        assertThat(candidate.category()).isEqualTo("BASIC_ROUTINE");
+        assertThat(candidate.difficulty()).isEqualTo("EASY");
     }
 
     @Test
@@ -41,9 +49,13 @@ class GeminiMissionTextGeneratorTest {
                 new StubAiChatClient("""
                         ```json
                         {
+                          "title": "물 한 컵 마시기",
+                          "description": "지금 자리에서 물 한 컵을 천천히 마셔보세요.",
                           "characterMessage": "천천히 물 한 컵 마셔보자.",
                           "completionQuestion": "몸이 조금 편해졌어?",
-                          "completionCharacterResponse": "오늘의 수분 보충을 기억할게."
+                          "completionCharacterResponse": "오늘의 수분 보충을 기억할게.",
+                          "category": "BASIC_ROUTINE",
+                          "difficulty": "EASY"
                         }
                         ```
                         """),
@@ -87,9 +99,13 @@ class GeminiMissionTextGeneratorTest {
     void Gemini_prompt는_무무_발화_패턴을_고정하지_않고_섞도록_요청한다() {
         CapturingAiChatClient chatClient = new CapturingAiChatClient("""
                 {
+                  "title": "물 한 컵 마시기",
+                  "description": "지금 자리에서 물 한 컵을 천천히 마셔보세요.",
                   "characterMessage": "무우... 무...? (해석: 물 한 컵 마셔봐요.)",
                   "completionQuestion": "무...? (해석: 마시고 나서 어땠나요?)",
-                  "completionCharacterResponse": "무...! (해석: 작은 완료도 충분히 반짝였어요.)"
+                  "completionCharacterResponse": "무...! (해석: 작은 완료도 충분히 반짝였어요.)",
+                  "category": "BASIC_ROUTINE",
+                  "difficulty": "EASY"
                 }
                 """);
         GeminiMissionTextGenerator generator = new GeminiMissionTextGenerator(chatClient, new ObjectMapper());
@@ -98,10 +114,23 @@ class GeminiMissionTextGeneratorTest {
 
         assertThat(chatClient.systemPrompt)
                 .contains("\"무\"", "\"무무\"", "\"무우\"", "\"무...?\"", "\"무...!\"")
+                .contains("title과 description은 사용자가 바로 읽는 일반 미션 문장")
+                .contains("캐릭터 말투는 characterMessage, completionQuestion, completionCharacterResponse 세 필드에만 적용")
+                .contains("missionIntensity를 목표 난이도로 맞추는 것을 원칙")
+                .contains("운동/움직임 미션의 NORMAL")
+                .contains("missionIntensity가 CHALLENGE")
+                .contains("currentTimeSlot과 timeSlotPolicy를 반드시 따른다")
+                .contains("timeSlotPolicy.blockedCategories에 포함된 category는 절대 선택하지 않는다")
+                .contains("currentTimeSlot이 NIGHT 또는 LATE_NIGHT이면 햇빛")
+                .contains("currentTimeSlot이 LATE_NIGHT이면 연락, 메시지, 전화")
                 .contains("항상 \"(해석: ...)\"")
                 .contains("괄호 밖에는 \"무\", \"우\", 공백, \".\", \"?\", \"!\", \"…\"만 쓴다")
-                .contains("무우... 오래된 알림 하나 지우는 무우...?")
-                .contains("무우... 무...? (해석: 오래된 알림 하나를 지워볼까요?)")
+                .contains("예시에 나온 행동이나 문장을 실제 미션 후보로 재사용하지 않는다")
+                .contains("MUMU 나쁜 형식: \"무우... 미션 내용을 괄호 밖에 쓰는 무우...?\"")
+                .contains("잘못된 title 형식: \"무우... 무...? (해석: 일반 미션 제목)\"")
+                .contains("MUMU 좋은 형식: \"무우... 무...? (해석: 실제 제안 문장)\"")
+                .contains("별조각은 서비스의 보상 화폐")
+                .contains("별조각이라는 단어는 금지")
                 .doesNotContain("반드시 \"무... 무무...\"");
     }
 
