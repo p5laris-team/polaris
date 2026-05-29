@@ -33,6 +33,7 @@ public class MissionMemoryRecorder {
     private static final int SATISFACTION_DISLIKE_IMPORTANCE = 75;
 
     private final UserMemoryRepository userMemoryRepository;
+    private final UserMemoryEmbeddingQueue userMemoryEmbeddingQueue;
     private final ObjectMapper objectMapper;
 
     public void recordCompletion(UserMission mission, MissionCompletionAnswer answer) {
@@ -119,7 +120,8 @@ public class MissionMemoryRecorder {
         }
 
         memory.update(content, metadataJson, importance);
-        userMemoryRepository.save(memory);
+        UserMemory savedMemory = userMemoryRepository.saveAndFlush(memory);
+        userMemoryEmbeddingQueue.enqueue(savedMemory);
     }
 
     private boolean hasMeaningfulRejectionSignal(MissionFeedback feedback) {

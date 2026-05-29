@@ -54,6 +54,21 @@ grpc:
       negotiationType: plaintext
 
 mission:
+  rag:
+    enabled: ${MISSION_RAG_ENABLED}
+    embedding-model: ${MISSION_RAG_EMBEDDING_MODEL}
+    embedding-dimension: ${MISSION_RAG_EMBEDDING_DIMENSION}
+    top-k: ${MISSION_RAG_TOP_K}
+    fallback-to-recent-memory: ${MISSION_RAG_FALLBACK_TO_RECENT_MEMORY}
+  memory-embedding:
+    enabled: ${MISSION_MEMORY_EMBEDDING_ENABLED}
+    fixed-delay-ms: ${MISSION_MEMORY_EMBEDDING_FIXED_DELAY_MS}
+    initial-delay-ms: ${MISSION_MEMORY_EMBEDDING_INITIAL_DELAY_MS}
+    batch-size: ${MISSION_MEMORY_EMBEDDING_BATCH_SIZE}
+    max-attempts: ${MISSION_MEMORY_EMBEDDING_MAX_ATTEMPTS}
+    processing-timeout-seconds: ${MISSION_MEMORY_EMBEDDING_PROCESSING_TIMEOUT_SECONDS}
+    retry-initial-delay-seconds: ${MISSION_MEMORY_EMBEDDING_RETRY_INITIAL_DELAY_SECONDS}
+    retry-max-delay-seconds: ${MISSION_MEMORY_EMBEDDING_RETRY_MAX_DELAY_SECONDS}
   reward-outbox:
     enabled: ${MISSION_REWARD_OUTBOX_ENABLED}
     fixed-delay-ms: ${MISSION_REWARD_OUTBOX_FIXED_DELAY_MS}
