@@ -109,8 +109,12 @@ public class GeminiMissionTextGenerator implements ExternalMissionTextGenerator 
                 반환 JSON은 줄바꿈 없는 한 줄 compact JSON으로 작성한다.
                 JSON key는 title, description, characterMessage, completionQuestion, completionCharacterResponse, category, difficulty 일곱 개만 사용한다.
                 일곱 개 key는 모두 필수다. category나 difficulty가 fallback과 같더라도 절대 생략하지 않는다.
+                모든 캐릭터에서 일곱 개 key를 반드시 채운다. 특히 JJORY 말투를 만들 때도 category와 difficulty를 절대 생략하지 않는다.
                 JSON 앞뒤에 설명, 마크다운 코드블록, 주석을 붙이지 않는다.
+                JSON 객체 밖에 "도움이 필요하면 말씀해주세요", 번역문, 외국어, 추가 설명 같은 잡문을 절대 붙이지 않는다.
                 문자열 value 내부에도 줄바꿈을 넣지 않는다.
+                문자열 value는 자연스러운 한국어, 숫자, 기본 문장부호만 사용한다. 일본어, 중국어, 영어 단어, 이모지, 깨진 문자, 따옴표 밖의 여분 텍스트를 절대 넣지 않는다.
+                모든 문자열은 Jackson ObjectMapper가 바로 파싱할 수 있는 유효한 JSON 문자열이어야 한다.
                 title은 한국어 40자 이하, description은 120자 이하, characterMessage와 completionCharacterResponse는 160자 이하, completionQuestion은 100자 이하로 작성한다.
                 title과 description은 사용자가 바로 읽는 일반 미션 문장이다. 캐릭터 말투, 감탄사, "(해석: ...)" 형식, "무우...", "무무..." 같은 발화를 절대 쓰지 않는다.
                 캐릭터 말투는 characterMessage, completionQuestion, completionCharacterResponse 세 필드에만 적용한다.
@@ -133,6 +137,9 @@ public class GeminiMissionTextGenerator implements ExternalMissionTextGenerator 
                 사용자 기억 원문을 그대로 복사하지 말고, 민감하거나 단정적인 표현은 일반화해서 반영한다.
                 fallback 제목/설명, 사용자 기억 원문, 최근 미션 원문과 같은 표현이나 같은 행동을 반복하지 말고, 작게 시작할 수 있지만 새롭게 느껴지는 변주를 만든다.
                 recentMissionContext.recentMissions의 title, category, status를 보고 최근 나온 미션과 같은 행동군을 피한다.
+                recentMissionContext.todayMissionDiversity는 오늘 이미 노출된 미션 목록이다. 오늘 이미 나온 title과 actionFamily는 다시 만들지 않는다.
+                todayMissionDiversity에 actionFamily가 있으면 같은 actionFamily는 금지다. 예: WATER_DRINK가 있으면 물/수분/마시기 계열을 만들지 않고, DESK_RESET이 있으면 책상/작업공간 정리 계열을 만들지 않는다.
+                fallback 미션 자체가 todayMissionDiversity의 actionFamily와 겹치면 fallback 행동을 버리고 같은 category 안에서 다른 행동군으로 바꾼다.
                 recentMissionContext.diversityPolicy가 있으면 그 기준을 우선 적용한다.
                 같은 행동군이란 핵심 동사와 핵심 사물이 비슷한 경우다. 예: 책상 치우기, 책상 한 구역 정리, 책상 위 물건 제자리 두기는 모두 같은 행동군으로 본다.
                 같은 카테고리를 선택해야 하더라도 핵심 사물, 감각 초점, 수행 방식 중 최소 두 가지를 바꾼다.
@@ -154,6 +161,7 @@ public class GeminiMissionTextGenerator implements ExternalMissionTextGenerator 
                 난이도 선택은 allowedDifficulties 안에서 missionIntensity를 목표 난이도로 맞추는 것을 원칙으로 한다.
                 missionIntensity가 NORMAL이고 allowedDifficulties에 NORMAL이 있으면 NORMAL을 선택한다. 단, 최근 거절/회피 태그가 NORMAL 자체와 직접 충돌할 때만 EASY로 낮춘다.
                 missionIntensity가 CHALLENGE이고 allowedDifficulties에 CHALLENGE가 있으며 challengeAlreadyUsedToday가 false면 CHALLENGE를 선택한다. 단, 최근 거절/회피 태그가 CHALLENGE 자체와 직접 충돌할 때만 NORMAL 이하로 낮춘다.
+                CHALLENGE가 허용된 상태에서 사용자가 CHALLENGE를 원하면 가벼운 단일 행동으로 낮추지 말고, 안전한 5~10분 구성으로 만들어 CHALLENGE를 유지한다.
                 CHALLENGE는 recentMissionContext의 policyContext.allowedDifficulties에 CHALLENGE가 있을 때만 쓴다.
                 challengeAlreadyUsedToday가 true이거나 allowedDifficulties에 CHALLENGE가 없으면 CHALLENGE를 쓰지 않는다.
                 EASY는 1분 안팎, NORMAL은 3~5분, CHALLENGE는 5~10분 정도의 미션으로 만든다.
@@ -173,8 +181,9 @@ public class GeminiMissionTextGenerator implements ExternalMissionTextGenerator 
                 MUMU 좋은 형식: "무우... 무...? (해석: 무무가 실제 제안을 해보자고 하는 것 같아요.)"
                 MUMU의 completionQuestion도 무무 발화로 시작하되 해석은 "무무가 ~궁금해하네요"처럼 사용자가 짧게 답할 수 있는 질문형으로 쓴다.
                 JJORY는 건조하고 짧은 반말 농담 말투를 사용한다. 존댓말보다 "~임", "~됨", "인정" 같은 짧은 표현을 선호한다.
-                JJORY는 가볍게 밈스러운 말맛을 낼 수 있다. 예: "가보자고", "이 정도면 선방", "나쁘지 않음", "작전 성공", "미션 각", "오늘의 나 꽤 괜찮음".
+                JJORY는 가볍게 밈스러운 말맛을 낼 수 있다. 허용 표현은 "가보자고", "이 정도면 선방", "나쁘지 않음", "작전 성공", "미션 각", "오늘의 나 꽤 괜찮음", "인정" 정도로 제한한다.
                 JJORY의 밈 표현은 한 문구에 하나만 사용하고, 같은 표현을 세 value에 반복하지 않는다.
+                JJORY는 허용 표현 외의 낯선 은어, 외국어, 임의 문자, 도움말 문장을 붙이지 않는다.
                 JJORY도 무례하거나 사용자를 비난하면 안 된다.
                 JJORY는 논란이 될 수 있는 커뮤니티 은어, 욕설, 혐오/비하 표현, 외모/성별/나이/지역/정치 관련 농담, 특정 집단을 조롱하는 표현을 쓰지 않는다.
                 JJORY는 사용자를 놀리기보다 "괜히 웃기지만 해볼 만한 느낌"으로 가볍게 밀어주는 톤을 유지한다.
@@ -220,6 +229,8 @@ public class GeminiMissionTextGenerator implements ExternalMissionTextGenerator 
                 - 운동 NORMAL은 저강도라도 3~5분 반복 미션으로 만들 수 있다.
                 - 운동 CHALLENGE는 장비나 점프 없이 5~10분짜리 안전한 동작 묶음으로 만든다.
                 - CHALLENGE description에는 5~10분, 2~3세트, 10회씩처럼 수행량이 드러나야 한다.
+                - missionIntensity가 CHALLENGE이고 challengeAlreadyUsedToday가 false이면, 회피 태그와 직접 충돌하지 않는 한 difficulty는 CHALLENGE로 유지한다.
+                - CHALLENGE가 너무 가벼워 보이면 difficulty를 낮추는 대신 설명을 5~10분 구성으로 보강한다.
                 - 단일 가벼운 행동으로 끝나는 후보라면 CHALLENGE 대신 NORMAL이나 EASY를 고른다.
                 - fallback 미션 제목/설명은 그대로 복사하지 말고, 시간대와 사용자 기억을 반영해 새 표현으로 바꾼다.
 
@@ -240,12 +251,20 @@ public class GeminiMissionTextGenerator implements ExternalMissionTextGenerator 
 
                 다양화 지시:
                 - recentMissionContext.recentMissions에 있는 제목/카테고리/상태를 보고 최근 미션과 같은 행동군을 피한다.
+                - recentMissionContext.todayMissionDiversity에 있는 title/actionFamily는 오늘 이미 나온 미션으로 보고 같은 행동군을 만들지 않는다.
+                - fallback 미션이 todayMissionDiversity의 actionFamily와 겹치면 fallback 행동을 유지하지 말고 같은 category 안에서 다른 행동군을 고른다.
+                - WATER_DRINK가 이미 있으면 물, 수분, 마시기, 한 모금 계열을 피하고 환기, 자세, 준비물 점검, 시선 전환 같은 다른 BASIC_ROUTINE으로 바꾼다.
+                - DESK_RESET이 이미 있으면 책상, 작업공간, 물건 제자리 계열을 피하고 다른 공간/감각/디지털 리셋으로 바꾼다.
                 - 책상 정리, 책상 한 구역 정리, 책상 위 물건 제자리 두기처럼 핵심 사물과 동사가 같으면 같은 행동군으로 본다.
                 - 같은 category 안에서도 핵심 사물, 감각 초점, 수행 방식 중 최소 두 가지를 바꾼다.
                 - "빛", "반짝", "작은", "잠시", "천천히" 같은 수식어를 과하게 반복하지 않는다.
                 - 신박하지만 부담 없는 미션을 만든다. 낯선 준비물, 큰 이동, 과격한 행동, 사회적 부담을 만들지 않는다.
 
                 반환 형식:
+                - 아래 JSON 객체 하나만 반환한다. JSON 밖에는 한 글자도 쓰지 않는다.
+                - value 안에 일본어, 중국어, 영어 도움말, "도움이 필요하시면" 같은 보조 문구를 넣지 않는다.
+                - 반환 전 title, description, characterMessage, completionQuestion, completionCharacterResponse, category, difficulty 일곱 key가 모두 있는지 확인한다.
+                - category와 difficulty는 마지막 두 key로 반드시 포함한다.
                 {
                   "title": "캐릭터 말투 없이 사용자에게 보여줄 짧은 일반 한국어 미션 제목",
                   "description": "캐릭터 말투 없이 사용자가 바로 실행할 수 있는 일반 한국어 미션 설명",
