@@ -75,6 +75,7 @@ import static org.mockito.Mockito.when;
         "mission.rag.embedding-model=gemini-embedding-001",
         "mission.rag.embedding-dimension=768",
         "mission.rag.top-k=5",
+        "mission.rag.similarity-threshold=0.72",
         "mission.rag.fallback-to-recent-memory=true",
         "mission.memory-embedding.enabled=false",
         "mission.memory-embedding.fixed-delay-ms=60000",

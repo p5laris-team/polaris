@@ -195,27 +195,41 @@ public class UserMemoryEmbeddingJdbcRepository {
             String model,
             int dimension,
             List<Float> normalizedQueryVector,
-            int topK
+            int topK,
+            double similarityThreshold
     ) {
         String vectorLiteral = EmbeddingVectorUtils.toPgVectorLiteral(normalizedQueryVector);
+        double maxDistance = 1.0d - Math.min(1.0d, Math.max(0.0d, similarityThreshold));
         return jdbcTemplate.query("""
                         SELECT
-                            m.id AS user_memory_id,
-                            m.memory_type,
-                            m.source_type,
-                            m.content,
-                            m.metadata_json::text AS metadata_json,
-                            m.importance,
-                            m.created_at,
-                            e.embedding <=> CAST(? AS vector) AS distance
-                        FROM user_memory_embeddings e
-                        JOIN user_memories m ON m.id = e.user_memory_id
-                        WHERE e.user_id = ?
-                          AND e.status = ?
-                          AND e.embedding_model = ?
-                          AND e.embedding_dimension = ?
-                          AND e.embedding IS NOT NULL
-                        ORDER BY e.embedding <=> CAST(? AS vector), m.importance DESC, m.created_at DESC
+                            user_memory_id,
+                            memory_type,
+                            source_type,
+                            content,
+                            metadata_json,
+                            importance,
+                            created_at,
+                            distance
+                        FROM (
+                            SELECT
+                                m.id AS user_memory_id,
+                                m.memory_type,
+                                m.source_type,
+                                m.content,
+                                m.metadata_json::text AS metadata_json,
+                                m.importance,
+                                m.created_at,
+                                e.embedding <=> CAST(? AS vector) AS distance
+                            FROM user_memory_embeddings e
+                            JOIN user_memories m ON m.id = e.user_memory_id
+                            WHERE e.user_id = ?
+                              AND e.status = ?
+                              AND e.embedding_model = ?
+                              AND e.embedding_dimension = ?
+                              AND e.embedding IS NOT NULL
+                        ) hits
+                        WHERE distance <= ?
+                        ORDER BY distance ASC, importance DESC, created_at DESC
                         LIMIT ?
                         """,
                 (rs, rowNum) -> toRagHit(rs),
@@ -224,7 +238,7 @@ public class UserMemoryEmbeddingJdbcRepository {
                 UserMemoryEmbeddingStatus.COMPLETED.name(),
                 model,
                 dimension,
-                vectorLiteral,
+                maxDistance,
                 Math.max(1, topK)
         );
     }
