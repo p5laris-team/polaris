@@ -1,6 +1,9 @@
 package p5laris.mission.domain.application.guard;
 
 import org.springframework.stereotype.Component;
+import p5laris.mission.domain.application.diversity.MissionActionFamily;
+import p5laris.mission.domain.application.diversity.MissionActionFamilyClassifier;
+import p5laris.mission.domain.application.diversity.MissionDiversitySnapshot;
 import p5laris.mission.domain.application.time.MissionTimePolicy;
 import p5laris.mission.domain.application.time.MissionTimeSlot;
 import p5laris.mission.domain.domain.enums.MissionCategoryType;
@@ -103,6 +106,15 @@ public class MissionAiCandidateGuard {
         if (containsBlockedKeyword(timeSlot, title, description, characterMessage, completionQuestion, completionCharacterResponse)) {
             return reject(AiMissionCandidateRejectionReason.BLOCKED_KEYWORD);
         }
+        Optional<AiMissionCandidateRejectionReason> diversityRejectionReason = validateDiversity(
+                request.missionId(),
+                title,
+                description,
+                request.todayMissions()
+        );
+        if (diversityRejectionReason.isPresent()) {
+            return reject(diversityRejectionReason.get());
+        }
         if (difficulty.get() == MissionDifficultyType.CHALLENGE && !hasChallengeVolume(description)) {
             return reject(AiMissionCandidateRejectionReason.INVALID_CHALLENGE_VOLUME);
         }
@@ -150,6 +162,36 @@ public class MissionAiCandidateGuard {
         if (!allowedDifficulties.contains(generatedDifficulty)) {
             return Optional.of(AiMissionCandidateRejectionReason.DIFFICULTY_NOT_ALLOWED);
         }
+        return Optional.empty();
+    }
+
+    private Optional<AiMissionCandidateRejectionReason> validateDiversity(
+            Long currentMissionId,
+            String title,
+            String description,
+            List<MissionDiversitySnapshot> todayMissions
+    ) {
+        if (todayMissions == null || todayMissions.isEmpty()) {
+            return Optional.empty();
+        }
+
+        String candidateTitle = normalizeForComparison(title);
+        MissionActionFamily candidateActionFamily = MissionActionFamilyClassifier.classify(title, description);
+
+        for (MissionDiversitySnapshot mission : todayMissions) {
+            if (mission == null || mission.missionId() != null && mission.missionId().equals(currentMissionId)) {
+                continue;
+            }
+            String existingTitle = normalizeForComparison(mission.title());
+            if (!candidateTitle.isBlank() && candidateTitle.equals(existingTitle)) {
+                return Optional.of(AiMissionCandidateRejectionReason.DUPLICATE_TITLE);
+            }
+            if (candidateActionFamily != MissionActionFamily.UNKNOWN
+                    && candidateActionFamily == mission.actionFamily()) {
+                return Optional.of(AiMissionCandidateRejectionReason.DUPLICATE_ACTION_FAMILY);
+            }
+        }
+
         return Optional.empty();
     }
 
@@ -205,6 +247,18 @@ public class MissionAiCandidateGuard {
             }
         }
         return false;
+    }
+
+    private String normalizeForComparison(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+
+        StringBuilder builder = new StringBuilder();
+        value.toLowerCase(Locale.ROOT).codePoints()
+                .filter(Character::isLetterOrDigit)
+                .forEach(builder::appendCodePoint);
+        return builder.toString();
     }
 
     private <T extends Enum<T>> Optional<T> toEnum(String value, Class<T> enumType) {

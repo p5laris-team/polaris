@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import p5laris.mission.domain.application.diversity.MissionActionFamilyClassifier;
 import p5laris.mission.domain.application.time.MissionTimePolicy;
 import p5laris.mission.domain.application.time.MissionTimeSlot;
 import p5laris.mission.domain.domain.entity.MissionCompletionAnswer;
@@ -67,6 +68,10 @@ public class MissionPersonalizationContextBuilder {
                 userId,
                 PageRequest.of(0, RECENT_MISSION_LIMIT)
         );
+        List<UserMission> todayMissions = userMissionRepository.findByUserIdAndMissionDateOrderByStackOrderAsc(
+                userId,
+                targetDate
+        );
         Map<Long, MissionCompletionAnswer> answerByMissionId = findAnswersByMissionId(recentMissions);
         Map<Long, List<MissionFeedback>> feedbacksByMissionId = findFeedbacksByMissionId(userId, recentMissions);
         List<UserMemory> recentMemories = userMemoryRepository.findByUserIdOrderByCreatedAtDesc(
@@ -84,6 +89,7 @@ public class MissionPersonalizationContextBuilder {
                 toJson(recentMissionContext(
                         targetDate,
                         recentMissions,
+                        todayMissions,
                         answerByMissionId,
                         feedbacksByMissionId,
                         recentMemories,
@@ -113,6 +119,7 @@ public class MissionPersonalizationContextBuilder {
     private Map<String, Object> recentMissionContext(
             LocalDate targetDate,
             List<UserMission> recentMissions,
+            List<UserMission> todayMissions,
             Map<Long, MissionCompletionAnswer> answerByMissionId,
             Map<Long, List<MissionFeedback>> feedbacksByMissionId,
             List<UserMemory> recentMemories,
@@ -123,6 +130,9 @@ public class MissionPersonalizationContextBuilder {
         context.put("policyContext", policyContext(challengeAlreadyUsedToday));
         context.put("memoryPolicy", memoryPolicy(recentMemories));
         context.put("diversityPolicy", diversityPolicy());
+        context.put("todayMissionDiversity", todayMissions.stream()
+                .map(this::missionDiversityContext)
+                .toList());
         context.put("recentMissions", recentMissions.stream()
                 .map(mission -> missionContext(
                         mission,
@@ -143,7 +153,8 @@ public class MissionPersonalizationContextBuilder {
         context.put("avoidSameActionFamily", true);
         context.put("avoidSameCoreObject", true);
         context.put("avoidOverusedWords", List.of("빛", "반짝", "작은", "잠시", "천천히"));
-        context.put("instruction", "recentMissions의 title/category/status를 보고 같은 행동군과 같은 핵심 사물을 반복하지 않는다.");
+        context.put("serverGuard", "오늘 이미 나온 title/actionFamily와 같은 AI 후보는 mission 서버가 저장 전에 거절한다.");
+        context.put("instruction", "todayMissionDiversity와 recentMissions의 title/actionFamily를 보고 같은 행동군과 같은 핵심 사물을 반복하지 않는다.");
         return context;
     }
 
@@ -230,6 +241,10 @@ public class MissionPersonalizationContextBuilder {
         context.put("category", mission.getCategory().name());
         context.put("difficulty", mission.getDifficulty().name());
         context.put("status", mission.getStatus().name());
+        context.put("actionFamily", MissionActionFamilyClassifier.classify(
+                mission.getTitle(),
+                mission.getDescription()
+        ).name());
         context.put("missionDate", mission.getMissionDate().toString());
         context.put("liked", hasReaction(feedbacks, MissionFeedbackReaction.LIKE));
         context.put("disliked", hasReaction(feedbacks, MissionFeedbackReaction.DISLIKE));
@@ -238,6 +253,18 @@ public class MissionPersonalizationContextBuilder {
         if (mission.getStatus() == UserMissionStatus.COMPLETED && answer != null && answer.isAnswered()) {
             context.put("answerPreview", truncate(answer.getAnswerText(), RECENT_ANSWER_MAX_LENGTH));
         }
+        return context;
+    }
+
+    private Map<String, Object> missionDiversityContext(UserMission mission) {
+        Map<String, Object> context = new LinkedHashMap<>();
+        context.put("title", mission.getTitle());
+        context.put("category", mission.getCategory().name());
+        context.put("status", mission.getStatus().name());
+        context.put("actionFamily", MissionActionFamilyClassifier.classify(
+                mission.getTitle(),
+                mission.getDescription()
+        ).name());
         return context;
     }
 
