@@ -168,7 +168,25 @@ public class MissionPersonalizationContextBuilder {
         context.put("timeSlot", currentTimeSlot.name());
         context.put("currentTimeSlot", currentTimeSlot.name());
         context.put("timeSlotPolicy", MissionTimePolicy.toContext(currentTimeSlot));
+        context.put("locationPolicy", locationPolicy());
+        context.put("weatherPolicy", weatherPolicy());
         context.put("weather", null);
+        return context;
+    }
+
+    private Map<String, Object> locationPolicy() {
+        Map<String, Object> context = new LinkedHashMap<>();
+        context.put("available", false);
+        context.put("source", "NONE");
+        context.put("instruction", "사용자 위치 정보가 없으므로 지역명, 실외 환경, 이동 가능 여부를 추측하지 않는다.");
+        return context;
+    }
+
+    private Map<String, Object> weatherPolicy() {
+        Map<String, Object> context = new LinkedHashMap<>();
+        context.put("available", false);
+        context.put("source", "NONE");
+        context.put("instruction", "날씨 정보가 없으므로 비, 눈, 바람, 기온, 미세먼지, 햇빛 같은 날씨 기반 미션을 만들지 않는다.");
         return context;
     }
 
