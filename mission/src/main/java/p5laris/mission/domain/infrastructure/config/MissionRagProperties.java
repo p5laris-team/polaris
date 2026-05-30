@@ -16,6 +16,7 @@ public class MissionRagProperties {
     private String embeddingModel;
     private int embeddingDimension;
     private int topK;
+    private double similarityThreshold;
     private boolean fallbackToRecentMemory;
 
     public boolean isEnabled() {
@@ -51,6 +52,17 @@ public class MissionRagProperties {
 
     public void setTopK(int topK) {
         this.topK = topK;
+    }
+
+    public double getSimilarityThreshold() {
+        if (similarityThreshold <= 0) {
+            return 0.72d;
+        }
+        return Math.min(1.0d, similarityThreshold);
+    }
+
+    public void setSimilarityThreshold(double similarityThreshold) {
+        this.similarityThreshold = similarityThreshold;
     }
 
     public boolean isFallbackToRecentMemory() {

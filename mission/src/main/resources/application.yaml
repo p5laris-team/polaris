@@ -59,6 +59,7 @@ mission:
     embedding-model: ${MISSION_RAG_EMBEDDING_MODEL}
     embedding-dimension: ${MISSION_RAG_EMBEDDING_DIMENSION}
     top-k: ${MISSION_RAG_TOP_K}
+    similarity-threshold: ${MISSION_RAG_SIMILARITY_THRESHOLD}
     fallback-to-recent-memory: ${MISSION_RAG_FALLBACK_TO_RECENT_MEMORY}
   memory-embedding:
     enabled: ${MISSION_MEMORY_EMBEDDING_ENABLED}
