@@ -53,6 +53,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -161,13 +162,17 @@ class MissionServiceTest {
                 .thenReturn(Optional.empty());
         ReflectionTestUtils.setField(missionService, "clock", clock);
         when(aiMissionTextClient.generateMissionTexts(any()))
-                .thenReturn(Optional.of(aiMissionTextResult(
-                        501L,
-                        "AI가 만든 자율 미션",
-                        "AI가 만든 자율 미션 설명",
-                        "BASIC_ROUTINE",
-                        "EASY"
-                )));
+                .thenAnswer(invocation -> {
+                    AiMissionTextRequest request = invocation.getArgument(0);
+                    String category = request == null ? "BASIC_ROUTINE" : request.category();
+                    return Optional.of(aiMissionTextResult(
+                            501L,
+                            "AI가 만든 자율 미션",
+                            "AI가 만든 자율 미션 설명",
+                            category,
+                            "EASY"
+                    ));
+                });
     }
 
     @Test
@@ -247,6 +252,77 @@ class MissionServiceTest {
     }
 
     @Test
+    void AI_후보가_정책을_위반하면_한_번_재요청하고_통과한_후보를_저장한다() {
+        when(aiMissionTextClient.generateMissionTexts(any()))
+                .thenAnswer(invocation -> {
+                    AiMissionTextRequest request = invocation.getArgument(0);
+                    return Optional.of(aiMissionTextResult(
+                            901L,
+                            "첫 번째 후보",
+                            "첫 번째 후보 설명",
+                            differentCategory(request.category()),
+                            "EASY"
+                    ));
+                })
+                .thenAnswer(invocation -> {
+                    AiMissionTextRequest request = invocation.getArgument(0);
+                    return Optional.of(aiMissionTextResult(
+                            902L,
+                            "다시 고른 후보",
+                            "다시 고른 후보 설명",
+                            request.category(),
+                            "EASY"
+                    ));
+                });
+        ArgumentCaptor<AiMissionTextRequest> requestCaptor = ArgumentCaptor.forClass(AiMissionTextRequest.class);
+
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        UserMission savedMission = userMissionRepository.findById(created.getMission().getId()).orElseThrow();
+
+        assertThat(savedMission.getAiGenerationId()).isEqualTo(902L);
+        assertThat(savedMission.getMissionTemplateId()).isNull();
+        assertThat(savedMission.getTitle()).isEqualTo("다시 고른 후보");
+        verify(aiMissionTextClient, times(2)).generateMissionTexts(requestCaptor.capture());
+        assertThat(requestCaptor.getAllValues().get(1).requestId())
+                .startsWith(requestCaptor.getAllValues().get(0).requestId())
+                .endsWith(":RETRY:1");
+    }
+
+    @Test
+    void AI_후보가_두_번_모두_정책을_위반하면_seed_template_fallback을_유지한다() {
+        when(aiMissionTextClient.generateMissionTexts(any()))
+                .thenAnswer(invocation -> {
+                    AiMissionTextRequest request = invocation.getArgument(0);
+                    return Optional.of(aiMissionTextResult(
+                            911L,
+                            "첫 번째 후보",
+                            "첫 번째 후보 설명",
+                            differentCategory(request.category()),
+                            "EASY"
+                    ));
+                })
+                .thenAnswer(invocation -> {
+                    AiMissionTextRequest request = invocation.getArgument(0);
+                    return Optional.of(aiMissionTextResult(
+                            912L,
+                            "두 번째 후보",
+                            "두 번째 후보 설명",
+                            differentCategory(request.category()),
+                            "EASY"
+                    ));
+                });
+
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        UserMission savedMission = userMissionRepository.findById(created.getMission().getId()).orElseThrow();
+        var template = missionTemplateRepository.findById(savedMission.getMissionTemplateId()).orElseThrow();
+
+        assertThat(savedMission.getAiGenerationId()).isNull();
+        assertThat(savedMission.getTitle()).isEqualTo(template.getBaseTitle());
+        assertThat(savedMission.getDescription()).isEqualTo(template.getBaseDescription());
+        verify(aiMissionTextClient, times(2)).generateMissionTexts(any());
+    }
+
+    @Test
     void AI_제목이나_설명에_캐릭터_해석_형식이_섞이면_seed_template_fallback을_유지한다() {
         when(aiMissionTextClient.generateMissionTexts(any()))
                 .thenReturn(Optional.of(aiMissionTextResult(
@@ -292,13 +368,16 @@ class MissionServiceTest {
     @Test
     void AI가_NORMAL_난이도를_반환하면_보상을_15개로_확정한다() {
         when(aiMissionTextClient.generateMissionTexts(any()))
-                .thenReturn(Optional.of(aiMissionTextResult(
-                        601L,
-                        "3분 창가 숨 고르기",
-                        "창가나 가까운 자리에서 3분 동안 천천히 숨을 골라보세요.",
-                        "REST_RECOVERY",
-                        "NORMAL"
-                )));
+                .thenAnswer(invocation -> {
+                    AiMissionTextRequest request = invocation.getArgument(0);
+                    return Optional.of(aiMissionTextResult(
+                            601L,
+                            "3분 창가 숨 고르기",
+                            "창가나 가까운 자리에서 3분 동안 천천히 숨을 골라보세요.",
+                            request.category(),
+                            "NORMAL"
+                    ));
+                });
 
         CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
         UserMission savedMission = userMissionRepository.findById(created.getMission().getId()).orElseThrow();
@@ -312,13 +391,16 @@ class MissionServiceTest {
     @Test
     void AI가_CHALLENGE_난이도를_반환하면_보상을_30개로_확정한다() {
         when(aiMissionTextClient.generateMissionTexts(any()))
-                .thenReturn(Optional.of(aiMissionTextResult(
-                        701L,
-                        "책상 한 구역 깊게 정리",
-                        "책상 위 한 구역을 정해서 5분 동안 물건을 분류하고 닦아보세요.",
-                        "SPACE_RESET",
-                        "CHALLENGE"
-                )));
+                .thenAnswer(invocation -> {
+                    AiMissionTextRequest request = invocation.getArgument(0);
+                    return Optional.of(aiMissionTextResult(
+                            701L,
+                            "책상 한 구역 깊게 정리",
+                            "책상 위 한 구역을 정해서 5분 동안 물건을 분류하고 닦아보세요.",
+                            request.category(),
+                            "CHALLENGE"
+                    ));
+                });
 
         CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
         UserMission savedMission = userMissionRepository.findById(created.getMission().getId()).orElseThrow();
@@ -331,11 +413,19 @@ class MissionServiceTest {
 
     @Test
     void CHALLENGE_미션은_하루에_한_번만_AI_후보로_확정한다() {
+        AtomicInteger aiGenerationSequence = new AtomicInteger(700);
         when(aiMissionTextClient.generateMissionTexts(any()))
-                .thenReturn(
-                        Optional.of(aiMissionTextResult(701L, "첫 도전 미션", "5분짜리 첫 도전 미션이에요.", "MIND_RECORD", "CHALLENGE")),
-                        Optional.of(aiMissionTextResult(702L, "두 번째 도전 미션", "5분짜리 두 번째 도전 미션이에요.", "MIND_RECORD", "CHALLENGE"))
-                );
+                .thenAnswer(invocation -> {
+                    AiMissionTextRequest request = invocation.getArgument(0);
+                    long aiGenerationId = aiGenerationSequence.incrementAndGet();
+                    return Optional.of(aiMissionTextResult(
+                            aiGenerationId,
+                            aiGenerationId == 701L ? "첫 도전 미션" : "두 번째 도전 미션",
+                            aiGenerationId == 701L ? "5분짜리 첫 도전 미션이에요." : "5분짜리 두 번째 도전 미션이에요.",
+                            request.category(),
+                            "CHALLENGE"
+                    ));
+                });
         CreateNextMissionResponse first = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
         missionService.rejectMission(USER_ID, first.getMission().getId());
 
@@ -1094,6 +1184,10 @@ class MissionServiceTest {
         return userMemoryRepository
                 .findBySourceTypeAndSourceIdAndMemoryType(sourceType, sourceId, memoryType)
                 .orElseThrow();
+    }
+
+    private String differentCategory(String category) {
+        return "BASIC_ROUTINE".equals(category) ? "REST_RECOVERY" : "BASIC_ROUTINE";
     }
 
     private AiMissionTextResult aiMissionTextResult(
