@@ -26,6 +26,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
+import p5laris.mission.domain.application.diversity.MissionDiversitySnapshot;
 import p5laris.mission.domain.application.event.MissionEventLogEvent;
 import p5laris.mission.domain.application.guard.AiMissionCandidateGuardRequest;
 import p5laris.mission.domain.application.guard.AiMissionCandidateGuardResult;
@@ -352,6 +353,7 @@ public class MissionService {
                 MissionDifficultyType.CHALLENGE,
                 context.missionId()
         );
+        List<MissionDiversitySnapshot> todayMissionSnapshots = findTodayMissionDiversitySnapshots(context);
 
         for (int attempt = 0; attempt < AI_MISSION_CANDIDATE_MAX_ATTEMPTS; attempt++) {
             String requestId = aiMissionRequestId(context.aiRequestId(), attempt);
@@ -382,6 +384,7 @@ public class MissionService {
                     context.category(),
                     context.offeredAt(),
                     challengeAlreadyUsedToday,
+                    todayMissionSnapshots,
                     generatedText.get()
             ));
             if (guardResult.accepted()) {
@@ -397,6 +400,17 @@ public class MissionService {
         }
 
         return Optional.empty();
+    }
+
+    private List<MissionDiversitySnapshot> findTodayMissionDiversitySnapshots(MissionCreationContext context) {
+        return userMissionRepository.findByUserIdAndMissionDateOrderByStackOrderAsc(
+                        context.userId(),
+                        context.missionDate()
+                ).stream()
+                // 지금 저장 중인 fallback row는 아직 사용자에게 보여준 미션이 아니므로 중복 비교 대상에서 제외한다.
+                .filter(mission -> !Objects.equals(mission.getId(), context.missionId()))
+                .map(MissionDiversitySnapshot::from)
+                .toList();
     }
 
     private String aiMissionRequestId(String baseRequestId, int attempt) {

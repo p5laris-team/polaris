@@ -323,6 +323,99 @@ class MissionServiceTest {
     }
 
     @Test
+    void AI_후보가_오늘_이미_본_행동군과_겹치면_한_번_재요청한다() {
+        when(aiMissionTextClient.generateMissionTexts(any()))
+                .thenAnswer(invocation -> {
+                    AiMissionTextRequest request = invocation.getArgument(0);
+                    return Optional.of(aiMissionTextResult(
+                            921L,
+                            "물 한 모금 마시기",
+                            "가까운 물을 한 모금 마시고 잠깐 숨을 골라보세요.",
+                            request.category(),
+                            "EASY"
+                    ));
+                })
+                .thenAnswer(invocation -> {
+                    AiMissionTextRequest request = invocation.getArgument(0);
+                    return Optional.of(aiMissionTextResult(
+                            922L,
+                            "수분 채우기",
+                            "물을 한 잔 마시며 몸에 필요한 수분을 채워보세요.",
+                            request.category(),
+                            "EASY"
+                    ));
+                })
+                .thenAnswer(invocation -> {
+                    AiMissionTextRequest request = invocation.getArgument(0);
+                    return Optional.of(aiMissionTextResult(
+                            923L,
+                            "집중 타이머 켜기",
+                            "5분 동안 할 일을 하나 정하고 타이머를 켜보세요.",
+                            request.category(),
+                            "EASY"
+                    ));
+                });
+
+        CreateNextMissionResponse first = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        missionService.rejectMission(USER_ID, first.getMission().getId());
+
+        CreateNextMissionResponse second = missionService.createNextMission(USER_ID, CHARACTER_ID, first.getMission().getId());
+        UserMission savedSecond = userMissionRepository.findById(second.getMission().getId()).orElseThrow();
+
+        assertThat(savedSecond.getAiGenerationId()).isEqualTo(923L);
+        assertThat(savedSecond.getMissionTemplateId()).isNull();
+        assertThat(savedSecond.getTitle()).isEqualTo("집중 타이머 켜기");
+        verify(aiMissionTextClient, times(3)).generateMissionTexts(any());
+    }
+
+    @Test
+    void AI_후보가_오늘_이미_본_행동군과_두_번_겹치면_seed_template_fallback을_유지한다() {
+        when(aiMissionTextClient.generateMissionTexts(any()))
+                .thenAnswer(invocation -> {
+                    AiMissionTextRequest request = invocation.getArgument(0);
+                    return Optional.of(aiMissionTextResult(
+                            931L,
+                            "물 한 모금 마시기",
+                            "가까운 물을 한 모금 마시고 잠깐 숨을 골라보세요.",
+                            request.category(),
+                            "EASY"
+                    ));
+                })
+                .thenAnswer(invocation -> {
+                    AiMissionTextRequest request = invocation.getArgument(0);
+                    return Optional.of(aiMissionTextResult(
+                            932L,
+                            "수분 채우기",
+                            "물을 한 잔 마시며 몸에 필요한 수분을 채워보세요.",
+                            request.category(),
+                            "EASY"
+                    ));
+                })
+                .thenAnswer(invocation -> {
+                    AiMissionTextRequest request = invocation.getArgument(0);
+                    return Optional.of(aiMissionTextResult(
+                            933L,
+                            "따뜻한 차 한 모금",
+                            "가까운 컵에 담긴 음료를 한 모금 마셔보세요.",
+                            request.category(),
+                            "EASY"
+                    ));
+                });
+
+        CreateNextMissionResponse first = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        missionService.rejectMission(USER_ID, first.getMission().getId());
+
+        CreateNextMissionResponse second = missionService.createNextMission(USER_ID, CHARACTER_ID, first.getMission().getId());
+        UserMission savedSecond = userMissionRepository.findById(second.getMission().getId()).orElseThrow();
+        var template = missionTemplateRepository.findById(savedSecond.getMissionTemplateId()).orElseThrow();
+
+        assertThat(savedSecond.getAiGenerationId()).isNull();
+        assertThat(savedSecond.getTitle()).isEqualTo(template.getBaseTitle());
+        assertThat(savedSecond.getDescription()).isEqualTo(template.getBaseDescription());
+        verify(aiMissionTextClient, times(3)).generateMissionTexts(any());
+    }
+
+    @Test
     void AI_제목이나_설명에_캐릭터_해석_형식이_섞이면_seed_template_fallback을_유지한다() {
         when(aiMissionTextClient.generateMissionTexts(any()))
                 .thenReturn(Optional.of(aiMissionTextResult(
@@ -472,6 +565,8 @@ class MissionServiceTest {
                 .contains("\"diversityPolicy\"")
                 .contains("\"avoidSameActionFamily\":true")
                 .contains("\"avoidSameCoreObject\":true")
+                .contains("\"serverGuard\"")
+                .contains("\"todayMissionDiversity\"")
                 .contains("\"userMemories\":[]")
                 .contains("\"recentMissions\"");
     }
@@ -479,6 +574,19 @@ class MissionServiceTest {
     @Test
     void 사용자_기억_context를_AI_생성_요청에_포함한다() {
         ArgumentCaptor<AiMissionTextRequest> requestCaptor = ArgumentCaptor.forClass(AiMissionTextRequest.class);
+        AtomicInteger aiGenerationSequence = new AtomicInteger(500);
+        when(aiMissionTextClient.generateMissionTexts(any()))
+                .thenAnswer(invocation -> {
+                    AiMissionTextRequest request = invocation.getArgument(0);
+                    int sequence = aiGenerationSequence.incrementAndGet();
+                    return Optional.of(aiMissionTextResult(
+                            (long) sequence,
+                            "AI가 만든 자율 미션 " + sequence,
+                            "AI가 만든 자율 미션 설명 " + sequence,
+                            request.category(),
+                            "EASY"
+                    ));
+                });
         CreateNextMissionResponse first = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
         missionService.startCompletionSession(USER_ID, first.getMission().getId());
         missionService.submitCompletionAnswer(USER_ID, first.getMission().getId(), "어깨가 덜 뻐근했어");
@@ -491,6 +599,8 @@ class MissionServiceTest {
                 .contains("\"memoryPolicy\"")
                 .contains("\"available\":true")
                 .contains("\"referenceOnly\":true")
+                .contains("\"todayMissionDiversity\"")
+                .contains("\"actionFamily\"")
                 .contains("\"userMemories\"")
                 .contains("\"type\":\"MISSION_COMPLETION\"")
                 .contains("\"sourceType\":\"MISSION_COMPLETION_ANSWER\"")
