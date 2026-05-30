@@ -16,6 +16,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -41,7 +42,7 @@ class MissionRagContextServiceTest {
                         List.of(3.0f, 4.0f, 0.0f),
                         "request"
                 )));
-        when(userMemoryEmbeddingJdbcRepository.searchSimilar(any(), any(), anyInt(), any(), anyInt()))
+        when(userMemoryEmbeddingJdbcRepository.searchSimilar(any(), any(), anyInt(), any(), anyInt(), anyDouble()))
                 .thenReturn(List.of(new UserMemoryRagHit(
                         1L,
                         UserMemoryType.MISSION_REJECTION,
@@ -60,10 +61,36 @@ class MissionRagContextServiceTest {
         );
 
         assertThat(enriched)
-                .contains("\"selection\":\"RAG_COSINE_TOP_K_WITH_RECENT_FALLBACK\"")
+                .contains("\"ragSelection\":\"RAG_COSINE_TOP_K_WITH_RECENT_FALLBACK\"")
+                .contains("\"ragSimilarityThreshold\":0.72")
                 .contains("\"ragMemories\"")
                 .contains("\"type\":\"MISSION_REJECTION\"")
                 .contains("\"reasonCode\":\"TOO_HARD\"");
+    }
+
+    @Test
+    void RAG_검색_결과가_없으면_빈_ragMemories를_명시한다() {
+        when(aiTextEmbeddingClient.generateTextEmbedding(any()))
+                .thenReturn(Optional.of(new AiTextEmbeddingResult(
+                        "gemini-embedding-001",
+                        3,
+                        List.of(3.0f, 4.0f, 0.0f),
+                        "request"
+                )));
+        when(userMemoryEmbeddingJdbcRepository.searchSimilar(any(), any(), anyInt(), any(), anyInt(), anyDouble()))
+                .thenReturn(List.of());
+
+        String enriched = service.enrich(
+                1001L,
+                new MissionRagQuery(1001L, 10L, "가벼운 스트레칭", "3분 동안 몸을 풀어보세요.", "BODY_CARE", "NORMAL"),
+                "{\"memoryPolicy\":{\"available\":true},\"userMemories\":[{\"content\":\"최근 기억\"}]}"
+        );
+
+        assertThat(enriched)
+                .contains("\"ragAvailable\":false")
+                .contains("\"ragHitCount\":0")
+                .contains("\"ragMemories\":[]")
+                .contains("\"content\":\"최근 기억\"");
     }
 
     @Test
