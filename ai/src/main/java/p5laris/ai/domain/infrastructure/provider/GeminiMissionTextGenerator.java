@@ -154,6 +154,9 @@ public class GeminiMissionTextGenerator implements ExternalMissionTextGenerator 
                 recentMissionContext.environmentContext.currentTimeSlot과 timeSlotPolicy를 반드시 따른다.
                 timeSlotPolicy.blockedCategories에 포함된 category는 절대 선택하지 않는다.
                 timeSlotPolicy.blockedMissionKeywords에 포함된 표현이나 그와 같은 의미의 행동은 만들지 않는다.
+                recentMissionContext.environmentContext.locationPolicy.available이 false이면 사용자 위치, 지역, 실외 환경, 이동 가능 여부를 추측하지 않는다.
+                recentMissionContext.environmentContext.weatherPolicy.available이 false이면 비, 눈, 바람, 기온, 미세먼지, 햇빛 같은 날씨 기반 미션을 만들지 않는다.
+                weather가 null이면 "비가 온다면", "날씨가 좋다면", "춥다면", "햇빛이 있다면" 같은 조건문도 쓰지 않는다.
                 currentTimeSlot이 NIGHT 또는 LATE_NIGHT이면 햇빛, 햇살, 햇볕, 낮 산책, 야외 빛 충전 미션을 만들지 않는다.
                 currentTimeSlot이 LATE_NIGHT이면 연락, 메시지, 전화, 점프, 달리기, 강한 운동, 잠을 깨우는 청소/정리 미션을 만들지 않는다.
                 currentTimeSlot이 LATE_NIGHT이면 REST_RECOVERY, MIND_RECORD, BASIC_ROUTINE 중심으로 아주 조용하고 짧은 미션을 만든다.
@@ -221,6 +224,12 @@ public class GeminiMissionTextGenerator implements ExternalMissionTextGenerator 
                 - recentMissionContext.environmentContext.timeSlotPolicy.blockedCategories는 선택하지 않는다.
                 - recentMissionContext.environmentContext.timeSlotPolicy.blockedMissionKeywords와 충돌하는 제목/설명/캐릭터 문구를 만들지 않는다.
                 - 밤과 새벽에는 햇빛/햇살/햇볕/낮 산책 계열 미션을 만들지 않는다.
+
+                환경 context 지시:
+                - recentMissionContext.environmentContext.locationPolicy.available이 false이면 위치와 지역을 추측하지 않는다.
+                - recentMissionContext.environmentContext.weatherPolicy.available이 false이면 날씨 기반 미션을 만들지 않는다.
+                - weather가 null이면 비, 눈, 바람, 기온, 미세먼지, 햇빛을 전제로 한 제목/설명/캐릭터 문구를 쓰지 않는다.
+                - 날씨 정보가 없을 때 "비가 온다면", "춥다면", "햇빛이 좋다면" 같은 조건문도 쓰지 않는다.
 
                 난이도 선택 지시:
                 - onboarding context의 missionIntensity를 목표 난이도로 우선 반영한다.
