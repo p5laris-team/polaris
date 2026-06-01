@@ -111,7 +111,8 @@ import static org.mockito.Mockito.when;
         "mission.reward-outbox.max-attempts=5",
         "mission.reward-outbox.processing-timeout-seconds=60",
         "mission.reward-outbox.retry-initial-delay-seconds=60",
-        "mission.reward-outbox.retry-max-delay-seconds=3600"
+        "mission.reward-outbox.retry-max-delay-seconds=3600",
+        "mission.reward-wallet.deadline-ms=1000"
 })
 class MissionServiceTest {
 
