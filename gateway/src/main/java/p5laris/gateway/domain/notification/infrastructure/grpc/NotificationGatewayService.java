@@ -4,6 +4,8 @@ import com.p5laris.proto.notification.v1.GetNotificationsRequest;
 import com.p5laris.proto.notification.v1.GetNotificationsResponse;
 import com.p5laris.proto.notification.v1.GetNotificationSettingRequest;
 import com.p5laris.proto.notification.v1.GetNotificationSettingResponse;
+import com.p5laris.proto.notification.v1.MarkAllNotificationsReadRequest;
+import com.p5laris.proto.notification.v1.MarkAllNotificationsReadResponse;
 import com.p5laris.proto.notification.v1.MarkNotificationReadRequest;
 import com.p5laris.proto.notification.v1.MarkNotificationReadResponse;
 import com.p5laris.proto.notification.v1.Notification;
@@ -125,6 +127,29 @@ public class NotificationGatewayService {
             return new NotificationDto.UpdateNotificationReadResponse(
                     response.getId(),
                     response.getRead(),
+                    emptyToNull(response.getUpdatedAt())
+            );
+        } catch (StatusRuntimeException e) {
+            throw toGatewayException(e);
+        }
+    }
+
+    /**
+     * 로그인한 사용자의 안 읽은 알림을 모두 읽음 처리한다.
+     */
+    public NotificationDto.MarkAllNotificationsReadResponse markAllNotificationsRead(Long userId) {
+        validateUserId(userId);
+
+        try {
+            MarkAllNotificationsReadResponse response = notificationStub.markAllNotificationsRead(
+                    MarkAllNotificationsReadRequest.newBuilder()
+                            .setUserId(userId)
+                            .build()
+            );
+
+            return new NotificationDto.MarkAllNotificationsReadResponse(
+                    response.getUpdatedCount(),
+                    response.getUnreadCount(),
                     emptyToNull(response.getUpdatedAt())
             );
         } catch (StatusRuntimeException e) {
