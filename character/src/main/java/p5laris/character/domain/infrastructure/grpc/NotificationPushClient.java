@@ -17,6 +17,7 @@ import p5laris.character.domain.domain.enums.CharacterMood;
 public class NotificationPushClient {
 
     private static final String DEFAULT_CHARACTER_NAME = "별친구";
+    private static final String SHARE_REWARD_TITLE = "공유 보상 지급 완료";
 
     @GrpcClient("notification")
     private NotificationServiceGrpc.NotificationServiceBlockingStub notificationStub;
@@ -40,6 +41,27 @@ public class NotificationPushClient {
                         .setNotificationType(NotificationType.NOTIFICATION_TYPE_CARE)
                         .setTargetType(TargetType.TARGET_TYPE_CHARACTER)
                         .setTargetId(characterId)
+                        .build()
+        );
+    }
+
+    /**
+     * 공유 보상이 재처리로 뒤늦게 지급 완료되었을 때 사용자에게 안내한다.
+     * 즉시 지급 성공은 완료 화면에서 이미 보여주므로 재처리 성공에만 사용한다.
+     */
+    public void sendShareRewardCompletedNotification(
+            Long userId,
+            Long shareLogId,
+            int rewardStarPiece
+    ) {
+        notificationStub.sendPushNotification(
+                SendPushNotificationRequest.newBuilder()
+                        .setUserId(userId)
+                        .setTitle(SHARE_REWARD_TITLE)
+                        .setBody("별조각 " + rewardStarPiece + "개가 도착했어요.")
+                        .setNotificationType(NotificationType.NOTIFICATION_TYPE_SHARE)
+                        .setTargetType(TargetType.TARGET_TYPE_SHARE)
+                        .setTargetId(shareLogId)
                         .build()
         );
     }
