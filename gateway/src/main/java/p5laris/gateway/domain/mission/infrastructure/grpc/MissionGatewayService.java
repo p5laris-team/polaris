@@ -294,9 +294,10 @@ public class MissionGatewayService {
                             response.getReward().getStarPiece(),
                             response.getReward().getAffection()
                     ),
-                    new MissionDto.WalletSnapshot(
-                            response.getWallet().getStarPiece()
-                    ),
+                    response.hasWallet()
+                            ? new MissionDto.WalletSnapshot(response.getWallet().getStarPiece())
+                            : null,
+                    toRestMissionRewardStatus(response.getRewardStatus().name()),
                     response.getCharacterMessage()
             );
         } catch (StatusRuntimeException e) {
@@ -440,6 +441,11 @@ public class MissionGatewayService {
 
     private String toRestMissionStatus(String grpcStatus) {
         return removeGrpcPrefix(grpcStatus, "MISSION_STATUS_");
+    }
+
+    private String toRestMissionRewardStatus(String grpcStatus) {
+        String value = removeGrpcPrefix(grpcStatus, "MISSION_REWARD_STATUS_");
+        return "UNSPECIFIED".equals(value) ? null : value;
     }
 
     private String toRestMissionCategory(String grpcCategory) {

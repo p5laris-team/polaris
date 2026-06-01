@@ -125,6 +125,7 @@ message SubmitCompletionAnswerResponse {
   MissionReward reward = 4;
   WalletSnapshot wallet = 5;
   string character_message = 6;
+  MissionRewardStatus reward_status = 7;
 }
 
 message UpsertMissionFeedbackRequest {
@@ -227,6 +228,14 @@ message MissionReward {
 
 message WalletSnapshot {
   int32 star_piece = 1;
+}
+
+enum MissionRewardStatus {
+  MISSION_REWARD_STATUS_UNSPECIFIED = 0;
+  MISSION_REWARD_STATUS_PAID = 1;
+  MISSION_REWARD_STATUS_PENDING = 2;
+  MISSION_REWARD_STATUS_PROCESSING = 3;
+  MISSION_REWARD_STATUS_FAILED = 4;
 }
 
 enum MissionStatus {
