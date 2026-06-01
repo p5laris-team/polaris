@@ -39,6 +39,7 @@ import p5laris.mission.domain.application.personalization.MissionPersonalization
 import p5laris.mission.domain.application.personalization.MissionRagContextService;
 import p5laris.mission.domain.application.personalization.MissionRagQuery;
 import p5laris.mission.domain.application.time.MissionTimeSlot;
+import p5laris.mission.domain.application.weather.MissionWeatherContextService;
 import p5laris.mission.domain.domain.entity.MissionCompletionAnswer;
 import p5laris.mission.domain.domain.entity.MissionFeedback;
 import p5laris.mission.domain.domain.entity.MissionOutboxEvent;
@@ -124,6 +125,7 @@ public class MissionService {
     private final CharacterProfileClient characterProfileClient;
     private final MissionPersonalizationContextBuilder missionPersonalizationContextBuilder;
     private final MissionRagContextService missionRagContextService;
+    private final MissionWeatherContextService missionWeatherContextService;
     private final MissionAiCandidateGuard missionAiCandidateGuard;
     private final MissionMemoryRecorder missionMemoryRecorder;
     private final WalletRewardClient walletRewardClient;
@@ -338,6 +340,7 @@ public class MissionService {
                 ),
                 personalizationContext.recentMissionContextJson()
         );
+        recentMissionContextJson = missionWeatherContextService.enrich(context.userId(), recentMissionContextJson);
 
         Optional<String> characterType = characterProfileClient.findActiveCharacterTypeCode(
                 context.userId(),
