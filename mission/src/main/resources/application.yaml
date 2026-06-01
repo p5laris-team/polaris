@@ -8,6 +8,15 @@ spring:
   application:
     name: mission
 
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
+      password: ${REDIS_PASSWORD}
+      timeout: ${REDIS_TIMEOUT}
+      repositories:
+        enabled: false
+
   datasource:
     url: ${DB_URL}
     driver-class-name: org.postgresql.Driver
@@ -54,6 +63,22 @@ grpc:
       negotiationType: plaintext
 
 mission:
+  weather:
+    enabled: ${MISSION_WEATHER_ENABLED}
+    provider: ${MISSION_WEATHER_PROVIDER}
+    default-nx: ${KMA_WEATHER_DEFAULT_NX}
+    default-ny: ${KMA_WEATHER_DEFAULT_NY}
+    default-location-label: ${KMA_WEATHER_DEFAULT_LOCATION_LABEL}
+    timeout-ms: ${KMA_WEATHER_TIMEOUT_MS}
+    cache-ttl-seconds: ${KMA_WEATHER_CACHE_TTL_SECONDS}
+    redis-cache-enabled: ${KMA_WEATHER_REDIS_CACHE_ENABLED}
+    rate-limit-enabled: ${KMA_WEATHER_RATE_LIMIT_ENABLED}
+    rate-limit-requests-per-minute: ${KMA_WEATHER_RATE_LIMIT_REQUESTS_PER_MINUTE}
+    rate-limit-key-ttl-seconds: ${KMA_WEATHER_RATE_LIMIT_KEY_TTL_SECONDS}
+    rate-limit-fail-closed: ${KMA_WEATHER_RATE_LIMIT_FAIL_CLOSED}
+    kma:
+      base-url: ${KMA_WEATHER_BASE_URL}
+      service-key: ${KMA_WEATHER_SERVICE_KEY}
   rag:
     enabled: ${MISSION_RAG_ENABLED}
     embedding-model: ${MISSION_RAG_EMBEDDING_MODEL}
