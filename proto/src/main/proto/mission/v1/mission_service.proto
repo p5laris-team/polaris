@@ -193,6 +193,12 @@ message MissionDetail {
   CompletionAnswer answer = 15;
   string completion_character_response = 16;
   bool has_answer = 17;
+  MissionSatisfactionFeedback satisfaction_feedback = 18;
+}
+
+message MissionSatisfactionFeedback {
+  MissionFeedbackReaction reaction = 1;
+  string updated_at = 2;
 }
 
 message MissionSummary {

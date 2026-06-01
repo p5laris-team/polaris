@@ -12,6 +12,7 @@ import com.p5laris.proto.mission.v1.MissionDetail;
 import com.p5laris.proto.mission.v1.MissionCategory;
 import com.p5laris.proto.mission.v1.MissionDifficulty;
 import com.p5laris.proto.mission.v1.MissionReward;
+import com.p5laris.proto.mission.v1.MissionSatisfactionFeedback;
 import com.p5laris.proto.mission.v1.MissionStatus;
 import com.p5laris.proto.mission.v1.RejectMissionResponse;
 import com.p5laris.proto.mission.v1.StartCompletionSessionResponse;
@@ -214,9 +215,15 @@ public class MissionService {
         UserMission mission = userMissionRepository.findByIdAndUserId(missionId, userId)
                 .orElseThrow(() -> new MissionException(MissionErrorCode.MISSION_NOT_FOUND));
         Optional<MissionCompletionAnswer> answer = missionCompletionAnswerRepository.findByMissionId(mission.getId());
+        Optional<MissionFeedback> satisfactionFeedback =
+                missionFeedbackRepository.findByUserIdAndMissionIdAndFeedbackType(
+                        userId,
+                        mission.getId(),
+                        MissionFeedbackType.SATISFACTION
+                );
 
         return GetMissionDetailResponse.newBuilder()
-                .setMission(toProtoMissionDetail(mission, answer.orElse(null)))
+                .setMission(toProtoMissionDetail(mission, answer.orElse(null), satisfactionFeedback.orElse(null)))
                 .build();
     }
 
@@ -952,7 +959,11 @@ public class MissionService {
         return builder.build();
     }
 
-    private MissionDetail toProtoMissionDetail(UserMission mission, MissionCompletionAnswer answer) {
+    private MissionDetail toProtoMissionDetail(
+            UserMission mission,
+            MissionCompletionAnswer answer,
+            MissionFeedback satisfactionFeedback
+    ) {
         MissionDetail.Builder builder = MissionDetail.newBuilder()
                 .setId(mission.getId())
                 .setMissionDate(mission.getMissionDate().toString())
@@ -975,6 +986,13 @@ public class MissionService {
                 builder.setAnswer(toProtoAnswer(answer));
                 builder.setHasAnswer(true);
             }
+        }
+
+        if (satisfactionFeedback != null && satisfactionFeedback.getReaction() != null) {
+            builder.setSatisfactionFeedback(MissionSatisfactionFeedback.newBuilder()
+                    .setReaction(toProtoFeedbackReaction(satisfactionFeedback.getReaction()))
+                    .setUpdatedAt(formatDateTime(satisfactionFeedback.getUpdatedAt()))
+                    .build());
         }
 
         return builder.build();
