@@ -13,6 +13,9 @@ service UserService {
   rpc RefreshToken(RefreshTokenRequest) returns (RefreshTokenResponse);
   rpc Logout(LogoutRequest) returns (LogoutResponse);
   rpc GetUser(GetUserRequest) returns (GetUserResponse);
+  rpc ListWeatherRegions(ListWeatherRegionsRequest) returns (ListWeatherRegionsResponse);
+  rpc GetWeatherRegion(GetWeatherRegionRequest) returns (GetWeatherRegionResponse);
+  rpc UpdateWeatherRegion(UpdateWeatherRegionRequest) returns (UpdateWeatherRegionResponse);
 }
 
 message GetGoogleAuthUrlRequest {
@@ -70,6 +73,39 @@ message GetUserRequest {
 
 message GetUserResponse {
   User user = 1;
+}
+
+message WeatherRegion {
+  string code = 1;
+  string display_name = 2;
+  int32 nx = 3;
+  int32 ny = 4;
+}
+
+message ListWeatherRegionsRequest {
+}
+
+message ListWeatherRegionsResponse {
+  repeated WeatherRegion regions = 1;
+}
+
+message GetWeatherRegionRequest {
+  int64 user_id = 1;
+}
+
+message GetWeatherRegionResponse {
+  bool selected = 1;
+  WeatherRegion region = 2;
+}
+
+message UpdateWeatherRegionRequest {
+  int64 user_id = 1;
+  string region_code = 2;
+}
+
+message UpdateWeatherRegionResponse {
+  bool selected = 1;
+  WeatherRegion region = 2;
 }
 
 message PingPongRequest {
