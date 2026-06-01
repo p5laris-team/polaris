@@ -68,6 +68,8 @@ character:
     processing-timeout-seconds: ${CHARACTER_SHARE_REWARD_OUTBOX_PROCESSING_TIMEOUT_SECONDS:120}
     retry-initial-delay-seconds: ${CHARACTER_SHARE_REWARD_OUTBOX_RETRY_INITIAL_DELAY_SECONDS:60}
     retry-max-delay-seconds: ${CHARACTER_SHARE_REWARD_OUTBOX_RETRY_MAX_DELAY_SECONDS:1800}
+  share-reward-wallet:
+    deadline-ms: ${CHARACTER_SHARE_REWARD_WALLET_DEADLINE_MS}
 
 cloud:
   aws:

@@ -11,6 +11,9 @@ import net.devh.boot.grpc.client.inject.GrpcClient;
 import org.springframework.stereotype.Component;
 import p5laris.character.domain.exception.CharacterErrorCode;
 import p5laris.character.domain.exception.CharacterException;
+import p5laris.character.domain.infrastructure.config.ShareRewardWalletProperties;
+
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Component
@@ -22,6 +25,12 @@ public class ShareRewardWalletClient {
     @GrpcClient("user")
     private WalletServiceGrpc.WalletServiceBlockingStub walletStub;
 
+    private final ShareRewardWalletProperties properties;
+
+    public ShareRewardWalletClient(ShareRewardWalletProperties properties) {
+        this.properties = properties;
+    }
+
     public WalletRewardResult earnShareReward(
             Long userId,
             Long shareLogId,
@@ -29,7 +38,7 @@ public class ShareRewardWalletClient {
             String idempotencyKey
     ) {
         try {
-            EarnStarPieceResponse response = walletStub.earnStarPiece(
+            EarnStarPieceResponse response = deadlineWalletStub().earnStarPiece(
                     EarnStarPieceRequest.newBuilder()
                             .setUserId(userId)
                             .setAmount(rewardStarPiece)
@@ -53,7 +62,7 @@ public class ShareRewardWalletClient {
 
     public int getWalletStarPiece(Long userId) {
         try {
-            WalletResponse response = walletStub.getMyWallet(
+            WalletResponse response = deadlineWalletStub().getMyWallet(
                     GetMyWalletRequest.newBuilder()
                             .setUserId(userId)
                             .build()
@@ -66,6 +75,10 @@ public class ShareRewardWalletClient {
             log.warn("wallet 잔액 조회 실패. userId={}", userId, e);
             throw new CharacterException(CharacterErrorCode.SHARE_REWARD_FAILED);
         }
+    }
+
+    private WalletServiceGrpc.WalletServiceBlockingStub deadlineWalletStub() {
+        return walletStub.withDeadlineAfter(properties.getDeadlineMs(), TimeUnit.MILLISECONDS);
     }
 
     public record WalletRewardResult(int starPiece, Long transactionId) {}
