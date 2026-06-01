@@ -61,7 +61,7 @@ idempotencyKey 원문
 | `POST /api/mission/v1/missions/{missionId}/completion-answers` | `MISSION_COMPLETED` | 미션 완료율, 완료까지 걸린 시간, 보상 지급 후보량 분석 | 답변 저장 및 미션 `COMPLETED` 전환 커밋 후 |
 
 미션 완료 이벤트 로그는 분석용 이벤트다.
-별조각 지급의 재시도/멱등성은 `mission_reward_outbox`가 담당하며, event-log 저장 실패가 보상 지급 성공 여부를 바꾸지 않는다.
+별조각 지급의 재시도/멱등성은 `mission_outbox_events`의 `MISSION_REWARD_REQUESTED` 이벤트가 담당하며, event-log 저장 실패가 보상 지급 성공 여부를 바꾸지 않는다.
 
 ---
 

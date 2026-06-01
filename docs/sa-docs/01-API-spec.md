@@ -1,7 +1,7 @@
 # Polaris REST API 명세서
 
-> 기준일: 2026-05-26
-> 기준 문서: Polaris v0.7 PRD, 최신 ERD, 기존 API 초안, `polaris` 백엔드 gateway/proto 코드 대조
+> 기준일: 2026-06-01
+> 기준 문서: Polaris v0.8 PRD, 최신 ERD, `polaris` 백엔드 gateway/proto 코드 대조
 
 --- 
 
@@ -109,11 +109,12 @@ Base Pattern: /api/{domain}/v1/{resource}
 
 ### 0.6 현재 구현 기준
 
-아래 표는 2026-05-26 기준 `polaris` 백엔드가 제공하는 API 계약을 요약한다. 각 상세 섹션은 이 기준에 맞춰 요청/응답 예시를 작성한다.
+아래 표는 2026-06-01 기준 `polaris` 백엔드가 제공하는 API 계약을 요약한다. 각 상세 섹션은 이 기준에 맞춰 요청/응답 예시를 작성한다.
 
 | 구분 | 현재 API 기준 | 응답/처리 규칙 |
 |---|---|---|
 | 홈 통합 조회 | `GET /api/home/v1/home` | 홈 화면은 user, wallet, character, currentMission, notifications 요약을 이 API로 조회한다. |
+| 날씨 권역 | `GET /api/user/v1/weather-regions`, `GET/PUT /api/user/v1/users/me/weather-region` | 사용자가 직접 선택한 권역을 날씨 기반 미션 context에 사용한다. 미선택 상태이면 mission 서비스의 기본 권역을 사용한다. |
 | 현재 캐릭터 | `GET /api/character/v1/characters/me` | `states`, `currentAssetUrl`, `assetUrls`, `equippedSkin`을 함께 반환한다. `currentAssetUrl`은 서버가 현재 상태 기준으로 고른 표시용 URL이고, `assetUrls`는 상태별 전환/프리로드용 맵이다. |
 | 스킨 장착/해제 | `PUT /api/character/v1/characters/{characterId}/equipped-skin` | `itemId`가 숫자이면 장착, 생략/null/0이면 기본 외형으로 해제한다. 응답에서 `equippedSkin`이 null이면 기본 외형 상태다. |
 | 지갑 거래내역 | `GET /api/wallet/v1/wallets/me/transactions` | cursor 기반 최신순 목록이며 `occurredAt`은 거래 생성 시각이다. |
@@ -121,6 +122,7 @@ Base Pattern: /api/{domain}/v1/{resource}
 | 아이템 구매 | `POST /api/item/v1/item-purchases` | body의 `idempotencyKey`를 구매 재시도 멱등키로 사용한다. |
 | 공유 카드 | `GET /api/share/v1/presigned-url`, `POST /api/share/v1/share-cards` | 프론트가 canvas PNG를 presigned URL로 업로드한 뒤, `imageUrl`을 공유 카드 생성 요청에 전달한다. 백엔드는 업로드 URL을 검증하고 DB에는 object key/shareId를 저장한다. |
 | 공유 보상 | `POST /api/share/v1/share-events`, `GET /api/share/v1/share-events/today` | 공유 시도와 일일 보상 여부는 `share_logs` 기준으로 기록한다. 오늘 첫 보상 대상이면 `character_outbox_events`에 `SHARE_REWARD_REQUESTED` 이벤트를 저장한 뒤 커밋 후 user wallet gRPC `EarnStarPiece`를 즉시 호출한다. 성공 시 `wallet.starPiece`에는 적립 후 지갑 잔액을 반환하고, 즉시 지급 실패 시 API는 빠르게 실패하지만 outbox 스케줄러가 재처리한다. |
+| 미션 히스토리/상세/피드백 | `GET /api/mission/v1/missions/history`, `GET /api/mission/v1/missions/{missionId}`, `POST /api/mission/v1/missions/{missionId}/feedback` | 목록은 답변 preview와 답변 존재 여부만 반환하고, 상세는 완료 질문/답변 전문을 반환한다. 만족/불만족 피드백은 미션 개인화 신호로 저장한다. |
 | 알림 | notification 목록/읽음/구독/설정 API | 푸시 발송 여부는 사용자 알림 설정, 방해금지 시간, FCM 토큰 상태에 따라 결정된다. |
 
 ---
@@ -134,6 +136,9 @@ Base Pattern: /api/{domain}/v1/{resource}
 | POST   | `⚠️ /api/auth/v1/token-refreshes`                               | 토큰 재발급        | body | token | Public |
 | DELETE | `/api/auth/v1/sessions/current`                                 | 로그아웃          | none | logout result | 🔐 |
 | GET    | `/api/user/v1/users/me`                                         | 내 정보 조회       | none | user | 🔐 |
+| GET    | `/api/user/v1/weather-regions`                                  | 선택 가능한 날씨 권역 목록 조회 | none | weather regions | 🔐 |
+| GET    | `/api/user/v1/users/me/weather-region`                          | 내 날씨 권역 조회 | none | selected weather region | 🔐 |
+| PUT    | `/api/user/v1/users/me/weather-region`                          | 내 날씨 권역 저장/수정 | body | selected weather region | 🔐 |
 | GET    | `/api/home/v1/home`                                             | 홈 화면 통합 조회    | none | home data | 🔐 |
 | GET    | `💾 /api/character/v1/character-types`                          | 캐릭터 종류 조회     | query | character types | 🔐 |
 | GET    | `💾 /api/character/v1/character-types/{characterTypeId}/assets` | 캐릭터 에셋 조회     | path | assets | 🔐 |
@@ -148,10 +153,13 @@ Base Pattern: /api/{domain}/v1/{resource}
 | PUT    | `/api/onboarding/v1/profiles/me`                                | 내 온보딩 프로필 저장/완료 | body | profile | 🔐 |
 | GET    | `/api/mission/v1/missions/current`                              | 현재 제안 미션 조회   | query | mission | 🔐 |
 | GET    | `/api/mission/v1/missions/today`                                 | 오늘 미션 스택 조회   | none | today missions | 🔐 |
+| GET    | `/api/mission/v1/missions/history`                              | 날짜별 미션 스택 조회 | query date | today missions | 🔐 |
+| GET    | `/api/mission/v1/missions/{missionId}`                          | 미션 상세 및 완료 답변 조회 | path | mission detail | 🔐 |
 | POST   | `/api/mission/v1/missions/today-focus/next`                     | 다음 미션 요청      | body | mission | 🔐 |
 | POST   | `/api/mission/v1/missions/{missionId}/rejections`               | 미션 거절 기록 생성   | path + body | rejection | 🔐 |
 | POST   | `/api/mission/v1/missions/{missionId}/completion-sessions`      | 완료 질문 세션 시작   | path + body | question | 🔐 |
 | POST   | `⚠️ /api/mission/v1/missions/{missionId}/completion-answers`    | 완료 답변 제출 및 보상 지급 | path + body | completion result | 🔐 |
+| POST   | `/api/mission/v1/missions/{missionId}/feedback`                 | 미션 만족/불만족 피드백 저장 | path + body | mission feedback | 🔐 |
 | GET    | `/api/wallet/v1/wallets/me`                                     | 별조각 잔액 조회     | none | wallet | 🔐 |
 | GET    | `/api/wallet/v1/wallets/me/transactions`                        | 별조각 거래내역 조회   | query cursor | transactions | 🔐 |
 | GET    | `💾 /api/item/v1/items`                                         | 상점 아이템 목록 조회  | query cursor | items | 🔐 |
@@ -304,6 +312,105 @@ Refresh Token으로 Access Token을 재발급한다.
   "provider": "GOOGLE",
   "role": "USER",
   "status": "ACTIVE"
+}
+```
+
+---
+
+### 2.6 GET `/api/user/v1/weather-regions` 🔐
+
+**설명**
+사용자가 직접 선택할 수 있는 날씨 권역 목록을 조회한다.
+
+날씨 권역은 미션 생성 시 날씨 기반 context를 구성하는 기준이다. REST 응답에는 화면 표시와 저장에 필요한 코드/이름만 내려주고, 기상청 격자 좌표는 서버 내부에서만 사용한다.
+
+**Request**
+
+```json
+{
+  "reasonCode": "NOT_NOW",
+  "reasonText": "지금은 밖이라서 하기 어려워요."
+}
+```
+
+거절 이유는 선택 입력이다. 요청 body를 생략하거나 비워 보내면 서버가 `JUST_SKIP` 기준으로 저장한다.
+
+**Response**
+
+```json
+{
+  "regions": [
+    {
+      "regionCode": "SEOUL",
+      "displayName": "서울"
+    },
+    {
+      "regionCode": "GYEONGGI_SOUTH",
+      "displayName": "경기 남부"
+    }
+  ]
+}
+```
+
+---
+
+### 2.7 GET `/api/user/v1/users/me/weather-region` 🔐
+
+**설명**
+현재 로그인한 사용자의 날씨 권역 선택 상태를 조회한다.
+
+선택한 권역이 없으면 `selected=false`와 `null` 값을 반환한다. 이 경우 mission 서비스는 환경변수로 설정한 기본 권역을 사용한다.
+
+**Request**
+
+```json
+{}
+```
+
+**Response**
+
+```json
+{
+  "selected": true,
+  "regionCode": "SEOUL",
+  "displayName": "서울"
+}
+```
+
+미선택 상태:
+
+```json
+{
+  "selected": false,
+  "regionCode": null,
+  "displayName": null
+}
+```
+
+---
+
+### 2.8 PUT `/api/user/v1/users/me/weather-region` 🔐
+
+**설명**
+현재 로그인한 사용자의 날씨 권역을 저장하거나 수정한다.
+
+`regionCode`는 `GET /api/user/v1/weather-regions`에서 내려준 값만 허용한다. 허용되지 않은 권역 코드는 `INVALID_WEATHER_REGION`으로 응답한다.
+
+**Request**
+
+```json
+{
+  "regionCode": "GYEONGGI_SOUTH"
+}
+```
+
+**Response**
+
+```json
+{
+  "selected": true,
+  "regionCode": "GYEONGGI_SOUTH",
+  "displayName": "경기 남부"
 }
 ```
 
@@ -683,12 +790,14 @@ Refresh Token으로 Access Token을 재발급한다.
 {
   "items": [
     {
-      "key": "livingType",
-      "question": "지금 생활 환경은 어떤가요?",
-      "type": "SINGLE_CHOICE",
+      "key": "ROUTINE_GOAL",
+      "content": "지금 만들고 싶은 루틴은 무엇인가요?",
+      "multipleSelection": true,
+      "maxSelectionCount": 3,
       "options": [
-        { "value": "LIVING_ALONE", "label": "혼자 살아요" },
-        { "value": "WITH_FAMILY", "label": "가족과 살아요" }
+        { "key": "HYDRATION_MEAL", "value": "물/식사 챙기기" },
+        { "key": "SPACE_RESET", "value": "공간 가볍게 정리하기" },
+        { "key": "EXERCISE_HABIT", "value": "운동 습관 만들기" }
       ]
     }
   ]
@@ -713,13 +822,19 @@ Refresh Token으로 Access Token을 재발급한다.
 ```json
 {
   "completed": true,
-  "livingType": "LIVING_ALONE",
-  "wakeUpTime": "08:00",
-  "sleepTime": "24:00",
-  "routineGoal": "SELF_CARE",
-  "activityPreference": "INDOOR",
+  "livingType": null,
+  "wakeUpTime": null,
+  "sleepTime": null,
+  "preferredMissionTime": null,
+  "routineGoal": null,
+  "activityPreference": null,
   "missionIntensity": "LIGHT",
-  "completedAt": "2026-05-15T18:10:00+09:00"
+  "answersJson": "{\"onboardingVersion\":2}",
+  "onboardingVersion": 2,
+  "routineGoals": ["HYDRATION_MEAL", "SPACE_RESET"],
+  "preferredTimeSlots": ["EVENING", "NIGHT"],
+  "missionPlaceContexts": ["HOME"],
+  "avoidedMissionTags": ["OUTDOOR"]
 }
 ```
 
@@ -734,16 +849,19 @@ Refresh Token으로 Access Token을 재발급한다.
 
 ```json
 {
-  "livingType": "LIVING_ALONE",
-  "wakeUpTime": "08:00",
-  "sleepTime": "24:00",
-  "preferredMissionTime": "EVENING",
-  "routineGoal": "SELF_CARE",
-  "activityPreference": "INDOOR",
+  "livingType": null,
+  "wakeUpTime": null,
+  "sleepTime": null,
+  "preferredMissionTime": null,
+  "routineGoal": null,
+  "activityPreference": null,
   "missionIntensity": "LIGHT",
-  "answers": {
-    "tonePreference": "GENTLE"
-  },
+  "answersJson": "{\"onboardingVersion\":2}",
+  "onboardingVersion": 2,
+  "routineGoals": ["HYDRATION_MEAL", "SPACE_RESET"],
+  "preferredTimeSlots": ["EVENING", "NIGHT"],
+  "missionPlaceContexts": ["HOME"],
+  "avoidedMissionTags": ["OUTDOOR"],
   "completed": true
 }
 ```
@@ -770,7 +888,10 @@ MVP 정책:
 
 ```text
 한 유저는 하루에 OFFERED/ANSWERING 상태 미션을 동시에 1개만 가진다.
-하루 미션 제안은 최대 15개까지 가능하다.
+하루 미션 완료 보상은 최대 20회까지 가능하다.
+하루 미션 거절은 최대 10회까지 가능하다.
+CHALLENGE 난이도 미션은 하루 1회까지만 제안한다.
+난이도별 기본 보상은 EASY 10, NORMAL 15, CHALLENGE 30 별조각이다.
 미션 완료는 완료 버튼 클릭 후 완료 질문 1개에 텍스트 답변을 제출해야 처리된다.
 완료 답변은 1자 이상 300자 이하로 입력한다.
 ```
@@ -783,6 +904,7 @@ missionId path variable은 1 이상의 숫자여야 한다.
 다음 미션 요청의 lastMissionId는 선택값이며, 전달하는 경우 0 이상의 숫자여야 한다.
 처음 미션 요청처럼 직전 미션이 없으면 lastMissionId는 생략하거나 null로 보낼 수 있다.
 완료 답변 answer는 공백만으로 구성될 수 없고 300자를 초과할 수 없다.
+피드백 reasonText는 100자를 초과할 수 없다.
 입력값 형식 오류, JSON body 누락/파싱 오류, path variable 타입 오류는 INVALID_INPUT_VALUE로 응답한다.
 ```
 
@@ -821,7 +943,7 @@ missionId path variable은 1 이상의 숫자여야 한다.
 ### 6.2 GET `/api/mission/v1/missions/today` 🔐
 
 **설명**
-오늘 기준 로그인한 유저에게 제안된 미션 스택을 조회한다. 하루 최대 제안 수가 15개이므로 pagination은 제공하지 않는다.
+오늘 기준 로그인한 유저에게 제안된 미션 스택을 조회한다. 하루 미션 스택은 사용자별·일자별로 제한된 작은 목록이므로 pagination은 제공하지 않는다.
 
 목록은 `stackOrder` 오름차순으로 반환한다. `currentMissionId`는 현재 진행 중인 `OFFERED` 또는 `ANSWERING` 상태 미션의 id이며, 현재 미션이 없으면 `null`이다.
 
@@ -840,11 +962,16 @@ mission REST 응답에는 AI fallback 여부를 노출하지 않는다. fallback
 ```json
 {
   "missionDate": "2026-05-26",
-  "maxDailyOffers": 15,
+  "maxDailyOffers": 20,
   "offeredCount": 4,
   "completedCount": 2,
   "rejectedCount": 1,
-  "remainingOfferCount": 11,
+  "remainingOfferCount": 16,
+  "maxDailyRewardCount": 20,
+  "completedRewardCount": 2,
+  "remainingRewardCount": 18,
+  "maxDailyRejectCount": 10,
+  "remainingRejectCount": 9,
   "currentMissionId": 104,
   "missions": [
     {
@@ -858,7 +985,10 @@ mission REST 응답에는 AI fallback 여부를 노출하지 않는다. fallback
       "characterMessage": "잘했어. 작은 시작도 별조각이 됐어.",
       "createdAt": "2026-05-26T09:10:00+09:00",
       "completedAt": "2026-05-26T09:15:00+09:00",
-      "rejectedAt": null
+      "rejectedAt": null,
+      "completionQuestion": "물 마시고 나서 기분이 조금 달라졌어?",
+      "answerPreview": "조금 시원해졌어.",
+      "hasAnswer": true
     },
     {
       "id": 104,
@@ -871,9 +1001,103 @@ mission REST 응답에는 AI fallback 여부를 노출하지 않는다. fallback
       "characterMessage": "무... 오늘의 작은 별을 찾은 것 같아요.",
       "createdAt": "2026-05-26T11:30:00+09:00",
       "completedAt": null,
-      "rejectedAt": null
+      "rejectedAt": null,
+      "completionQuestion": null,
+      "answerPreview": null,
+      "hasAnswer": false
     }
   ]
+}
+```
+
+---
+
+### 6.2.1 GET `/api/mission/v1/missions/history?date=YYYY-MM-DD` 🔐
+
+**설명**
+특정 날짜 기준으로 로그인한 유저에게 제안된 미션 스택을 조회한다.
+
+응답 구조는 `GET /api/mission/v1/missions/today`와 동일하다. 목록 화면에서는 답변 전문을 내려주지 않고 `answerPreview`, `hasAnswer`만 제공한다.
+
+**Request**
+
+```json
+{}
+```
+
+**Response**
+
+```json
+{
+  "missionDate": "2026-05-25",
+  "maxDailyOffers": 20,
+  "offeredCount": 3,
+  "completedCount": 2,
+  "rejectedCount": 1,
+  "remainingOfferCount": 17,
+  "maxDailyRewardCount": 20,
+  "completedRewardCount": 2,
+  "remainingRewardCount": 18,
+  "maxDailyRejectCount": 10,
+  "remainingRejectCount": 9,
+  "currentMissionId": null,
+  "missions": [
+    {
+      "id": 98,
+      "stackOrder": 1,
+      "title": "어깨 힘 빼고 숨 세 번 쉬기",
+      "category": "MINI_EXERCISE",
+      "difficulty": "EASY",
+      "rewardStarPiece": 10,
+      "status": "COMPLETED",
+      "characterMessage": "조금만 풀어도 몸이 별빛처럼 느슨해질 거예요.",
+      "createdAt": "2026-05-25T21:10:00+09:00",
+      "completedAt": "2026-05-25T21:12:00+09:00",
+      "rejectedAt": null,
+      "completionQuestion": "숨을 쉬고 나니 어깨가 조금 달라졌나요?",
+      "answerPreview": "조금 가벼워졌어.",
+      "hasAnswer": true
+    }
+  ]
+}
+```
+
+---
+
+### 6.2.2 GET `/api/mission/v1/missions/{missionId}` 🔐
+
+**설명**
+미션 1개의 상세 정보와 완료 질문/답변 전문을 조회한다.
+
+소유권은 `userId + missionId` 기준으로 확인한다. 완료 답변이 저장된 미션이면 `answer`에 전문을 반환하고, 답변 전 상태이면 `answer=null`, `hasAnswer=false`로 반환한다.
+
+**Request**
+
+```json
+{}
+```
+
+**Response**
+
+```json
+{
+  "id": 98,
+  "missionDate": "2026-05-25",
+  "stackOrder": 1,
+  "title": "어깨 힘 빼고 숨 세 번 쉬기",
+  "description": "자리에서 어깨를 내리고 숨을 세 번 천천히 쉬어보세요.",
+  "characterMessage": "조금만 풀어도 몸이 별빛처럼 느슨해질 거예요.",
+  "category": "MINI_EXERCISE",
+  "difficulty": "EASY",
+  "rewardStarPiece": 10,
+  "status": "COMPLETED",
+  "createdAt": "2026-05-25T21:10:00+09:00",
+  "completedAt": "2026-05-25T21:12:00+09:00",
+  "rejectedAt": null,
+  "question": "숨을 쉬고 나니 어깨가 조금 달라졌나요?",
+  "answer": "조금 가벼워졌어.",
+  "completionCharacterResponse": "좋아요. 그 가벼움을 오늘 별조각으로 기억할게요.",
+  "hasAnswer": true
 }
 ```
 
@@ -985,7 +1209,7 @@ mission REST 응답에는 AI fallback 여부를 노출하지 않는다. fallback
 완료 답변은 1자 이상 300자 이하로 입력한다. 답변 전문은 `mission_completion_answers`에 저장하고, event-log에는 답변 전문을 남기지 않는다.
 
 미션 완료 보상은 1회만 지급된다. 응답의 `reward`는 지급된 보상량을, `wallet`은 보상 반영 후 지갑 스냅샷을 의미한다.
-별조각 보상 지급은 `mission_reward_outbox`를 통해 wallet 모듈에 전달하며, 같은 미션 완료 요청이 재시도되면 저장된 답변과 보상 outbox를 기준으로 멱등 처리한다.
+별조각 보상 지급은 `mission_outbox_events`에 `MISSION_REWARD_REQUESTED` 이벤트로 기록한 뒤 wallet 모듈에 전달한다. 같은 미션 완료 요청이 재시도되면 저장된 답변과 outbox 멱등키를 기준으로 처리한다.
 
 **Request**
 
@@ -1018,24 +1242,61 @@ mission REST 응답에는 AI fallback 여부를 노출하지 않는다. fallback
 
 ---
 
+### 6.6.1 POST `/api/mission/v1/missions/{missionId}/feedback` 🔐
+
+**설명**
+미션에 대한 만족/불만족 피드백을 저장한다.
+
+피드백은 보상 지급 조건이 아니며, 개인화 후보 생성과 회피 신호 분석에 사용한다. 같은 사용자·미션·피드백 타입으로 다시 요청하면 기존 피드백을 갱신한다.
+
+**Request**
+
+```json
+{
+  "feedbackType": "SATISFACTION",
+  "reaction": "LIKE",
+  "reasonCode": "NOT_INTERESTED",
+  "reasonText": "운동 미션은 좋지만 조금 더 짧으면 좋겠어요."
+}
+```
+
+**Response**
+
+```json
+{
+  "missionId": 101,
+  "feedbackType": "SATISFACTION",
+  "reaction": "LIKE",
+  "reasonCode": "NOT_INTERESTED",
+  "reasonText": "운동 미션은 좋지만 조금 더 짧으면 좋겠어요.",
+  "updatedAt": "2026-05-20T18:40:00+09:00"
+}
+```
+
+---
+
 ### 6.7 내부 gRPC `AiService.GenerateMissionTexts`
 
 **설명**
-선택된 미션 템플릿을 캐릭터 말투 기반 문구로 변환한다. 외부 클라이언트가 직접 호출하는 REST API가 아니라, mission 또는 gateway 내부에서 사용하는 AI gRPC API다.
+미션 후보 생성과 캐릭터 말투 문구 생성을 수행한다. 외부 클라이언트가 직접 호출하는 REST API가 아니라, mission 모듈이 내부에서 사용하는 AI gRPC API다.
 
-AI는 seed 미션의 제목, 설명, 카테고리, 난이도, 보상을 임의로 바꾸지 않는다. 아래 3개 문구만 생성하거나 fallback 문구를 반환한다.
+AI는 온보딩, 최근 미션/피드백, 시간대, 날씨 context를 바탕으로 아래 값을 구조화 응답으로 반환한다. mission 모듈은 응답을 저장하기 전에 카테고리/난이도/보상/문장 길이/금지 표현/CHALLENGE 일일 제한을 검증한다.
 
 ```text
+미션 제목 title
+미션 설명 description
+미션 카테고리 category
+미션 난이도 difficulty
 제안 문구 characterMessage
 완료 질문 completionQuestion
 완료 후 캐릭터 반응 completionCharacterResponse
 ```
 
-외부 provider 오류, 응답 구조 오류, 정책 위반 등으로 생성 결과를 사용할 수 없으면 미션 템플릿의 fallback 문구를 사용한다.
+외부 provider 오류, 응답 구조 오류, 정책 위반, rate limit 초과 등으로 생성 결과를 사용할 수 없으면 seed 미션 템플릿과 fallback 문구를 사용한다.
 
 `requestId`는 AI 생성 요청의 멱등 기준이다. 같은 `requestId`와 같은 요청 본문이 다시 들어오면 기존 `ai_mission_generations` 결과를 반환하고, 같은 `requestId`가 다른 요청 본문과 함께 들어오면 충돌로 처리한다. mission 모듈은 매 호출마다 랜덤 UUID를 만들지 않고, 같은 미션 문구 생성 시도에 같은 `requestId`를 사용한다.
 
-외부 AI provider를 사용하는 경우 ai 모듈은 `requestId` 멱등 결과를 먼저 확인한 뒤 Redis 기반 rate limit을 확인한다. rate limit 초과 또는 Redis rate limit 저장소 장애가 발생하면 외부 provider를 호출하지 않고 fallback 문구를 반환한다.
+외부 AI provider를 사용하는 경우 ai 모듈은 `requestId` 멱등 결과를 먼저 확인한 뒤 Redis 기반 rate limit을 확인한다. rate limit 초과 또는 Redis rate limit 저장소 장애가 발생하면 외부 provider를 호출하지 않고 fallback 결과를 반환한다.
 
 **gRPC Request**
 
@@ -1064,6 +1325,10 @@ AI는 seed 미션의 제목, 설명, 카테고리, 난이도, 보상을 임의�
 {
   "aiGenerationId": 55,
   "status": "SUCCESS",
+  "title": "물 한 컵으로 작은 리셋 만들기",
+  "description": "자리에서 물 한 컵을 천천히 마시고 몸이 깨어나는 느낌을 살펴보세요.",
+  "category": "BASIC_ROUTINE",
+  "difficulty": "EASY",
   "characterMessage": "천천히 물 한 컵 마셔볼래? 작은 시작도 별조각이 될 수 있어.",
   "completionQuestion": "물 마시고 나서 기분이 조금 달라졌어?",
   "completionCharacterResponse": "잘했어. 오늘의 작은 수분 보충을 별조각으로 기억할게.",
@@ -1078,6 +1343,10 @@ fallback 응답 예시:
 {
   "aiGenerationId": 56,
   "status": "FALLBACK",
+  "title": "물 한 컵 마시기",
+  "description": "지금 자리에서 물 한 컵을 천천히 마셔보세요.",
+  "category": "BASIC_ROUTINE",
+  "difficulty": "EASY",
   "characterMessage": "물 한 컵 마셔볼래? 작은 시작도 별조각이 될 수 있어.",
   "completionQuestion": "물 마시고 나서 기분이 조금 달라졌어?",
   "completionCharacterResponse": "잘했어. 오늘의 작은 수분 보충을 별조각으로 기억할게.",
@@ -1088,6 +1357,40 @@ fallback 응답 예시:
 ```
 
 AI 생성 결과는 `ai_mission_generations`, 사용 로그는 `ai_usage_logs`에 저장한다. `ai_mission_generations.request_id`는 생성 결과 재사용 기준이고, `ai_usage_logs.request_id`는 해당 생성 시도의 사용량/지연 추적 기준이다. fallback이 사용되면 event-log에 `AI_FALLBACK_USED`를 남긴다. mission REST 응답에는 `fallbackUsed`를 노출하지 않고, 운영 분석은 저장된 생성 결과와 로그를 기준으로 한다.
+
+---
+
+### 6.8 내부 gRPC `AiService.GenerateTextEmbedding`
+
+**설명**
+미션 완료 답변과 피드백에서 추출한 사용자 기억을 RAG 검색에 사용할 embedding vector로 변환한다.
+
+mission 모듈은 `user_memories`를 먼저 저장하고, embedding이 필요한 기억은 `user_memory_embeddings`에 작업 상태를 남긴다. ai 모듈은 요청받은 텍스트를 `gemini-embedding-001` 기준 768차원 vector로 변환해 반환한다.
+
+**gRPC Request**
+
+```json
+{
+  "userId": 1,
+  "text": "밤에는 밖에 나가기보다 실내에서 할 수 있는 짧은 미션을 선호한다.",
+  "model": "gemini-embedding-001",
+  "dimension": 768,
+  "requestId": "USER_MEMORY_EMBEDDING:1:55"
+}
+```
+
+**gRPC Response**
+
+```json
+{
+  "model": "gemini-embedding-001",
+  "dimension": 768,
+  "values": [0.0123, -0.0045, 0.0187],
+  "requestId": "USER_MEMORY_EMBEDDING:1:55"
+}
+```
+
+응답 예시의 `values`는 축약 표기다. 실제 응답은 768개 float 값을 가진다.
 
 ---
 
@@ -1850,6 +2153,7 @@ mission, character 등 내부 서비스가 알림 저장과 FCM 푸시 발송을
 | `UNAUTHORIZED` | 인증 실패 |
 | `FORBIDDEN` | 권한 없음 |
 | `USER_NOT_FOUND` | 사용자 없음 |
+| `INVALID_WEATHER_REGION` | 사용할 수 없는 날씨 권역 코드 |
 | `CHARACTER_NOT_FOUND` | 캐릭터 없음 |
 | `CHARACTER_NAME_INVALID` | 캐릭터 이름 형식 오류 |
 | `ONBOARDING_REQUIRED` | 온보딩 미완료로 미션 사용 불가 |
@@ -1857,9 +2161,11 @@ mission, character 등 내부 서비스가 알림 저장과 FCM 푸시 발송을
 | `MISSION_TEMPLATE_NOT_FOUND` | 사용할 수 있는 미션 템플릿 없음 |
 | `MISSION_INVALID_STATUS` | 상태 전이 불가 |
 | `MISSION_ACTIVE_ALREADY_EXISTS` | 이미 진행 중인 미션 존재 |
-| `MISSION_DAILY_LIMIT_EXCEEDED` | 일일 미션 제안 제한 초과 |
+| `MISSION_DAILY_LIMIT_EXCEEDED` | 일일 미션 완료 보상 제한 초과 |
+| `MISSION_REJECT_LIMIT_EXCEEDED` | 일일 미션 거절 제한 초과 |
 | `MISSION_ALREADY_COMPLETED` | 이미 완료된 미션 |
 | `MISSION_ANSWER_INVALID` | 완료 답변 길이 오류 |
+| `MISSION_FEEDBACK_INVALID` | 미션 피드백 형식 오류 |
 | `MISSION_SERVICE_UNAVAILABLE` | 미션 서비스 일시 장애 |
 | `STAR_PIECE_NOT_ENOUGH` | 별조각 부족 |
 | `DUPLICATED_IDEMPOTENCY_KEY` | 중복 요청 |
