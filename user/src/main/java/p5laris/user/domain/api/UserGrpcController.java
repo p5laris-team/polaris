@@ -1,11 +1,14 @@
 package p5laris.user.domain.api;
 
 import com.p5laris.proto.user.v1.*;
+import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import lombok.RequiredArgsConstructor;
 import net.devh.boot.grpc.server.service.GrpcService;
 import p5laris.user.domain.application.AuthService;
 import p5laris.user.domain.application.UserService;
+import p5laris.user.domain.exception.UserErrorCode;
+import p5laris.user.domain.exception.UserException;
 
 @GrpcService
 @RequiredArgsConstructor
@@ -116,5 +119,49 @@ public class UserGrpcController extends UserServiceGrpc.UserServiceImplBase {
         } catch (Exception e) {
             responseObserver.onError(io.grpc.Status.NOT_FOUND.withDescription(e.getMessage()).asRuntimeException());
         }
+    }
+
+    @Override
+    public void listWeatherRegions(ListWeatherRegionsRequest request, StreamObserver<ListWeatherRegionsResponse> responseObserver) {
+        try {
+            responseObserver.onNext(userService.listWeatherRegions());
+            responseObserver.onCompleted();
+        } catch (Exception e) {
+            responseObserver.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+        }
+    }
+
+    @Override
+    public void getWeatherRegion(GetWeatherRegionRequest request, StreamObserver<GetWeatherRegionResponse> responseObserver) {
+        try {
+            responseObserver.onNext(userService.getWeatherRegion(request.getUserId()));
+            responseObserver.onCompleted();
+        } catch (UserException e) {
+            responseObserver.onError(toStatus(e).withDescription(e.getMessage()).asRuntimeException());
+        } catch (Exception e) {
+            responseObserver.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+        }
+    }
+
+    @Override
+    public void updateWeatherRegion(UpdateWeatherRegionRequest request, StreamObserver<UpdateWeatherRegionResponse> responseObserver) {
+        try {
+            responseObserver.onNext(userService.updateWeatherRegion(request.getUserId(), request.getRegionCode()));
+            responseObserver.onCompleted();
+        } catch (UserException e) {
+            responseObserver.onError(toStatus(e).withDescription(e.getMessage()).asRuntimeException());
+        } catch (Exception e) {
+            responseObserver.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+        }
+    }
+
+    private Status toStatus(UserException e) {
+        if (e.getErrorCode() == UserErrorCode.USER_NOT_FOUND) {
+            return Status.NOT_FOUND;
+        }
+        if (e.getErrorCode() == UserErrorCode.INVALID_WEATHER_REGION) {
+            return Status.INVALID_ARGUMENT;
+        }
+        return Status.INTERNAL;
     }
 }
