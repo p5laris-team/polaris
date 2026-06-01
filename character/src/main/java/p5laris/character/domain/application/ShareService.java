@@ -11,6 +11,8 @@ import p5laris.character.domain.domain.entity.CharacterOutboxEvent;
 import p5laris.character.domain.domain.entity.ShareCard;
 import p5laris.character.domain.domain.entity.ShareLog;
 import p5laris.character.domain.domain.entity.UserCharacter;
+import p5laris.character.domain.domain.enums.CharacterOutboxEventStatus;
+import p5laris.character.domain.domain.enums.ShareRewardStatus;
 import p5laris.character.domain.domain.repository.CharacterOutboxEventRepository;
 import p5laris.character.domain.domain.repository.ShareCardRepository;
 import p5laris.character.domain.domain.repository.ShareLogRepository;
@@ -146,16 +148,39 @@ public class ShareService {
         );
 
         if (command.rewardOutboxId() != null) {
-            int walletStarPiece = shareRewardDispatcher.dispatchNow(command.rewardOutboxId()).starPiece();
-            return new ShareEventResult(command.shareLogId(), true, command.rewardStarPiece(), walletStarPiece);
+            try {
+                int walletStarPiece = shareRewardDispatcher.dispatchNow(command.rewardOutboxId()).starPiece();
+                return new ShareEventResult(
+                        command.shareLogId(),
+                        true,
+                        command.rewardStarPiece(),
+                        walletStarPiece,
+                        ShareRewardStatus.PAID
+                );
+            } catch (CharacterException e) {
+                ShareRewardStatus rewardStatus = resolveRewardStatus(
+                        command.rewardIdempotencyKey(),
+                        ShareRewardStatus.PENDING
+                );
+                return new ShareEventResult(
+                        command.shareLogId(),
+                        false,
+                        command.rewardStarPiece(),
+                        0,
+                        rewardStatus
+                );
+            }
         }
 
-        int walletStarPiece = shareRewardWalletClient.getWalletStarPiece(userId);
+        int walletStarPiece = command.rewardStatus() == ShareRewardStatus.PAID
+                ? getWalletStarPieceOrZero(userId)
+                : 0;
         return new ShareEventResult(
                 command.shareLogId(),
-                command.rewardPaid(),
+                command.rewardStatus() == ShareRewardStatus.PAID,
                 command.rewardStarPiece(),
-                walletStarPiece
+                walletStarPiece,
+                command.rewardStatus()
         );
     }
 
@@ -176,12 +201,16 @@ public class ShareService {
         var existingRewardLog = shareLogRepository.findByIdempotencyKey(rewardIdempotencyKey);
         if (existingRewardLog.isPresent()) {
             ShareLog log = existingRewardLog.get();
-            Long outboxId = log.isRewardPaid()
-                    ? null
-                    : characterOutboxEventRepository.findByIdempotencyKey(rewardIdempotencyKey)
-                            .map(CharacterOutboxEvent::getId)
-                            .orElse(null);
-            return new ShareRewardCommand(log.getId(), outboxId, log.isRewardPaid(), log.getRewardStarPiece());
+            ShareRewardStatus rewardStatus = log.isRewardPaid()
+                    ? ShareRewardStatus.PAID
+                    : resolveRewardStatus(rewardIdempotencyKey, ShareRewardStatus.FAILED);
+            return new ShareRewardCommand(
+                    log.getId(),
+                    null,
+                    log.getRewardStarPiece(),
+                    rewardStatus,
+                    rewardIdempotencyKey
+            );
         }
 
         boolean alreadyRewarded = shareLogRepository.existsByUserIdAndShareDateAndRewardPaidTrue(userId, today);
@@ -209,7 +238,13 @@ public class ShareService {
         shareLogRepository.save(shareLog);
 
         if (!rewardEligible) {
-            return new ShareRewardCommand(shareLog.getId(), null, false, rewardAmount);
+            return new ShareRewardCommand(
+                    shareLog.getId(),
+                    null,
+                    rewardAmount,
+                    ShareRewardStatus.NOT_ELIGIBLE,
+                    rewardIdempotencyKey
+            );
         }
 
         CharacterOutboxEvent outbox = CharacterOutboxEvent.pending(
@@ -229,7 +264,13 @@ public class ShareService {
 
         eventPublisher.publishEvent(p5laris.character.domain.application.event.ShareEventLogEvent.shareCompleted(shareLog));
 
-        return new ShareRewardCommand(shareLog.getId(), outbox.getId(), false, rewardAmount);
+        return new ShareRewardCommand(
+                shareLog.getId(),
+                outbox.getId(),
+                rewardAmount,
+                ShareRewardStatus.PENDING,
+                rewardIdempotencyKey
+        );
     }
 
     // ---------- §9.4 GetShareLink (Public) ----------
@@ -354,21 +395,73 @@ public class ShareService {
     @Transactional(readOnly = true)
     public TodayShareEventStatusResult getTodayShareEventStatus(Long userId) {
         LocalDate today = LocalDate.now(SHARE_DATE_ZONE);
-        boolean rewardClaimed = shareLogRepository.existsByUserIdAndShareDateAndRewardPaidTrue(userId, today);
+        ShareRewardStatus rewardStatus = resolveTodayRewardStatus(userId, today);
+        boolean rewardClaimed = rewardStatus == ShareRewardStatus.PAID;
         String lastSharedAt = shareLogRepository.findTopByUserIdAndShareDateOrderBySharedAtDesc(userId, today)
                 .map(ShareLog::getSharedAt)
                 .map(Instant::toString)
                 .orElse("");
-        return new TodayShareEventStatusResult(rewardClaimed, lastSharedAt);
+        return new TodayShareEventStatusResult(rewardClaimed, lastSharedAt, rewardStatus.name());
+    }
+
+    private ShareRewardStatus resolveTodayRewardStatus(Long userId, LocalDate today) {
+        if (shareLogRepository.existsByUserIdAndShareDateAndRewardPaidTrue(userId, today)) {
+            return ShareRewardStatus.PAID;
+        }
+
+        String rewardIdempotencyKey = buildDailyShareRewardIdempotencyKey(userId, today);
+        return shareLogRepository.findByIdempotencyKey(rewardIdempotencyKey)
+                .map(log -> resolveRewardStatus(rewardIdempotencyKey, ShareRewardStatus.FAILED))
+                .orElse(ShareRewardStatus.AVAILABLE);
+    }
+
+    private ShareRewardStatus resolveRewardStatus(String rewardIdempotencyKey, ShareRewardStatus fallback) {
+        if (rewardIdempotencyKey == null || rewardIdempotencyKey.isBlank()) {
+            return fallback;
+        }
+
+        return characterOutboxEventRepository.findByIdempotencyKey(rewardIdempotencyKey)
+                .map(this::toShareRewardStatus)
+                .orElse(fallback);
+    }
+
+    private ShareRewardStatus toShareRewardStatus(CharacterOutboxEvent outbox) {
+        if (outbox.getStatus() == CharacterOutboxEventStatus.SUCCEEDED) {
+            return ShareRewardStatus.PAID;
+        }
+        if (outbox.getStatus() == CharacterOutboxEventStatus.FAILED) {
+            return ShareRewardStatus.FAILED;
+        }
+        return ShareRewardStatus.PENDING;
+    }
+
+    private int getWalletStarPieceOrZero(Long userId) {
+        try {
+            return shareRewardWalletClient.getWalletStarPiece(userId);
+        } catch (CharacterException e) {
+            return 0;
+        }
     }
 
     // ---------- Result records ----------
 
     public record ShareCardResult(Long shareCardId, String shareId, String imageUrl, String shareUrl) {}
     public record ShareCardDetailResult(Long shareCardId, String characterName, String imageUrl, String shareUrl) {}
-    public record ShareEventResult(Long shareEventId, boolean rewardPaid, int rewardStarPiece, int walletStarPiece) {}
+    public record ShareEventResult(
+            Long shareEventId,
+            boolean rewardPaid,
+            int rewardStarPiece,
+            int walletStarPiece,
+            ShareRewardStatus rewardStatus
+    ) {}
     public record ShareLinkResult(String shareId, String characterName, String imageUrl, String headline, String signupUrl) {}
     public record ShareClickResult(String shareId, boolean recorded) {}
-    public record TodayShareEventStatusResult(boolean rewardClaimed, String lastSharedAt) {}
-    private record ShareRewardCommand(Long shareLogId, Long rewardOutboxId, boolean rewardPaid, int rewardStarPiece) {}
+    public record TodayShareEventStatusResult(boolean rewardClaimed, String lastSharedAt, String rewardStatus) {}
+    private record ShareRewardCommand(
+            Long shareLogId,
+            Long rewardOutboxId,
+            int rewardStarPiece,
+            ShareRewardStatus rewardStatus,
+            String rewardIdempotencyKey
+    ) {}
 }

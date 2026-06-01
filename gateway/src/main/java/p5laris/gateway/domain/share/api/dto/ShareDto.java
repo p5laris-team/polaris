@@ -42,6 +42,7 @@ public class ShareDto {
             Long shareEventId,
             boolean rewardPaid,
             int rewardStarPiece,
+            String rewardStatus,
             WalletInfo wallet
     ) {
         public record WalletInfo(int starPiece) {}
@@ -72,6 +73,7 @@ public class ShareDto {
 
     public record TodayShareEventStatusResponse(
             boolean rewardClaimed,
-            String lastSharedAt
+            String lastSharedAt,
+            String rewardStatus
     ) {}
 }

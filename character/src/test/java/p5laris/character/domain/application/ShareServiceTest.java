@@ -9,6 +9,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -17,6 +18,7 @@ import p5laris.character.domain.domain.entity.CharacterOutboxEvent;
 import p5laris.character.domain.domain.entity.ShareCard;
 import p5laris.character.domain.domain.entity.ShareLog;
 import p5laris.character.domain.domain.entity.UserCharacter;
+import p5laris.character.domain.domain.enums.ShareRewardStatus;
 import p5laris.character.domain.domain.repository.CharacterOutboxEventRepository;
 import p5laris.character.domain.domain.repository.ShareCardRepository;
 import p5laris.character.domain.domain.repository.ShareLogRepository;
@@ -27,6 +29,7 @@ import p5laris.character.domain.infrastructure.grpc.ShareRewardWalletClient;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -58,6 +61,9 @@ class ShareServiceTest {
 
     @Mock
     private UserCharacterRepository userCharacterRepository;
+
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
 
     @Mock
     private ShareRewardWalletClient shareRewardWalletClient;
@@ -127,7 +133,7 @@ class ShareServiceTest {
         when(shareLogRepository.findByIdempotencyKey(anyString())).thenReturn(Optional.empty());
         when(shareLogRepository.existsByUserIdAndShareDateAndRewardPaidTrue(anyLong(), any(LocalDate.class)))
                 .thenReturn(false);
-        when(shareLogRepository.saveAndFlush(any(ShareLog.class))).thenAnswer(invocation -> {
+        when(shareLogRepository.save(any(ShareLog.class))).thenAnswer(invocation -> {
             ShareLog log = invocation.getArgument(0);
             ReflectionTestUtils.setField(log, "id", 900L);
             return log;
@@ -149,6 +155,7 @@ class ShareServiceTest {
         assertTrue(result.rewardPaid());
         assertEquals(10, result.rewardStarPiece());
         assertEquals(110, result.walletStarPiece());
+        assertEquals(ShareRewardStatus.PAID, result.rewardStatus());
         verify(characterOutboxEventRepository).saveAndFlush(any(CharacterOutboxEvent.class));
         verify(shareRewardDispatcher).dispatchNow(950L);
         verify(shareRewardWalletClient, never()).getWalletStarPiece(anyLong());
@@ -183,7 +190,102 @@ class ShareServiceTest {
         assertTrue(result.rewardPaid());
         assertEquals(10, result.rewardStarPiece());
         assertEquals(110, result.walletStarPiece());
+        assertEquals(ShareRewardStatus.PAID, result.rewardStatus());
         verify(shareRewardWalletClient, never()).earnShareReward(anyLong(), anyLong(), anyInt(), anyString());
+    }
+
+    @Test
+    @DisplayName("createShareEvent returns PENDING when first share reward dispatch fails")
+    void createShareEvent_firstRewardDispatchFails_returnsPending() {
+        runTransactionTemplateCallbacks();
+        ShareCard card = createShareCard(800L, 1L, 10L);
+        CharacterOutboxEvent pendingOutbox = createPendingOutbox(950L, 900L);
+
+        when(shareCardRepository.findById(800L)).thenReturn(Optional.of(card));
+        when(shareLogRepository.findByIdempotencyKey(anyString())).thenReturn(Optional.empty());
+        when(shareLogRepository.existsByUserIdAndShareDateAndRewardPaidTrue(anyLong(), any(LocalDate.class)))
+                .thenReturn(false);
+        when(shareLogRepository.save(any(ShareLog.class))).thenAnswer(invocation -> {
+            ShareLog log = invocation.getArgument(0);
+            ReflectionTestUtils.setField(log, "id", 900L);
+            return log;
+        });
+        when(objectMapper.valueToTree(any())).thenReturn(JsonNodeFactory.instance.objectNode()
+                .put("userId", 1L)
+                .put("rewardStarPiece", 10));
+        when(characterOutboxEventRepository.saveAndFlush(any(CharacterOutboxEvent.class))).thenAnswer(invocation -> {
+            CharacterOutboxEvent outbox = invocation.getArgument(0);
+            ReflectionTestUtils.setField(outbox, "id", 950L);
+            return outbox;
+        });
+        when(shareRewardDispatcher.dispatchNow(950L))
+                .thenThrow(new CharacterException(CharacterErrorCode.SHARE_REWARD_FAILED));
+        when(characterOutboxEventRepository.findByIdempotencyKey(anyString())).thenReturn(Optional.of(pendingOutbox));
+
+        var result = shareService.createShareEvent(1L, 800L, "KAKAO", "LINK", "client-key");
+
+        assertEquals(900L, result.shareEventId());
+        assertEquals(10, result.rewardStarPiece());
+        assertEquals(0, result.walletStarPiece());
+        assertEquals(ShareRewardStatus.PENDING, result.rewardStatus());
+    }
+
+    @Test
+    @DisplayName("createShareEvent records share but returns NOT_ELIGIBLE after today's reward is paid")
+    void createShareEvent_afterDailyRewardPaid_returnsNotEligible() {
+        runTransactionTemplateCallbacks();
+        ShareCard card = createShareCard(800L, 1L, 10L);
+
+        when(shareCardRepository.findById(800L)).thenReturn(Optional.of(card));
+        when(shareLogRepository.findByIdempotencyKey(anyString())).thenReturn(Optional.empty());
+        when(shareLogRepository.existsByUserIdAndShareDateAndRewardPaidTrue(anyLong(), any(LocalDate.class)))
+                .thenReturn(true);
+        when(shareLogRepository.save(any(ShareLog.class))).thenAnswer(invocation -> {
+            ShareLog log = invocation.getArgument(0);
+            ReflectionTestUtils.setField(log, "id", 902L);
+            return log;
+        });
+
+        var result = shareService.createShareEvent(1L, 800L, "KAKAO", "LINK", "client-key");
+
+        assertEquals(902L, result.shareEventId());
+        assertEquals(0, result.rewardStarPiece());
+        assertEquals(0, result.walletStarPiece());
+        assertEquals(ShareRewardStatus.NOT_ELIGIBLE, result.rewardStatus());
+        verify(characterOutboxEventRepository, never()).saveAndFlush(any(CharacterOutboxEvent.class));
+        verify(shareRewardDispatcher, never()).dispatchNow(anyLong());
+    }
+
+    @Test
+    @DisplayName("getTodayShareEventStatus returns FAILED when share reward outbox exhausted retries")
+    void getTodayShareEventStatus_failedOutbox_returnsFailed() {
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Asia/Seoul"));
+        ShareLog rewardLog = ShareLog.builder()
+                .userId(1L)
+                .characterId(10L)
+                .shareCardId(800L)
+                .shareType("LINK")
+                .platform("KAKAO")
+                .sharedAt(Instant.now())
+                .shareDate(today)
+                .rewardStarPiece(10)
+                .rewardPaid(false)
+                .idempotencyKey("SHARE_REWARD:1:" + today)
+                .build();
+        CharacterOutboxEvent failedOutbox = createPendingOutbox(950L, 900L);
+        failedOutbox.recordFailure("wallet failed", LocalDateTime.now(), 1);
+
+        when(shareLogRepository.existsByUserIdAndShareDateAndRewardPaidTrue(1L, today)).thenReturn(false);
+        when(shareLogRepository.findByIdempotencyKey(anyString())).thenReturn(Optional.of(rewardLog));
+        when(characterOutboxEventRepository.findByIdempotencyKey(anyString())).thenReturn(Optional.of(failedOutbox));
+        when(shareLogRepository.findTopByUserIdAndShareDateOrderBySharedAtDesc(1L, today))
+                .thenReturn(Optional.of(rewardLog));
+
+        var result = shareService.getTodayShareEventStatus(1L);
+
+        assertEquals(false, result.rewardClaimed());
+        assertEquals(ShareRewardStatus.FAILED.name(), result.rewardStatus());
+        assertEquals(rewardLog.getSharedAt().toString(), result.lastSharedAt());
     }
 
     private void runTransactionTemplateCallbacks() {
@@ -232,5 +334,18 @@ class ShareServiceTest {
                 .build();
         ReflectionTestUtils.setField(card, "id", shareCardId);
         return card;
+    }
+
+    private CharacterOutboxEvent createPendingOutbox(Long outboxId, Long shareLogId) {
+        CharacterOutboxEvent outbox = CharacterOutboxEvent.pending(
+                ShareRewardDispatcher.AGGREGATE_TYPE_SHARE_LOG,
+                shareLogId,
+                ShareRewardDispatcher.EVENT_TYPE_SHARE_REWARD_REQUESTED,
+                JsonNodeFactory.instance.objectNode().put("userId", 1L).put("rewardStarPiece", 10),
+                "SHARE_REWARD:1:" + LocalDate.now(java.time.ZoneId.of("Asia/Seoul")),
+                LocalDateTime.now()
+        );
+        ReflectionTestUtils.setField(outbox, "id", outboxId);
+        return outbox;
     }
 }
