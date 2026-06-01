@@ -19,15 +19,6 @@ public class CharacterGatewayService {
 
     private final ItemGatewayService itemGatewayService;
 
-    public String getCharacter(String value) {
-        PingPongResponse response = characterStub.pingPong(
-                PingPongRequest.newBuilder()
-                        .setMessage(value)
-                        .build()
-        );
-        return response.getMessage();
-    }
-
     public CharacterTypesResponse getCharacterTypes() {
         GetCharacterTypesResponse response = characterStub.getCharacterTypes(
                 GetCharacterTypesRequest.newBuilder().build()
