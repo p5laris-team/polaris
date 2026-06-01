@@ -15,6 +15,7 @@ public record AiMissionTextResult(
         String completionCharacterResponse,
         String category,
         String difficulty,
-        boolean fallbackUsed
+        boolean fallbackUsed,
+        String requestId
 ) {
 }

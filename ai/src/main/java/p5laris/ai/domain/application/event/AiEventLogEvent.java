@@ -39,6 +39,7 @@ public record AiEventLogEvent(
             AiErrorType errorType
     ) {
         Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("requestId", command.requestId());
         metadata.put("characterId", command.characterId());
         metadata.put("missionTemplateId", command.missionTemplateId());
         metadata.put("promptTemplateId", promptTemplate != null ? promptTemplate.getId() : null);
