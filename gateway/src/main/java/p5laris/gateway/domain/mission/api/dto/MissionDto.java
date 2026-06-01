@@ -189,6 +189,7 @@ public class MissionDto {
             CompletionAnswer answer,
             MissionReward reward,
             WalletSnapshot wallet,
+            String rewardStatus,
             String characterMessage
     ) {
     }
