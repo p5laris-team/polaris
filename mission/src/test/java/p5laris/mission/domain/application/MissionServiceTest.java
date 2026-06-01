@@ -845,6 +845,7 @@ class MissionServiceTest {
                 .isEqualTo("오늘은 책상 위 컵을 치우고 물도 한 모금 마셨어");
         assertThat(response.getMission().getAnswer().getAnsweredAt()).isNotBlank();
         assertThat(response.getMission().getCompletionCharacterResponse()).isEqualTo("AI가 만든 완료 반응");
+        assertThat(response.getMission().hasSatisfactionFeedback()).isFalse();
     }
 
     @Test
@@ -1028,6 +1029,11 @@ class MissionServiceTest {
         assertThat(liked.getReaction().name()).isEqualTo("MISSION_FEEDBACK_REACTION_LIKE");
         assertThat(disliked.getReaction().name()).isEqualTo("MISSION_FEEDBACK_REACTION_DISLIKE");
         assertThat(feedback.getReaction()).isEqualTo(MissionFeedbackReaction.DISLIKE);
+        assertThat(missionService.getMissionDetail(USER_ID, created.getMission().getId())
+                .getMission()
+                .getSatisfactionFeedback()
+                .getReaction()
+                .name()).isEqualTo("MISSION_FEEDBACK_REACTION_DISLIKE");
         assertThat(memory.getContent()).contains("별로였어요");
         assertThat(memory.getImportance()).isEqualTo(75);
         assertThat(memory.getMetadataJson().get("reaction").asText()).isEqualTo("DISLIKE");

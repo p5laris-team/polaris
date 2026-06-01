@@ -6,6 +6,8 @@ import com.p5laris.proto.notification.v1.GetNotificationSettingRequest;
 import com.p5laris.proto.notification.v1.GetNotificationSettingResponse;
 import com.p5laris.proto.notification.v1.GetUnreadNotificationCountRequest;
 import com.p5laris.proto.notification.v1.GetUnreadNotificationCountResponse;
+import com.p5laris.proto.notification.v1.MarkAllNotificationsReadRequest;
+import com.p5laris.proto.notification.v1.MarkAllNotificationsReadResponse;
 import com.p5laris.proto.notification.v1.MarkNotificationReadRequest;
 import com.p5laris.proto.notification.v1.MarkNotificationReadResponse;
 import com.p5laris.proto.notification.v1.NotificationServiceGrpc;
@@ -16,6 +18,7 @@ import com.p5laris.proto.notification.v1.UpdateNotificationSettingResponse;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.server.service.GrpcService;
 import p5laris.notification.core.exception.ErrorCode;
 import p5laris.notification.domain.application.NotificationService;
@@ -24,7 +27,10 @@ import p5laris.notification.domain.exception.NotificationException;
 
 @GrpcService
 @RequiredArgsConstructor
+@Slf4j
 public class NotificationGrpcController extends NotificationServiceGrpc.NotificationServiceImplBase {
+
+    private static final String INTERNAL_ERROR_DESCRIPTION = "알림 서비스 처리 중 오류가 발생했습니다.";
 
     private final NotificationService notificationService;
     private final p5laris.notification.domain.application.FcmSenderService fcmSenderService;
@@ -46,9 +52,9 @@ public class NotificationGrpcController extends NotificationServiceGrpc.Notifica
             responseObserver.onNext(response);
             responseObserver.onCompleted();
         } catch (NotificationException e) {
-            responseObserver.onError(toStatus(e).withDescription(e.getMessage()).asRuntimeException());
+            responseObserver.onError(toStatus(e).withDescription(safeDescription(e)).asRuntimeException());
         } catch (Exception e) {
-            responseObserver.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+            responseObserver.onError(internalError("알림 목록 조회", e));
         }
     }
 
@@ -68,9 +74,28 @@ public class NotificationGrpcController extends NotificationServiceGrpc.Notifica
             responseObserver.onNext(response);
             responseObserver.onCompleted();
         } catch (NotificationException e) {
-            responseObserver.onError(toStatus(e).withDescription(e.getMessage()).asRuntimeException());
+            responseObserver.onError(toStatus(e).withDescription(safeDescription(e)).asRuntimeException());
         } catch (Exception e) {
-            responseObserver.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+            responseObserver.onError(internalError("알림 읽음 처리", e));
+        }
+    }
+
+    // 로그인한 사용자의 안 읽은 알림을 모두 읽음 처리한다.
+    @Override
+    public void markAllNotificationsRead(
+            MarkAllNotificationsReadRequest request,
+            StreamObserver<MarkAllNotificationsReadResponse> responseObserver
+    ) {
+        try {
+            MarkAllNotificationsReadResponse response =
+                    notificationService.markAllNotificationsRead(request.getUserId());
+
+            responseObserver.onNext(response);
+            responseObserver.onCompleted();
+        } catch (NotificationException e) {
+            responseObserver.onError(toStatus(e).withDescription(safeDescription(e)).asRuntimeException());
+        } catch (Exception e) {
+            responseObserver.onError(internalError("알림 모두 읽음 처리", e));
         }
     }
 
@@ -89,9 +114,9 @@ public class NotificationGrpcController extends NotificationServiceGrpc.Notifica
             responseObserver.onNext(response);
             responseObserver.onCompleted();
         } catch (NotificationException e) {
-            responseObserver.onError(toStatus(e).withDescription(e.getMessage()).asRuntimeException());
+            responseObserver.onError(toStatus(e).withDescription(safeDescription(e)).asRuntimeException());
         } catch (Exception e) {
-            responseObserver.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+            responseObserver.onError(internalError("FCM 토큰 등록", e));
         }
     }
 
@@ -107,9 +132,9 @@ public class NotificationGrpcController extends NotificationServiceGrpc.Notifica
             responseObserver.onNext(response);
             responseObserver.onCompleted();
         } catch (NotificationException e) {
-            responseObserver.onError(toStatus(e).withDescription(e.getMessage()).asRuntimeException());
+            responseObserver.onError(toStatus(e).withDescription(safeDescription(e)).asRuntimeException());
         } catch (Exception e) {
-            responseObserver.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+            responseObserver.onError(internalError("알림 설정 조회", e));
         }
     }
 
@@ -128,9 +153,9 @@ public class NotificationGrpcController extends NotificationServiceGrpc.Notifica
             responseObserver.onNext(response);
             responseObserver.onCompleted();
         } catch (NotificationException e) {
-            responseObserver.onError(toStatus(e).withDescription(e.getMessage()).asRuntimeException());
+            responseObserver.onError(toStatus(e).withDescription(safeDescription(e)).asRuntimeException());
         } catch (Exception e) {
-            responseObserver.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+            responseObserver.onError(internalError("알림 설정 갱신", e));
         }
     }
 
@@ -158,7 +183,7 @@ public class NotificationGrpcController extends NotificationServiceGrpc.Notifica
                     .build());
             responseObserver.onCompleted();
         } catch (Exception e) {
-            responseObserver.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+            responseObserver.onError(internalError("푸시 알림 요청", e));
         }
     }
 
@@ -173,10 +198,19 @@ public class NotificationGrpcController extends NotificationServiceGrpc.Notifica
             responseObserver.onNext(response);
             responseObserver.onCompleted();
         } catch (NotificationException e) {
-            responseObserver.onError(toStatus(e).withDescription(e.getMessage()).asRuntimeException());
+            responseObserver.onError(toStatus(e).withDescription(safeDescription(e)).asRuntimeException());
         } catch (Exception e) {
-            responseObserver.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+            responseObserver.onError(internalError("안 읽은 알림 개수 조회", e));
         }
+    }
+
+    private String safeDescription(NotificationException e) {
+        return e.getErrorCode().getCode();
+    }
+
+    private RuntimeException internalError(String operation, Exception e) {
+        log.error("알림 gRPC 처리 중 알 수 없는 예외가 발생했습니다. operation={}", operation, e);
+        return Status.INTERNAL.withDescription(INTERNAL_ERROR_DESCRIPTION).asRuntimeException();
     }
 
     private Status toStatus(NotificationException e) {

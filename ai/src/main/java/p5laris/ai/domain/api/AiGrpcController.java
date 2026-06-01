@@ -63,7 +63,7 @@ public class AiGrpcController extends AiServiceGrpc.AiServiceImplBase {
             responseObserver.onNext(toResponse(result));
             responseObserver.onCompleted();
         } catch (AiException e) {
-            responseObserver.onError(toStatus(e).withDescription(e.getMessage()).asRuntimeException());
+            responseObserver.onError(toStatus(e).withDescription(safeDescription(e)).asRuntimeException());
         } catch (Exception e) {
             log.error("AI gRPC 처리 중 알 수 없는 예외가 발생했습니다. operation={}", "generateMissionTexts", e);
             responseObserver.onError(Status.INTERNAL.withDescription(INTERNAL_ERROR_DESCRIPTION).asRuntimeException());
@@ -81,7 +81,7 @@ public class AiGrpcController extends AiServiceGrpc.AiServiceImplBase {
             responseObserver.onNext(toResponse(result));
             responseObserver.onCompleted();
         } catch (AiException e) {
-            responseObserver.onError(toStatus(e).withDescription(e.getMessage()).asRuntimeException());
+            responseObserver.onError(toStatus(e).withDescription(safeDescription(e)).asRuntimeException());
         } catch (Exception e) {
             log.error("AI gRPC 처리 중 알 수 없는 예외가 발생했습니다. operation={}", "generateTextEmbedding", e);
             responseObserver.onError(Status.INTERNAL.withDescription(INTERNAL_ERROR_DESCRIPTION).asRuntimeException());
@@ -181,5 +181,9 @@ public class AiGrpcController extends AiServiceGrpc.AiServiceImplBase {
             case AI_FALLBACK_INVALID -> Status.FAILED_PRECONDITION;
             case AI_GENERATION_FAILED, AI_EMBEDDING_FAILED -> Status.INTERNAL;
         };
+    }
+
+    private String safeDescription(AiException e) {
+        return e.getErrorCode().name();
     }
 }

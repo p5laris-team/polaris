@@ -356,7 +356,19 @@ public class MissionGatewayService {
                 toCompletionQuestionOrNull(mission),
                 toCompletionAnswerOrNull(mission),
                 emptyToNull(mission.getCompletionCharacterResponse()),
-                mission.getHasAnswer()
+                mission.getHasAnswer(),
+                toSatisfactionFeedbackOrNull(mission)
+        );
+    }
+
+    private MissionDto.MissionSatisfactionFeedback toSatisfactionFeedbackOrNull(MissionDetail mission) {
+        if (!mission.hasSatisfactionFeedback()) {
+            return null;
+        }
+
+        return new MissionDto.MissionSatisfactionFeedback(
+                toRestFeedbackReaction(mission.getSatisfactionFeedback().getReaction().name()),
+                emptyToNull(mission.getSatisfactionFeedback().getUpdatedAt())
         );
     }
 
@@ -510,7 +522,7 @@ public class MissionGatewayService {
     }
 
     private MissionGatewayErrorCode toInvalidArgumentErrorCode(String description) {
-        if (contains(description, "피드백")) {
+        if (contains(description, "MISSION_FEEDBACK_INVALID") || contains(description, "피드백")) {
             return MissionGatewayErrorCode.MISSION_FEEDBACK_INVALID;
         }
 
@@ -518,7 +530,7 @@ public class MissionGatewayService {
     }
 
     private MissionGatewayErrorCode toResourceExhaustedErrorCode(String description) {
-        if (contains(description, "거절")) {
+        if (contains(description, "MISSION_REJECT_LIMIT_EXCEEDED") || contains(description, "거절")) {
             return MissionGatewayErrorCode.MISSION_REJECT_LIMIT_EXCEEDED;
         }
 
@@ -526,7 +538,7 @@ public class MissionGatewayService {
     }
 
     private MissionGatewayErrorCode toNotFoundErrorCode(String description) {
-        if (contains(description, "템플릿")) {
+        if (contains(description, "MISSION_TEMPLATE_NOT_FOUND") || contains(description, "템플릿")) {
             return MissionGatewayErrorCode.MISSION_TEMPLATE_NOT_FOUND;
         }
 
@@ -534,7 +546,7 @@ public class MissionGatewayService {
     }
 
     private MissionGatewayErrorCode toFailedPreconditionErrorCode(String description) {
-        if (contains(description, "진행 중")) {
+        if (contains(description, "MISSION_ACTIVE_ALREADY_EXISTS") || contains(description, "진행 중")) {
             return MissionGatewayErrorCode.MISSION_ACTIVE_ALREADY_EXISTS;
         }
 
@@ -542,7 +554,7 @@ public class MissionGatewayService {
     }
 
     private MissionGatewayErrorCode toUnavailableErrorCode(String description) {
-        if (contains(description, "보상")) {
+        if (contains(description, "MISSION_REWARD_FAILED") || contains(description, "보상")) {
             return MissionGatewayErrorCode.MISSION_REWARD_FAILED;
         }
 

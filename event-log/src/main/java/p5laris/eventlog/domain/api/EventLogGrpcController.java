@@ -7,6 +7,7 @@ import com.p5laris.proto.eventlog.v1.RecordEventLogResponse;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.server.service.GrpcService;
 import p5laris.eventlog.domain.application.EventLogService;
 import p5laris.eventlog.domain.domain.dto.EventLogRequest;
@@ -19,7 +20,10 @@ import java.util.UUID;
 
 @GrpcService
 @RequiredArgsConstructor
+@Slf4j
 public class EventLogGrpcController extends EventLogServiceGrpc.EventLogServiceImplBase {
+
+    private static final String INTERNAL_ERROR_DESCRIPTION = "이벤트 로그 서비스 처리 중 오류가 발생했습니다.";
 
     private final EventLogService eventLogService;
 
@@ -38,9 +42,10 @@ public class EventLogGrpcController extends EventLogServiceGrpc.EventLogServiceI
             responseObserver.onNext(response);
             responseObserver.onCompleted();
         } catch (Exception e) {
+            log.error("이벤트 로그 gRPC 처리 중 알 수 없는 예외가 발생했습니다. operation={}", "recordEventLog", e);
             responseObserver.onError(
                     Status.INTERNAL
-                            .withDescription(e.getMessage())
+                            .withDescription(INTERNAL_ERROR_DESCRIPTION)
                             .asRuntimeException()
             );
         }

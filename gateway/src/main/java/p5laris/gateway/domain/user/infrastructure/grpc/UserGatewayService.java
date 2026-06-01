@@ -125,18 +125,13 @@ public class UserGatewayService {
 
     private UserGatewayException toGatewayException(StatusRuntimeException e) {
         Status.Code code = e.getStatus().getCode();
-        String description = e.getStatus().getDescription();
 
         if (code == Status.Code.NOT_FOUND) {
             return new UserGatewayException(UserGatewayErrorCode.USER_NOT_FOUND);
         }
-        if (code == Status.Code.INVALID_ARGUMENT && contains(description, "날씨 권역")) {
+        if (code == Status.Code.INVALID_ARGUMENT) {
             return new UserGatewayException(UserGatewayErrorCode.INVALID_WEATHER_REGION);
         }
         return new UserGatewayException(UserGatewayErrorCode.USER_SERVICE_UNAVAILABLE);
-    }
-
-    private boolean contains(String value, String keyword) {
-        return value != null && value.contains(keyword);
     }
 }

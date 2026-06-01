@@ -1,14 +1,19 @@
 package p5laris.item.domain.api;
 
 import com.p5laris.proto.item.v1.*;
+import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.server.service.GrpcService;
 import p5laris.item.domain.application.ItemService;
 
 @GrpcService
 @RequiredArgsConstructor
+@Slf4j
 public class ItemGrpcController extends ItemServiceGrpc.ItemServiceImplBase {
+
+    private static final String INTERNAL_ERROR_DESCRIPTION = "아이템 서비스 처리 중 오류가 발생했습니다.";
 
     private final ItemService itemService;
 
@@ -19,7 +24,7 @@ public class ItemGrpcController extends ItemServiceGrpc.ItemServiceImplBase {
             responseObserver.onNext(response);
             responseObserver.onCompleted();
         } catch (Exception e) {
-            responseObserver.onError(io.grpc.Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+            responseObserver.onError(internalError("아이템 목록 조회", e));
         }
     }
 
@@ -30,7 +35,7 @@ public class ItemGrpcController extends ItemServiceGrpc.ItemServiceImplBase {
             responseObserver.onNext(response);
             responseObserver.onCompleted();
         } catch (Exception e) {
-            responseObserver.onError(io.grpc.Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+            responseObserver.onError(internalError("보유 아이템 목록 조회", e));
         }
     }
 
@@ -43,7 +48,7 @@ public class ItemGrpcController extends ItemServiceGrpc.ItemServiceImplBase {
         } catch (io.grpc.StatusRuntimeException e) {
             responseObserver.onError(e);
         } catch (Exception e) {
-            responseObserver.onError(io.grpc.Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+            responseObserver.onError(internalError("아이템 구매", e));
         }
     }
 
@@ -55,9 +60,9 @@ public class ItemGrpcController extends ItemServiceGrpc.ItemServiceImplBase {
             responseObserver.onCompleted();
         } catch (p5laris.item.domain.exception.ItemException e) {
             responseObserver.onError(
-                    io.grpc.Status.INTERNAL.withDescription(e.getErrorCode().getCode()).asRuntimeException());
+                    Status.INTERNAL.withDescription(e.getErrorCode().getCode()).asRuntimeException());
         } catch (Exception e) {
-            responseObserver.onError(io.grpc.Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+            responseObserver.onError(internalError("아이템 사용", e));
         }
     }
 
@@ -69,9 +74,14 @@ public class ItemGrpcController extends ItemServiceGrpc.ItemServiceImplBase {
             responseObserver.onCompleted();
         } catch (p5laris.item.domain.exception.ItemException e) {
             responseObserver.onError(
-                    io.grpc.Status.INTERNAL.withDescription(e.getErrorCode().getCode()).asRuntimeException());
+                    Status.INTERNAL.withDescription(e.getErrorCode().getCode()).asRuntimeException());
         } catch (Exception e) {
-            responseObserver.onError(io.grpc.Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+            responseObserver.onError(internalError("스킨 에셋 조회", e));
         }
+    }
+
+    private RuntimeException internalError(String operation, Exception e) {
+        log.error("아이템 gRPC 처리 중 알 수 없는 예외가 발생했습니다. operation={}", operation, e);
+        return Status.INTERNAL.withDescription(INTERNAL_ERROR_DESCRIPTION).asRuntimeException();
     }
 }
