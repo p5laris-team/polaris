@@ -157,6 +157,9 @@ public class GeminiMissionTextGenerator implements ExternalMissionTextGenerator 
                 recentMissionContext.environmentContext.locationPolicy.available이 false이면 사용자 위치, 지역, 실외 환경, 이동 가능 여부를 추측하지 않는다.
                 recentMissionContext.environmentContext.weatherPolicy.available이 false이면 비, 눈, 바람, 기온, 미세먼지, 햇빛 같은 날씨 기반 미션을 만들지 않는다.
                 weather가 null이면 "비가 온다면", "날씨가 좋다면", "춥다면", "햇빛이 있다면" 같은 조건문도 쓰지 않는다.
+                recentMissionContext.environmentContext.weatherPolicy.available이 true이고 weather.summaryTraits가 있으면 그 특성을 가볍게 참고할 수 있다.
+                locationPolicy.source가 SERVICE_DEFAULT이면 위치는 날씨 조회 기준일 뿐이므로 지역명을 제목/설명에 직접 쓰지 않는다.
+                날씨 수치, 격자 좌표(nx, ny), provider 이름은 사용자에게 노출하지 않는다.
                 currentTimeSlot이 NIGHT 또는 LATE_NIGHT이면 햇빛, 햇살, 햇볕, 낮 산책, 야외 빛 충전 미션을 만들지 않는다.
                 currentTimeSlot이 LATE_NIGHT이면 연락, 메시지, 전화, 점프, 달리기, 강한 운동, 잠을 깨우는 청소/정리 미션을 만들지 않는다.
                 currentTimeSlot이 LATE_NIGHT이면 REST_RECOVERY, MIND_RECORD, BASIC_ROUTINE 중심으로 아주 조용하고 짧은 미션을 만든다.
@@ -230,6 +233,8 @@ public class GeminiMissionTextGenerator implements ExternalMissionTextGenerator 
                 - recentMissionContext.environmentContext.weatherPolicy.available이 false이면 날씨 기반 미션을 만들지 않는다.
                 - weather가 null이면 비, 눈, 바람, 기온, 미세먼지, 햇빛을 전제로 한 제목/설명/캐릭터 문구를 쓰지 않는다.
                 - 날씨 정보가 없을 때 "비가 온다면", "춥다면", "햇빛이 좋다면" 같은 조건문도 쓰지 않는다.
+                - weatherPolicy.available이 true이면 weather.summaryTraits를 참고하되 지역명, provider 이름, nx/ny, 기온 수치를 직접 쓰지 않는다.
+                - SERVICE_DEFAULT 위치는 날씨 조회 기준일 뿐이므로 "서울에서"처럼 지역명을 노출하지 않는다.
 
                 난이도 선택 지시:
                 - onboarding context의 missionIntensity를 목표 난이도로 우선 반영한다.
