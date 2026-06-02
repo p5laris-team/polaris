@@ -36,10 +36,16 @@ public class OutboxRelayScheduler {
     @GrpcClient("notification")
     private com.p5laris.proto.notification.v1.NotificationServiceGrpc.NotificationServiceBlockingStub notificationStub;
 
+    private static final int BATCH_SIZE = 100;
+    private static final int MAX_ATTEMPTS = 5;
+
     @Scheduled(fixedDelayString = "5000")
     @Transactional
     public void relayEvents() {
-        List<OutboxEvent> events = outboxEventRepository.findPendingOrFailedEvents(LocalDateTime.now());
+        List<OutboxEvent> events = outboxEventRepository.findPendingEvents(
+                LocalDateTime.now(),
+                org.springframework.data.domain.PageRequest.of(0, BATCH_SIZE)
+        );
         
         for (OutboxEvent pendingEvent : events) {
             try {
@@ -51,8 +57,8 @@ public class OutboxRelayScheduler {
                     continue;
                 }
 
-                // 최신 상태 재검증 (이미 성공했거나 타 서버가 처리 중인 경우 건너뜀)
-                if (!"PENDING".equals(outboxEvent.getStatus()) && !"FAILED".equals(outboxEvent.getStatus())) {
+                // 최신 상태 재검증 (이미 다른 서버가 발송했거나 발송 중인 경우 건너뜀)
+                if (!"PENDING".equals(outboxEvent.getStatus())) {
                     continue;
                 }
 
@@ -92,10 +98,18 @@ public class OutboxRelayScheduler {
                 long backoffMinutes = (long) Math.pow(2, attempt - 1);
                 LocalDateTime nextAttempt = LocalDateTime.now().plusMinutes(backoffMinutes);
                 
-                outboxEvent.fail(e.getMessage(), nextAttempt);
+                outboxEvent.fail(e.getMessage(), nextAttempt, MAX_ATTEMPTS);
                 outboxEventRepository.saveAndFlush(outboxEvent);
             }
         }
+    }
+
+    @Scheduled(cron = "0 0 2 * * *") // 매일 새벽 2시
+    @Transactional
+    public void cleanupSucceededEvents() {
+        LocalDateTime threshold = LocalDateTime.now().minusDays(1);
+        outboxEventRepository.deleteSucceededEvents(threshold);
+        log.info("Cleaned up succeeded outbox events older than 1 day");
     }
 
     private RecordEventLogRequest toRequest(UserEventLogEvent event, String idempotencyKey) throws Exception {

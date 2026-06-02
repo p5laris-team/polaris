@@ -36,10 +36,16 @@ public class ItemOutboxRelayScheduler {
     @GrpcClient("event-log")
     private EventLogServiceGrpc.EventLogServiceBlockingStub eventLogStub;
 
+    private static final int BATCH_SIZE = 100;
+    private static final int MAX_ATTEMPTS = 5;
+
     @Scheduled(fixedDelayString = "5000")
     @Transactional
     public void processOutboxEvents() {
-        List<OutboxEvent> pendingEvents = outboxEventRepository.findPendingOrFailedEvents(LocalDateTime.now());
+        List<OutboxEvent> pendingEvents = outboxEventRepository.findPendingEvents(
+                LocalDateTime.now(),
+                org.springframework.data.domain.PageRequest.of(0, BATCH_SIZE)
+        );
 
         if (pendingEvents.isEmpty()) {
             return;
@@ -55,8 +61,8 @@ public class ItemOutboxRelayScheduler {
                     continue;
                 }
 
-                // 최신 상태 재검증 (이미 성공했거나 타 서버가 처리 중인 경우 건너뜀)
-                if (!"PENDING".equals(outboxEvent.getStatus()) && !"FAILED".equals(outboxEvent.getStatus())) {
+                // 최신 상태 재검증 (이미 다른 서버가 발송했거나 발송 중인 경우 건너뜀)
+                if (!"PENDING".equals(outboxEvent.getStatus())) {
                     continue;
                 }
 
@@ -84,10 +90,18 @@ public class ItemOutboxRelayScheduler {
                 // 락이 잡힌 최신 엔티티의 attemptCount를 기준으로 갱신
                 OutboxEvent outboxEvent = outboxEventRepository.findByIdForUpdate(pendingEvent.getId()).orElse(pendingEvent);
                 LocalDateTime nextAttempt = LocalDateTime.now().plusMinutes((long) Math.pow(2, outboxEvent.getAttemptCount()));
-                outboxEvent.fail(e.getMessage(), nextAttempt);
+                outboxEvent.fail(e.getMessage(), nextAttempt, MAX_ATTEMPTS);
                 outboxEventRepository.saveAndFlush(outboxEvent);
             }
         }
+    }
+
+    @Scheduled(cron = "0 0 2 * * *") // 매일 새벽 2시
+    @Transactional
+    public void cleanupSucceededEvents() {
+        LocalDateTime threshold = LocalDateTime.now().minusDays(1);
+        outboxEventRepository.deleteSucceededEvents(threshold);
+        log.info("Cleaned up succeeded outbox events older than 1 day");
     }
 
     private RecordEventLogRequest toRequest(ItemEventLogEvent event, String idempotencyKey) throws JsonProcessingException {
