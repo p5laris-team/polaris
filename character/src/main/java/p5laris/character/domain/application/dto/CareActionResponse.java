@@ -3,15 +3,15 @@ package p5laris.character.domain.application.dto;
 import lombok.Builder;
 
 /**
- * Response DTO for PerformCareAction (API spec 4.7).
+ * 돌봄 활동 수행 응답 DTO다.
  */
 @Builder
 public record CareActionResponse(
         Long careLogId,
         Long characterId,
         String actionType,
-        Long consumedItemId,     // null if no item used
-        int consumedQuantity,    // 0 if no item used
+        Long consumedItemId,     // 사용한 아이템이 없으면 null
+        int consumedQuantity,    // 사용한 아이템이 없으면 0
         States beforeStates,
         States afterStates,
         CharacterGrowthResponse beforeGrowth,

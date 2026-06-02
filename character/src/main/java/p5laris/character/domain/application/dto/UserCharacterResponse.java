@@ -5,7 +5,7 @@ import lombok.Builder;
 import java.time.Instant;
 
 /**
- * User character response DTO for API spec 4.3.
+ * 유저 캐릭터 생성 응답 DTO다.
  */
 @Builder
 public record UserCharacterResponse(

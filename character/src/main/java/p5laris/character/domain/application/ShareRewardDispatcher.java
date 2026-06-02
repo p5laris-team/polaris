@@ -77,7 +77,7 @@ public class ShareRewardDispatcher {
                 requestRewardCompletedNotification(command.get());
                 succeededCount++;
             } catch (CharacterException e) {
-                log.warn("Share reward outbox dispatch failed. outboxId={}, shareLogId={}, errorCode={}",
+                log.warn("공유 보상 outbox 발행에 실패했습니다. outboxId={}, shareLogId={}, errorCode={}",
                         command.get().outboxId(), command.get().shareLogId(), e.getErrorCode().getCode());
             }
         }
@@ -92,7 +92,7 @@ public class ShareRewardDispatcher {
                     command.rewardStarPiece()
             );
         } catch (Exception e) {
-            log.warn("Share reward completion notification request failed. userId={}, shareLogId={}",
+            log.warn("공유 보상 완료 알림 요청에 실패했습니다. userId={}, shareLogId={}",
                     command.userId(), command.shareLogId(), e);
         }
     }

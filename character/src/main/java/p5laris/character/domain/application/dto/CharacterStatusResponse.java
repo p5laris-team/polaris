@@ -3,7 +3,7 @@ package p5laris.character.domain.application.dto;
 import lombok.Builder;
 
 /**
- * DTO for GetCharacterStatus API spec 4.6.
+ * 캐릭터 상태 상세 조회 응답 DTO다.
  */
 @Builder
 public record CharacterStatusResponse(
