@@ -74,6 +74,8 @@ character:
     retry-max-delay-seconds: ${CHARACTER_SHARE_REWARD_OUTBOX_RETRY_MAX_DELAY_SECONDS:1800}
   share-reward-wallet:
     deadline-ms: ${CHARACTER_SHARE_REWARD_WALLET_DEADLINE_MS}
+  item-grpc:
+    deadline-ms: ${CHARACTER_ITEM_GRPC_DEADLINE_MS}
 
 cloud:
   aws:

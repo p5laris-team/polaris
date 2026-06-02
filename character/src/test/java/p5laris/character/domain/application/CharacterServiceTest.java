@@ -6,6 +6,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -17,12 +18,18 @@ import p5laris.character.domain.domain.repository.CharacterAssetRepository;
 import p5laris.character.domain.domain.repository.CharacterCareLogRepository;
 import p5laris.character.domain.domain.repository.CharacterTypeRepository;
 import p5laris.character.domain.domain.repository.UserCharacterRepository;
+import p5laris.character.domain.exception.CharacterErrorCode;
+import p5laris.character.domain.exception.CharacterException;
+import p5laris.character.domain.infrastructure.config.CharacterItemGrpcProperties;
 
 import p5laris.character.domain.domain.entity.CharacterAsset;
 import p5laris.character.domain.domain.entity.CharacterType;
+import io.grpc.Status;
+import io.grpc.StatusRuntimeException;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -49,6 +56,9 @@ class CharacterServiceTest {
     @Mock
     private com.p5laris.proto.item.v1.ItemServiceGrpc.ItemServiceBlockingStub itemStub;
 
+    @Mock
+    private CharacterItemGrpcProperties itemGrpcProperties;
+
     @Spy
     private ObjectMapper objectMapper = new ObjectMapper();
 
@@ -60,6 +70,8 @@ class CharacterServiceTest {
     @BeforeEach
     void setUp() {
         org.springframework.test.util.ReflectionTestUtils.setField(characterService, "itemStub", itemStub);
+        lenient().when(itemGrpcProperties.getDeadlineMs()).thenReturn(1000L);
+        lenient().when(itemStub.withDeadlineAfter(1000L, TimeUnit.MILLISECONDS)).thenReturn(itemStub);
         lenient().when(s3StorageService.toPublicUrl(any())).thenAnswer(invocation -> invocation.getArgument(0));
         CharacterType characterType = CharacterType.builder()
                 .code("NOVA")
@@ -85,19 +97,19 @@ class CharacterServiceTest {
     @DisplayName("Idempotency key null or empty validation")
     void testPerformCareAction_IdempotencyKeyNullOrEmpty() {
         // null key
-        assertThrows(IllegalArgumentException.class, () ->
+        assertEquals(CharacterErrorCode.INVALID_IDEMPOTENCY_KEY, assertThrows(CharacterException.class, () ->
                 characterService.performCareAction(1L, 1L, "FEED", null, null)
-        );
+        ).getErrorCode());
 
         // empty key
-        assertThrows(IllegalArgumentException.class, () ->
+        assertEquals(CharacterErrorCode.INVALID_IDEMPOTENCY_KEY, assertThrows(CharacterException.class, () ->
                 characterService.performCareAction(1L, 1L, "FEED", null, "")
-        );
+        ).getErrorCode());
 
         // whitespace key
-        assertThrows(IllegalArgumentException.class, () ->
+        assertEquals(CharacterErrorCode.INVALID_IDEMPOTENCY_KEY, assertThrows(CharacterException.class, () ->
                 characterService.performCareAction(1L, 1L, "FEED", null, "   ")
-        );
+        ).getErrorCode());
     }
 
     @Test
@@ -139,7 +151,7 @@ class CharacterServiceTest {
         Long itemId = 10L;
         
         when(characterCareLogRepository.findByIdempotencyKey(key)).thenReturn(Optional.empty());
-        when(userCharacterRepository.findById(1L)).thenReturn(Optional.of(character));
+        when(userCharacterRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(character));
 
         CharacterCareLog savedCareLog = CharacterCareLog.builder()
                 .userId(1L)
@@ -189,6 +201,94 @@ class CharacterServiceTest {
         
         // Verify database saves the care log
         verify(characterCareLogRepository).save(any(CharacterCareLog.class));
+        verify(userCharacterRepository).findByIdForUpdate(1L);
+        verify(userCharacterRepository, never()).findById(1L);
+        verify(itemStub, atLeastOnce()).withDeadlineAfter(1000L, TimeUnit.MILLISECONDS);
+
+        InOrder inOrder = inOrder(itemStub, userCharacterRepository);
+        inOrder.verify(itemStub).getUserItems(any(com.p5laris.proto.item.v1.GetUserItemsRequest.class));
+        inOrder.verify(userCharacterRepository).findByIdForUpdate(1L);
+    }
+
+    @Test
+    @DisplayName("performCareAction - item 사용 실패 시 빠르게 실패하고 item error code를 캐릭터 예외로 매핑")
+    void performCareAction_itemUseFailed_fastFail() {
+        String key = "care-item-fail-key";
+        Long itemId = 10L;
+
+        when(characterCareLogRepository.findByIdempotencyKey(key)).thenReturn(Optional.empty());
+        when(userCharacterRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(character));
+
+        CharacterCareLog savedCareLog = CharacterCareLog.builder()
+                .userId(1L)
+                .characterId(1L)
+                .itemId(itemId)
+                .actionType(ActionType.FEED)
+                .beforeStateJson("{\"fullness\":50,\"energy\":50,\"affection\":50}")
+                .afterStateJson("{\"fullness\":80,\"energy\":50,\"affection\":50}")
+                .idempotencyKey(key)
+                .build();
+        org.springframework.test.util.ReflectionTestUtils.setField(savedCareLog, "id", 123L);
+        when(characterCareLogRepository.save(any(CharacterCareLog.class))).thenReturn(savedCareLog);
+
+        com.p5laris.proto.item.v1.UserItem userItem = com.p5laris.proto.item.v1.UserItem.newBuilder()
+                .setItemId(itemId)
+                .setName("별사탕밥")
+                .setItemType("CONSUMABLE")
+                .setEffectType("FOOD")
+                .setQuantity(1)
+                .build();
+        when(itemStub.getUserItems(any(com.p5laris.proto.item.v1.GetUserItemsRequest.class)))
+                .thenReturn(com.p5laris.proto.item.v1.GetUserItemsResponse.newBuilder()
+                        .addItems(userItem)
+                        .build());
+        when(itemStub.useItem(any(com.p5laris.proto.item.v1.UseItemRequest.class)))
+                .thenThrow(statusException("ITEM-006"));
+
+        CharacterException exception = assertThrows(
+                CharacterException.class,
+                () -> characterService.performCareAction(1L, 1L, "FEED", itemId, key)
+        );
+
+        assertEquals(CharacterErrorCode.ITEM_QUANTITY_NOT_ENOUGH, exception.getErrorCode());
+        verify(itemStub, atLeastOnce()).withDeadlineAfter(1000L, TimeUnit.MILLISECONDS);
+    }
+
+    @Test
+    @DisplayName("performCareAction - item timeout은 돌보기 전체 실패로 처리")
+    void performCareAction_itemTimeout_fastFail() {
+        String key = "care-item-timeout-key";
+        Long itemId = 10L;
+
+        when(characterCareLogRepository.findByIdempotencyKey(key)).thenReturn(Optional.empty());
+        when(userCharacterRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(character));
+        when(characterCareLogRepository.save(any(CharacterCareLog.class))).thenAnswer(invocation -> {
+            CharacterCareLog log = invocation.getArgument(0);
+            org.springframework.test.util.ReflectionTestUtils.setField(log, "id", 123L);
+            return log;
+        });
+
+        com.p5laris.proto.item.v1.UserItem userItem = com.p5laris.proto.item.v1.UserItem.newBuilder()
+                .setItemId(itemId)
+                .setName("별사탕밥")
+                .setItemType("CONSUMABLE")
+                .setEffectType("FOOD")
+                .setQuantity(1)
+                .build();
+        when(itemStub.getUserItems(any(com.p5laris.proto.item.v1.GetUserItemsRequest.class)))
+                .thenReturn(com.p5laris.proto.item.v1.GetUserItemsResponse.newBuilder()
+                        .addItems(userItem)
+                        .build());
+        when(itemStub.useItem(any(com.p5laris.proto.item.v1.UseItemRequest.class)))
+                .thenThrow(Status.DEADLINE_EXCEEDED.asRuntimeException());
+
+        CharacterException exception = assertThrows(
+                CharacterException.class,
+                () -> characterService.performCareAction(1L, 1L, "FEED", itemId, key)
+        );
+
+        assertEquals(CharacterErrorCode.ITEM_SERVICE_CALL_FAILED, exception.getErrorCode());
+        verify(itemStub, atLeastOnce()).withDeadlineAfter(1000L, TimeUnit.MILLISECONDS);
     }
 
     @Test
@@ -345,5 +445,9 @@ class CharacterServiceTest {
         assertEquals("http://cdn/skin-hungry.png", response.currentAssetUrl());
         assertEquals("http://cdn/skin-hungry.png", response.assetUrls().get("hungry"));
         assertEquals("http://cdn/skin-idle.png", response.assetUrls().get("idle"));
+    }
+
+    private StatusRuntimeException statusException(String description) {
+        return Status.INTERNAL.withDescription(description).asRuntimeException();
     }
 }
