@@ -29,6 +29,10 @@ flyway:
   baseline-on-migrate: false
   validate-on-migrate: true
 
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%thread] [traceId=%X{traceId}] %logger{36} - %msg%n"
+
 grpc:
   server:
     port: ${GRPC_SERVER_PORT}
