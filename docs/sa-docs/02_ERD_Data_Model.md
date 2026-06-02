@@ -294,6 +294,24 @@ index(character_id, created_at)
 partial unique(user_id, image_url) where image_url is not null
 ```
 
+운영 주의:
+
+- character V10은 `share_cards.image_url`의 full URL을 object key로 정규화한다.
+- character V12는 정규화된 `(user_id, image_url)` 기준 unique index를 생성한다.
+- V12 적용 전에는 아래 쿼리 결과가 0건인지 확인한다. 결과가 있으면 중복을 정리한 뒤 V12를 적용한다.
+
+```sql
+SELECT
+    user_id,
+    image_url,
+    COUNT(*) AS duplicate_count,
+    ARRAY_AGG(id ORDER BY id) AS share_card_ids
+FROM share_cards
+WHERE image_url IS NOT NULL
+GROUP BY user_id, image_url
+HAVING COUNT(*) > 1;
+```
+
 ---
 
 ## 1.5.2 `share_logs`
