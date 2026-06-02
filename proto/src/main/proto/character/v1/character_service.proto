@@ -177,6 +177,10 @@ message PerformCareActionResponse {
   CharacterStates before_states = 6;
   CharacterStates after_states = 7;
   string character_message = 8;
+  CharacterGrowth before_growth = 9;
+  CharacterGrowth after_growth = 10;
+  int32 exp_gained = 11;
+  bool level_up = 12;
 }
 
 // EquipSkin: equips a skin item on a character
