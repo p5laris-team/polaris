@@ -1048,6 +1048,22 @@ nullable 정책이 명확한가?
 삭제/soft delete 정책이 필요한가?
 ```
 
+unique index를 추가하는 migration은 기존 데이터 중복 여부를 먼저 점검한다. 특히 기존 값을 정규화한 직후 unique index를 거는 경우에는 "정규화 후 값" 기준으로 중복 0건을 확인하는 쿼리를 배포 체크리스트에 남긴다.
+
+예: character `share_cards`는 V10에서 `image_url` full URL을 object key로 정규화하고 V12에서 `(user_id, image_url)` partial unique index를 생성한다. V12 적용 전 아래 결과가 0건이어야 한다.
+
+```sql
+SELECT
+    user_id,
+    image_url,
+    COUNT(*) AS duplicate_count,
+    ARRAY_AGG(id ORDER BY id) AS share_card_ids
+FROM share_cards
+WHERE image_url IS NOT NULL
+GROUP BY user_id, image_url
+HAVING COUNT(*) > 1;
+```
+
 다음 테이블/기능은 사용자가 다시 요청하기 전까지 만들지 않는다.
 
 ```text
