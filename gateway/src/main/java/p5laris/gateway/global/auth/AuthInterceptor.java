@@ -2,8 +2,8 @@ package p5laris.gateway.global.auth;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -13,11 +13,21 @@ import p5laris.gateway.global.exception.CommonErrorCode;
 
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class AuthInterceptor implements HandlerInterceptor {
 
     private final JwtValidator jwtValidator;
     private final StringRedisTemplate redisTemplate;
+    private final boolean failClosed;
+
+    public AuthInterceptor(
+            JwtValidator jwtValidator,
+            StringRedisTemplate redisTemplate,
+            @Value("${gateway.auth.blacklist.fail-closed:false}") boolean failClosed
+    ) {
+        this.jwtValidator = jwtValidator;
+        this.redisTemplate = redisTemplate;
+        this.failClosed = failClosed;
+    }
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
@@ -30,7 +40,17 @@ public class AuthInterceptor implements HandlerInterceptor {
             throw new BusinessException(CommonErrorCode.INVALID_TOKEN);
         }
 
-        if (Boolean.TRUE.equals(redisTemplate.hasKey("blacklist:" + token))) {
+        boolean isBlacklisted = false;
+        try {
+            isBlacklisted = Boolean.TRUE.equals(redisTemplate.hasKey("blacklist:" + token));
+        } catch (Exception e) {
+            log.error("Failed to check blacklist in Redis for token. failClosed: {}", failClosed, e);
+            if (failClosed) {
+                throw new BusinessException(CommonErrorCode.INVALID_TOKEN);
+            }
+        }
+
+        if (isBlacklisted) {
             throw new BusinessException(CommonErrorCode.INVALID_TOKEN);
         }
 
