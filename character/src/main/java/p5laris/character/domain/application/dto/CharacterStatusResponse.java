@@ -8,7 +8,8 @@ import lombok.Builder;
 @Builder
 public record CharacterStatusResponse(
         Long characterId,
-        States states
+        States states,
+        CharacterGrowthResponse growth
 ) {
     @Builder
     public record States(

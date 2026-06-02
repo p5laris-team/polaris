@@ -17,6 +17,7 @@ public record MyCharacterResponse(
         Map<String, String> assetUrls,
         boolean active,
         States states,
+        CharacterGrowthResponse growth,
         EquippedSkin equippedSkin
 ) {
     @Builder

@@ -97,6 +97,7 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
                         .setEnergy(result.states().energy())
                         .setAffection(result.states().affection())
                         .build())
+                .setGrowth(toProtoGrowth(result.growth()))
                 .setCreatedAt(result.createdAt().toString())
                 .build();
 
@@ -125,6 +126,7 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
                         .build())
                 .setCurrentAssetUrl(result.currentAssetUrl() != null ? result.currentAssetUrl() : "")
                 .putAllAssetUrls(result.assetUrls() != null ? result.assetUrls() : java.util.Map.of())
+                .setGrowth(toProtoGrowth(result.growth()))
                 .build();
 
         responseObserver.onNext(response);
@@ -178,6 +180,7 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
                         .setLabel(result.states().affection().label())
                         .setGrade(result.states().affection().grade())
                         .build())
+                .setGrowth(toProtoGrowth(result.growth()))
                 .build();
 
         responseObserver.onNext(response);
@@ -330,6 +333,23 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
                 .setRecorded(result.recorded())
                 .build());
         responseObserver.onCompleted();
+    }
+
+    private CharacterGrowth toProtoGrowth(p5laris.character.domain.application.dto.CharacterGrowthResponse growth) {
+        if (growth == null) {
+            return CharacterGrowth.getDefaultInstance();
+        }
+        return CharacterGrowth.newBuilder()
+                .setLevel(growth.level())
+                .setExp(growth.exp())
+                .setCurrentLevelExp(growth.currentLevelExp())
+                .setNextLevelExp(growth.nextLevelExp())
+                .setExpToNextLevel(growth.expToNextLevel())
+                .setProgressPercent(growth.progressPercent())
+                .setGrowthStage(growth.growthStage())
+                .setGrowthStageLabel(growth.growthStageLabel())
+                .setMaxLevel(growth.maxLevel())
+                .build();
     }
     @Override
     public void getSharePresignedUrl(com.p5laris.proto.character.v1.GetSharePresignedUrlRequest request,

@@ -20,6 +20,7 @@ import p5laris.character.domain.domain.enums.ActionType;
 import p5laris.character.domain.domain.enums.CharacterMood;
 import p5laris.character.domain.domain.enums.StatGrade;
 import p5laris.character.domain.domain.enums.StatType;
+import p5laris.character.domain.domain.policy.CharacterGrowthPolicy;
 import p5laris.character.domain.domain.repository.CharacterAssetRepository;
 import p5laris.character.domain.domain.repository.CharacterCareLogRepository;
 import p5laris.character.domain.domain.repository.CharacterTypeRepository;
@@ -127,6 +128,7 @@ public class CharacterService {
                         .energy(newCharacter.getEnergy())
                         .affection(newCharacter.getAffection())
                         .build())
+                .growth(buildGrowth(newCharacter))
                 .createdAt(newCharacter.getCreatedAt())
                 .build();
     }
@@ -152,6 +154,7 @@ public class CharacterService {
                         .energy(userCharacter.getEnergy())
                         .affection(userCharacter.getAffection())
                         .build())
+                .growth(buildGrowth(userCharacter))
                 .currentAssetUrl(currentAssetUrl)
                 .assetUrls(assetUrls)
                 .build();
@@ -239,6 +242,22 @@ public class CharacterService {
                         .energy(buildStateDetail(userCharacter.getEnergy(), StatType.ENERGY))
                         .affection(buildStateDetail(userCharacter.getAffection(), StatType.AFFECTION))
                         .build())
+                .growth(buildGrowth(userCharacter))
+                .build();
+    }
+
+    private p5laris.character.domain.application.dto.CharacterGrowthResponse buildGrowth(UserCharacter userCharacter) {
+        var growth = CharacterGrowthPolicy.calculate(userCharacter.getExp());
+        return p5laris.character.domain.application.dto.CharacterGrowthResponse.builder()
+                .level(growth.level())
+                .exp(growth.exp())
+                .currentLevelExp(growth.currentLevelExp())
+                .nextLevelExp(growth.nextLevelExp())
+                .expToNextLevel(growth.expToNextLevel())
+                .progressPercent(growth.progressPercent())
+                .growthStage(growth.growthStage().name())
+                .growthStageLabel(growth.growthStageLabel())
+                .maxLevel(growth.maxLevel())
                 .build();
     }
 

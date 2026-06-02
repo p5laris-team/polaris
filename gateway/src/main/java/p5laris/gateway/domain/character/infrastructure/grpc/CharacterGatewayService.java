@@ -82,6 +82,7 @@ public class CharacterGatewayService {
                         .energy(response.getStates().getEnergy())
                         .affection(response.getStates().getAffection())
                         .build())
+                .growth(toGrowth(response.getGrowth()))
                 .createdAt(java.time.Instant.parse(response.getCreatedAt()))
                 .build();
     }
@@ -113,6 +114,7 @@ public class CharacterGatewayService {
                         .energy(response.getStates().getEnergy())
                         .affection(response.getStates().getAffection())
                         .build())
+                .growth(toGrowth(response.getGrowth()))
                 .equippedSkin(skin)
                 .build();
     }
@@ -149,6 +151,21 @@ public class CharacterGatewayService {
                         .energy(toStateDetail(response.getEnergy()))
                         .affection(toStateDetail(response.getAffection()))
                         .build())
+                .growth(toGrowth(response.getGrowth()))
+                .build();
+    }
+
+    private p5laris.gateway.domain.character.api.dto.CharacterGrowthResponse toGrowth(CharacterGrowth growth) {
+        return p5laris.gateway.domain.character.api.dto.CharacterGrowthResponse.builder()
+                .level(growth.getLevel())
+                .exp(growth.getExp())
+                .currentLevelExp(growth.getCurrentLevelExp())
+                .nextLevelExp(growth.getNextLevelExp())
+                .expToNextLevel(growth.getExpToNextLevel())
+                .progressPercent(growth.getProgressPercent())
+                .growthStage(growth.getGrowthStage())
+                .growthStageLabel(growth.getGrowthStageLabel())
+                .maxLevel(growth.getMaxLevel())
                 .build();
     }
 
