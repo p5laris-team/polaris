@@ -45,22 +45,47 @@ public class ItemOutboxRelayScheduler {
             return;
         }
 
-        for (OutboxEvent outboxEvent : pendingEvents) {
+        for (OutboxEvent pendingEvent : pendingEvents) {
             try {
+                // 비관적 락 획득 및 최신 상태 조회
+                OutboxEvent outboxEvent = outboxEventRepository.findByIdForUpdate(pendingEvent.getId())
+                        .orElse(null);
+
+                if (outboxEvent == null) {
+                    continue;
+                }
+
+                // 최신 상태 재검증 (이미 성공했거나 타 서버가 처리 중인 경우 건너뜀)
+                if (!"PENDING".equals(outboxEvent.getStatus()) && !"FAILED".equals(outboxEvent.getStatus())) {
+                    continue;
+                }
+
+                // 재시도 대기 시각이 아직 지나지 않은 경우 건너뜀 (타 서버가 처리 실패 후 대기 중인 경우)
+                if (outboxEvent.getNextAttemptAt() != null && outboxEvent.getNextAttemptAt().isAfter(LocalDateTime.now())) {
+                    continue;
+                }
+
+                // 상태를 PROCESSING으로 변경하여 락 효과
+                outboxEvent.processing();
+                outboxEventRepository.saveAndFlush(outboxEvent);
+
                 if ("ITEM_EVENT_LOG".equals(outboxEvent.getAggregateType())) {
                     ItemEventLogEvent event = objectMapper.readValue(outboxEvent.getPayload(), ItemEventLogEvent.class);
                     eventLogStub.recordEventLog(toRequest(event, outboxEvent.getIdempotencyKey()));
                 }
                 
                 outboxEvent.success();
-                outboxEventRepository.save(outboxEvent);
+                outboxEventRepository.saveAndFlush(outboxEvent);
                 log.debug("Outbox event succeeded. id={}", outboxEvent.getId());
                 
             } catch (Exception e) {
-                log.error("Outbox event failed. id={}, type={}", outboxEvent.getId(), outboxEvent.getAggregateType(), e);
+                log.error("Outbox event failed. id={}, type={}", pendingEvent.getId(), pendingEvent.getAggregateType(), e);
+                
+                // 락이 잡힌 최신 엔티티의 attemptCount를 기준으로 갱신
+                OutboxEvent outboxEvent = outboxEventRepository.findByIdForUpdate(pendingEvent.getId()).orElse(pendingEvent);
                 LocalDateTime nextAttempt = LocalDateTime.now().plusMinutes((long) Math.pow(2, outboxEvent.getAttemptCount()));
                 outboxEvent.fail(e.getMessage(), nextAttempt);
-                outboxEventRepository.save(outboxEvent);
+                outboxEventRepository.saveAndFlush(outboxEvent);
             }
         }
     }
