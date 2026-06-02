@@ -35,6 +35,11 @@ grpc:
       address: ${NOTIFICATION_GRPC_ADDRESS}
       negotiationType: plaintext
 
+internal:
+  grpc-auth:
+    enabled: ${INTERNAL_GRPC_AUTH_ENABLED:true}
+    token: ${INTERNAL_GRPC_AUTH_TOKEN:}
+
 management:
   metrics:
     distribution:
