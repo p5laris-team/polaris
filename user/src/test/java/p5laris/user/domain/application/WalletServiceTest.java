@@ -39,7 +39,7 @@ class WalletServiceTest {
         int amount = 100;
         Wallet wallet = Wallet.builder().id(10L).userId(userId).starPiece(500).build();
         
-        when(walletRepository.findByUserId(userId)).thenReturn(Optional.of(wallet));
+        when(walletRepository.findByUserIdForUpdate(userId)).thenReturn(Optional.of(wallet));
         when(transactionRepository.save(any(StarPieceTransaction.class))).thenAnswer(invocation -> {
             StarPieceTransaction tx = invocation.getArgument(0);
             return tx; // Mock saving by returning the object itself
@@ -54,7 +54,7 @@ class WalletServiceTest {
         assertThat(result.getBalanceAfter()).isEqualTo(600);
         assertThat(result.getIdempotencyKey()).isEqualTo("key-123");
 
-        verify(walletRepository, times(1)).findByUserId(userId);
+        verify(walletRepository, times(1)).findByUserIdForUpdate(userId);
         verify(transactionRepository, times(1)).save(any(StarPieceTransaction.class));
     }
 
@@ -93,7 +93,7 @@ class WalletServiceTest {
         int amount = 150;
         Wallet wallet = Wallet.builder().id(10L).userId(userId).starPiece(500).build();
 
-        when(walletRepository.findByUserId(userId)).thenReturn(Optional.of(wallet));
+        when(walletRepository.findByUserIdForUpdate(userId)).thenReturn(Optional.of(wallet));
         when(transactionRepository.save(any(StarPieceTransaction.class))).thenAnswer(invocation -> {
             StarPieceTransaction tx = invocation.getArgument(0);
             return tx;
@@ -107,7 +107,7 @@ class WalletServiceTest {
         assertThat(result.getAmount()).isEqualTo(-amount);
         assertThat(result.getBalanceAfter()).isEqualTo(350);
 
-        verify(walletRepository, times(1)).findByUserId(userId);
+        verify(walletRepository, times(1)).findByUserIdForUpdate(userId);
         verify(transactionRepository, times(1)).save(any(StarPieceTransaction.class));
     }
 
@@ -119,7 +119,7 @@ class WalletServiceTest {
         int amount = 1000;
         Wallet wallet = Wallet.builder().id(10L).userId(userId).starPiece(500).build();
 
-        when(walletRepository.findByUserId(userId)).thenReturn(Optional.of(wallet));
+        when(walletRepository.findByUserIdForUpdate(userId)).thenReturn(Optional.of(wallet));
 
         // when & then
         assertThatThrownBy(() -> walletService.spendStarPiece(userId, amount, "ITEM_PURCHASE", "ITEM", 200L, "spend-key"))
@@ -136,7 +136,7 @@ class WalletServiceTest {
     void spendStarPiece_walletNotFound_throwsException() {
         // given
         Long userId = 1L;
-        when(walletRepository.findByUserId(userId)).thenReturn(Optional.empty());
+        when(walletRepository.findByUserIdForUpdate(userId)).thenReturn(Optional.empty());
 
         // when & then
         assertThatThrownBy(() -> walletService.spendStarPiece(userId, 100, "ITEM_PURCHASE", "ITEM", 200L, "spend-key"))

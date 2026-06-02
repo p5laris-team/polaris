@@ -49,7 +49,7 @@ public class ItemOutboxRelayScheduler {
             try {
                 if ("ITEM_EVENT_LOG".equals(outboxEvent.getAggregateType())) {
                     ItemEventLogEvent event = objectMapper.readValue(outboxEvent.getPayload(), ItemEventLogEvent.class);
-                    eventLogStub.recordEventLog(toRequest(event));
+                    eventLogStub.recordEventLog(toRequest(event, outboxEvent.getIdempotencyKey()));
                 }
                 
                 outboxEvent.success();
@@ -65,9 +65,9 @@ public class ItemOutboxRelayScheduler {
         }
     }
 
-    private RecordEventLogRequest toRequest(ItemEventLogEvent event) throws JsonProcessingException {
+    private RecordEventLogRequest toRequest(ItemEventLogEvent event, String idempotencyKey) throws JsonProcessingException {
         RecordEventLogRequest.Builder builder = RecordEventLogRequest.newBuilder()
-                .setEventId(UUID.randomUUID().toString())
+                .setEventId(idempotencyKey)
                 .setEventType(event.eventType())
                 .setSourceService(sourceService)
                 .setOccurredAt(toTimestamp(event.occurredAt().toInstant()));
