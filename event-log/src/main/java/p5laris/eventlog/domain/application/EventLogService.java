@@ -25,6 +25,11 @@ public class EventLogService {
 
     @Transactional
     public EventLogResponse recordEventLog(EventLogRequest request) {
+        if (eventLogRepository.existsByEventId(request.eventId())) {
+            log.warn("Duplicate event log received for eventId: {}. Skipping save.", request.eventId());
+            return new EventLogResponse(true);
+        }
+
         EventLog eventLog = EventLog.builder()
                 .eventId(request.eventId())
                 .eventType(request.eventType())

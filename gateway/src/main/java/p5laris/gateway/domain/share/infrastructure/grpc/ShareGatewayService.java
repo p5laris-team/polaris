@@ -79,6 +79,7 @@ public class ShareGatewayService {
                 response.getShareEventId(),
                 response.getRewardPaid(),
                 response.getRewardStarPiece(),
+                response.getRewardStatus(),
                 new ShareDto.ShareEventResponse.WalletInfo(response.getWalletStarPiece())
         );
     }
@@ -124,7 +125,8 @@ public class ShareGatewayService {
         );
         return new ShareDto.TodayShareEventStatusResponse(
                 response.getRewardClaimed(),
-                response.getLastSharedAt()
+                response.getLastSharedAt(),
+                response.getRewardStatus()
         );
     }
 }

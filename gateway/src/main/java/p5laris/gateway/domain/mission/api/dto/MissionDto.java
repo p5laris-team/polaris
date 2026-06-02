@@ -96,7 +96,17 @@ public class MissionDto {
             CompletionQuestion question,
             CompletionAnswer answer,
             String completionCharacterResponse,
-            Boolean hasAnswer
+            Boolean hasAnswer,
+            MissionSatisfactionFeedback satisfactionFeedback
+    ) {
+    }
+
+    /**
+     * 완료 미션에 사용자가 이미 남긴 만족도 피드백 요약이다.
+     */
+    public record MissionSatisfactionFeedback(
+            String reaction,
+            String updatedAt
     ) {
     }
 
@@ -124,6 +134,17 @@ public class MissionDto {
             String status,
             String rejectedAt,
             String characterMessage
+    ) {
+    }
+
+    /**
+     * 미션 거절 이유는 선택 입력이다. 비어 있으면 mission 서버가 JUST_SKIP으로 저장한다.
+     */
+    public record RejectMissionRequest(
+            String reasonCode,
+
+            @Size(max = 100)
+            String reasonText
     ) {
     }
 
@@ -168,7 +189,37 @@ public class MissionDto {
             CompletionAnswer answer,
             MissionReward reward,
             WalletSnapshot wallet,
+            String rewardStatus,
             String characterMessage
+    ) {
+    }
+
+    /**
+     * 거절 이유 또는 완료 만족도 피드백 저장 요청이다.
+     */
+    public record UpsertMissionFeedbackRequest(
+            @NotBlank
+            String feedbackType,
+
+            String reaction,
+
+            String reasonCode,
+
+            @Size(max = 100)
+            String reasonText
+    ) {
+    }
+
+    /**
+     * 저장된 미션 피드백 요약이다.
+     */
+    public record MissionFeedbackResponse(
+            Long missionId,
+            String feedbackType,
+            String reaction,
+            String reasonCode,
+            String reasonText,
+            String updatedAt
     ) {
     }
 

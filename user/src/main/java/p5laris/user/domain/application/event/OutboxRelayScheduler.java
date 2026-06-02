@@ -49,7 +49,7 @@ public class OutboxRelayScheduler {
 
                 if ("USER_EVENT_LOG".equals(outboxEvent.getAggregateType())) {
                     UserEventLogEvent event = objectMapper.readValue(outboxEvent.getPayload(), UserEventLogEvent.class);
-                    eventLogStub.recordEventLog(toRequest(event));
+                    eventLogStub.recordEventLog(toRequest(event, outboxEvent.getIdempotencyKey()));
                 } else if ("NOTIFICATION_REQUEST".equals(outboxEvent.getAggregateType())) {
                     NotificationRequestEvent event = objectMapper.readValue(outboxEvent.getPayload(), NotificationRequestEvent.class);
                     com.p5laris.proto.notification.v1.SendPushNotificationRequest req = com.p5laris.proto.notification.v1.SendPushNotificationRequest.newBuilder()
@@ -76,9 +76,9 @@ public class OutboxRelayScheduler {
         }
     }
 
-    private RecordEventLogRequest toRequest(UserEventLogEvent event) throws Exception {
+    private RecordEventLogRequest toRequest(UserEventLogEvent event, String idempotencyKey) throws Exception {
         RecordEventLogRequest.Builder builder = RecordEventLogRequest.newBuilder()
-                .setEventId(UUID.randomUUID().toString())
+                .setEventId(idempotencyKey)
                 .setEventType(event.eventType())
                 .setSourceService(sourceService)
                 .setOccurredAt(toTimestamp(event.occurredAt().toInstant()));

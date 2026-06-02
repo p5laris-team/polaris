@@ -1,11 +1,13 @@
 package p5laris.mission.domain.domain.repository;
 
 import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import p5laris.mission.domain.domain.entity.UserMission;
+import p5laris.mission.domain.domain.enums.MissionDifficultyType;
 import p5laris.mission.domain.domain.enums.UserMissionStatus;
 
 import java.time.LocalDate;
@@ -42,6 +44,24 @@ public interface UserMissionRepository extends JpaRepository<UserMission, Long> 
     // 특정 날짜의 미션 히스토리 화면에 보여줄 stack 전체를 순서대로 조회한다.
     // 하루 최대 보상 횟수와 거절 횟수가 작아 별도 pagination 없이 stackOrder 오름차순으로 반환한다.
     List<UserMission> findByUserIdAndMissionDateOrderByStackOrderAsc(Long userId, LocalDate missionDate);
+
+    // 개인화 context에는 최근 미션 일부만 필요하므로 Pageable로 조회량을 제한한다.
+    List<UserMission> findByUserIdOrderByCreatedAtDesc(Long userId, Pageable pageable);
+
+    // CHALLENGE 미션은 하루에 하나만 제안하기 위해 날짜 단위로 사용 여부를 확인한다.
+    boolean existsByUserIdAndMissionDateAndDifficulty(
+            Long userId,
+            LocalDate missionDate,
+            MissionDifficultyType difficulty
+    );
+
+    // 방금 fallback으로 저장한 현재 row를 제외하고 오늘 이미 CHALLENGE가 있었는지 확인한다.
+    boolean existsByUserIdAndMissionDateAndDifficultyAndIdNot(
+            Long userId,
+            LocalDate missionDate,
+            MissionDifficultyType difficulty,
+            Long excludedMissionId
+    );
 
     // missionId만으로 찾지 않고 userId를 함께 확인해 다른 유저의 미션 처리를 막는다.
     Optional<UserMission> findByIdAndUserId(Long id, Long userId);

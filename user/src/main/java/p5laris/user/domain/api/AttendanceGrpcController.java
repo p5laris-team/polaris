@@ -3,6 +3,7 @@ package p5laris.user.domain.api;
 import com.p5laris.proto.user.v1.*;
 import io.grpc.stub.StreamObserver;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.server.service.GrpcService;
 import p5laris.user.domain.application.AttendanceService;
 import p5laris.user.domain.domain.entity.AttendanceRecord;
@@ -12,7 +13,10 @@ import java.util.stream.Collectors;
 
 @GrpcService
 @RequiredArgsConstructor
+@Slf4j
 public class AttendanceGrpcController extends AttendanceServiceGrpc.AttendanceServiceImplBase {
+
+    private static final String INTERNAL_ERROR_DESCRIPTION = "출석 서비스 처리 중 오류가 발생했습니다.";
 
     private final AttendanceService attendanceService;
 
@@ -28,7 +32,7 @@ public class AttendanceGrpcController extends AttendanceServiceGrpc.AttendanceSe
             responseObserver.onNext(response);
             responseObserver.onCompleted();
         } catch (Exception e) {
-            responseObserver.onError(io.grpc.Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+            responseObserver.onError(internalError("출석 처리", e));
         }
     }
 
@@ -49,8 +53,13 @@ public class AttendanceGrpcController extends AttendanceServiceGrpc.AttendanceSe
             responseObserver.onNext(response);
             responseObserver.onCompleted();
         } catch (Exception e) {
-            responseObserver.onError(io.grpc.Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+            responseObserver.onError(internalError("출석 기록 조회", e));
         }
+    }
+
+    private RuntimeException internalError(String operation, Exception e) {
+        log.error("출석 gRPC 처리 중 알 수 없는 예외가 발생했습니다. operation={}", operation, e);
+        return io.grpc.Status.INTERNAL.withDescription(INTERNAL_ERROR_DESCRIPTION).asRuntimeException();
     }
 
     private AttendanceRecordDto toDto(AttendanceRecord record) {

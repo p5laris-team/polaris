@@ -9,6 +9,7 @@ option java_outer_classname = "AiProto";
 service AiService {
   rpc PingPong(PingPongRequest) returns (PingPongResponse);
   rpc GenerateMissionTexts(GenerateMissionTextsRequest) returns (GenerateMissionTextsResponse);
+  rpc GenerateTextEmbedding(GenerateTextEmbeddingRequest) returns (GenerateTextEmbeddingResponse);
 }
 
 message PingPongRequest {
@@ -53,6 +54,25 @@ message GenerateMissionTextsResponse {
   bool fallback_used = 6;
   AiErrorType error_type = 7;
   string request_id = 8;
+  string title = 9;
+  string description = 10;
+  string category = 11;
+  string difficulty = 12;
+}
+
+message GenerateTextEmbeddingRequest {
+  int64 user_id = 1;
+  string text = 2;
+  string model = 3;
+  int32 dimension = 4;
+  string request_id = 5;
+}
+
+message GenerateTextEmbeddingResponse {
+  string model = 1;
+  int32 dimension = 2;
+  repeated float values = 3;
+  string request_id = 4;
 }
 
 enum AiGenerationStatus {

@@ -9,6 +9,7 @@ import com.p5laris.proto.user.v1.EarnStarPieceRequest;
 import com.p5laris.proto.user.v1.EarnStarPieceResponse;
 import io.grpc.stub.StreamObserver;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.server.service.GrpcService;
 import p5laris.user.domain.application.WalletService;
 import p5laris.user.domain.domain.entity.Wallet;
@@ -17,7 +18,10 @@ import p5laris.user.domain.exception.UserException;
 
 @GrpcService
 @RequiredArgsConstructor
+@Slf4j
 public class WalletGrpcController extends WalletServiceGrpc.WalletServiceImplBase {
+
+    private static final String INTERNAL_ERROR_DESCRIPTION = "지갑 서비스 처리 중 오류가 발생했습니다.";
 
     private final WalletService walletService;
 
@@ -36,7 +40,7 @@ public class WalletGrpcController extends WalletServiceGrpc.WalletServiceImplBas
             String errorCodeName = e.getErrorCode() instanceof Enum ? ((Enum<?>) e.getErrorCode()).name() : e.getErrorCode().getCode();
             responseObserver.onError(io.grpc.Status.INTERNAL.withDescription(errorCodeName).asRuntimeException());
         } catch (Exception e) {
-            responseObserver.onError(io.grpc.Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+            responseObserver.onError(internalError("내 지갑 조회", e));
         }
     }
 
@@ -65,7 +69,7 @@ public class WalletGrpcController extends WalletServiceGrpc.WalletServiceImplBas
             String errorCodeName = e.getErrorCode() instanceof Enum ? ((Enum<?>) e.getErrorCode()).name() : e.getErrorCode().getCode();
             responseObserver.onError(io.grpc.Status.INTERNAL.withDescription(errorCodeName).asRuntimeException());
         } catch (Exception e) {
-            responseObserver.onError(io.grpc.Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+            responseObserver.onError(internalError("별조각 사용", e));
         }
     }
 
@@ -94,7 +98,7 @@ public class WalletGrpcController extends WalletServiceGrpc.WalletServiceImplBas
             String errorCodeName = e.getErrorCode() instanceof Enum ? ((Enum<?>) e.getErrorCode()).name() : e.getErrorCode().getCode();
             responseObserver.onError(io.grpc.Status.INTERNAL.withDescription(errorCodeName).asRuntimeException());
         } catch (Exception e) {
-            responseObserver.onError(io.grpc.Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+            responseObserver.onError(internalError("별조각 적립", e));
         }
     }
 
@@ -108,7 +112,7 @@ public class WalletGrpcController extends WalletServiceGrpc.WalletServiceImplBas
             String errorCodeName = e.getErrorCode() instanceof Enum ? ((Enum<?>) e.getErrorCode()).name() : e.getErrorCode().getCode();
             responseObserver.onError(io.grpc.Status.INTERNAL.withDescription(errorCodeName).asRuntimeException());
         } catch (Exception e) {
-            responseObserver.onError(io.grpc.Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+            responseObserver.onError(internalError("별조각 거래 내역 조회", e));
         }
     }
 
@@ -129,7 +133,12 @@ public class WalletGrpcController extends WalletServiceGrpc.WalletServiceImplBas
             responseObserver.onNext(builder.build());
             responseObserver.onCompleted();
         } catch (Exception e) {
-            responseObserver.onError(io.grpc.Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+            responseObserver.onError(internalError("별조각 거래 멱등키 확인", e));
         }
+    }
+
+    private RuntimeException internalError(String operation, Exception e) {
+        log.error("지갑 gRPC 처리 중 알 수 없는 예외가 발생했습니다. operation={}", operation, e);
+        return io.grpc.Status.INTERNAL.withDescription(INTERNAL_ERROR_DESCRIPTION).asRuntimeException();
     }
 }

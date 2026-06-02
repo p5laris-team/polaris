@@ -37,7 +37,7 @@ public class WalletService {
             }
         }
 
-        Wallet wallet = walletRepository.findByUserId(userId)
+        Wallet wallet = walletRepository.findByUserIdForUpdate(userId)
                 .orElseThrow(() -> new UserException(UserErrorCode.WALLET_NOT_FOUND));
 
         // 보상 지급
@@ -60,6 +60,7 @@ public class WalletService {
         return transactionRepository.save(tx);
     }
 
+    // 별조각 차감
     @Transactional
     public StarPieceTransaction spendStarPiece(Long userId, int amount, String reason, String refType, Long refId, String idempotencyKey) {
         if (amount < 0) throw new IllegalArgumentException("Amount must be positive");
@@ -73,7 +74,7 @@ public class WalletService {
             }
         }
 
-        Wallet wallet = walletRepository.findByUserId(userId)
+        Wallet wallet = walletRepository.findByUserIdForUpdate(userId)
                 .orElseThrow(() -> new UserException(UserErrorCode.WALLET_NOT_FOUND));
 
         if (wallet.getStarPiece() < amount) {

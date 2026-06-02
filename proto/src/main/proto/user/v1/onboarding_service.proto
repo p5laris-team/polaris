@@ -20,6 +20,8 @@ message QuestionDto {
     string key = 1;
     string content = 2;
     repeated AnswerOptionDto options = 3;
+    bool multiple_selection = 4;
+    int32 max_selection_count = 5;
 }
 
 message AnswerOptionDto {
@@ -54,4 +56,9 @@ message OnboardingProfileDto {
     string mission_intensity = 7;
     string answers_json = 8;
     bool completed = 9;
+    int32 onboarding_version = 10;
+    repeated string routine_goals = 11;
+    repeated string preferred_time_slots = 12;
+    repeated string mission_place_contexts = 13;
+    repeated string avoided_mission_tags = 14;
 }

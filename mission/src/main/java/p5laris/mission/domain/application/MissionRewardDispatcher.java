@@ -14,6 +14,7 @@ import p5laris.mission.domain.domain.repository.UserMissionRepository;
 import p5laris.mission.domain.exception.MissionErrorCode;
 import p5laris.mission.domain.exception.MissionException;
 import p5laris.mission.domain.infrastructure.config.MissionRewardOutboxProperties;
+import p5laris.mission.domain.infrastructure.grpc.NotificationPushClient;
 import p5laris.mission.domain.infrastructure.grpc.WalletRewardClient;
 import p5laris.mission.domain.infrastructure.grpc.WalletRewardResult;
 
@@ -36,6 +37,7 @@ public class MissionRewardDispatcher {
     private final MissionOutboxEventRepository missionOutboxEventRepository;
     private final UserMissionRepository userMissionRepository;
     private final WalletRewardClient walletRewardClient;
+    private final NotificationPushClient notificationPushClient;
     private final MissionRewardBackoffPolicy missionRewardBackoffPolicy;
     private final MissionRewardOutboxProperties missionRewardOutboxProperties;
     private final TransactionTemplate transactionTemplate;
@@ -46,7 +48,7 @@ public class MissionRewardDispatcher {
         RewardDispatchCommand command = claim(outboxId, true)
                 .orElseThrow(() -> new MissionException(MissionErrorCode.MISSION_REWARD_FAILED));
 
-        return dispatchClaimed(command);
+        return dispatchClaimed(command, false);
     }
 
     public int dispatchDue(int batchSize) {
@@ -67,7 +69,7 @@ public class MissionRewardDispatcher {
             }
 
             try {
-                dispatchClaimed(command.get());
+                dispatchClaimed(command.get(), true);
                 succeededCount++;
             } catch (MissionException e) {
                 log.warn("미션 보상 outbox 발송 실패. outboxId={}, missionId={}, errorCode={}",
@@ -149,7 +151,7 @@ public class MissionRewardDispatcher {
      * gRPC 호출은 mission DB 트랜잭션 밖에서 수행한다.
      * wallet 호출 성공/실패 결과만 다시 짧은 트랜잭션으로 반영해 DB lock 보유 시간을 줄인다.
      */
-    private WalletRewardResult dispatchClaimed(RewardDispatchCommand command) {
+    private WalletRewardResult dispatchClaimed(RewardDispatchCommand command, boolean notifyRewardRecovered) {
         try {
             WalletRewardResult result = walletRewardClient.earnMissionReward(
                     command.userId(),
@@ -158,6 +160,9 @@ public class MissionRewardDispatcher {
                     command.idempotencyKey()
             );
             markSucceeded(command);
+            if (notifyRewardRecovered) {
+                notifyRewardRecovered(command);
+            }
             return result;
         } catch (MissionException e) {
             markFailed(command, e.getMessage());
@@ -183,6 +188,19 @@ public class MissionRewardDispatcher {
             }
             outbox.markSucceeded(LocalDateTime.now(clock));
         });
+    }
+
+    private void notifyRewardRecovered(RewardDispatchCommand command) {
+        try {
+            notificationPushClient.sendMissionRewardRecoveredNotification(
+                    command.userId(),
+                    command.missionId(),
+                    command.rewardStarPiece()
+            );
+        } catch (Exception e) {
+            log.warn("미션 보상 재처리 완료 알림 전송 실패. userId={}, missionId={}, outboxId={}",
+                    command.userId(), command.missionId(), command.outboxId(), e);
+        }
     }
 
     /*

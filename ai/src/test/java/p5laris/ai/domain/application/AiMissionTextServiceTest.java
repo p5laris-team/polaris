@@ -26,7 +26,18 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 // 외부 Gemini 응답은 네트워크와 rate limit에 영향을 받으므로, 서비스 통합 테스트는 rule-based 경로로 고정한다.
 @SpringBootTest(properties = {
         "grpc.server.port=0",
-        "ai.provider.enabled=false"
+        "ai.provider.enabled=false",
+        "spring.ai.model.embedding.text=none",
+        "ai.embedding.enabled=false",
+        "ai.embedding.model=gemini-embedding-001",
+        "ai.embedding.dimension=768",
+        "ai.circuit-breaker.enabled=false",
+        "ai.circuit-breaker.sliding-window-size=10",
+        "ai.circuit-breaker.minimum-number-of-calls=5",
+        "ai.circuit-breaker.failure-rate-threshold=50",
+        "ai.circuit-breaker.slow-call-duration-ms=3000",
+        "ai.circuit-breaker.slow-call-rate-threshold=50",
+        "ai.circuit-breaker.wait-duration-open-ms=30000"
 })
 class AiMissionTextServiceTest {
 
@@ -57,15 +68,19 @@ class AiMissionTextServiceTest {
         assertThat(result.status()).isEqualTo(AiGenerationStatus.SUCCESS);
         assertThat(result.fallbackUsed()).isFalse();
         assertThat(result.errorType()).isNull();
+        assertThat(result.title()).isEqualTo(command.baseTitle());
+        assertThat(result.description()).isEqualTo(command.baseDescription());
         assertThat(result.characterMessage()).contains("천천히");
         assertThat(result.completionQuestion()).isNotBlank();
         assertThat(result.completionCharacterResponse()).isNotBlank();
+        assertThat(result.category()).isEqualTo(command.category());
+        assertThat(result.difficulty()).isEqualTo(command.difficulty());
         assertThat(result.aiGenerationId()).isPositive();
         assertThat(aiMissionGenerationRepository.count()).isEqualTo(1);
         assertThat(aiUsageLogRepository.count()).isEqualTo(1);
         assertThat(aiUsageLogRepository.findByRequestId(command.requestId()).orElseThrow().getStatus())
                 .isEqualTo(AiUsageStatus.SUCCESS);
-        assertThat(promptTemplateRepository.findFirstByCategoryAndActiveTrueOrderByVersionDescIdDesc(PromptCategory.CHARACTER_TONE))
+        assertThat(promptTemplateRepository.findFirstByCategoryAndActiveTrueOrderByVersionDescIdDesc(PromptCategory.MISSION_GENERATION))
                 .isPresent();
     }
 
@@ -78,9 +93,13 @@ class AiMissionTextServiceTest {
         assertThat(result.status()).isEqualTo(AiGenerationStatus.FALLBACK);
         assertThat(result.fallbackUsed()).isTrue();
         assertThat(result.errorType()).isEqualTo(AiErrorType.INVALID_OUTPUT);
+        assertThat(result.title()).isEqualTo(command.baseTitle());
+        assertThat(result.description()).isEqualTo(command.baseDescription());
         assertThat(result.characterMessage()).isEqualTo(command.fallbackCharacterMessage());
         assertThat(result.completionQuestion()).isEqualTo(command.fallbackQuestion());
         assertThat(result.completionCharacterResponse()).isEqualTo(command.fallbackCompletionResponse());
+        assertThat(result.category()).isEqualTo(command.category());
+        assertThat(result.difficulty()).isEqualTo(command.difficulty());
         assertThat(aiMissionGenerationRepository.count()).isEqualTo(1);
         var savedGeneration = aiMissionGenerationRepository.findByRequestId(command.requestId()).orElseThrow();
         var usageLog = aiUsageLogRepository.findByRequestId(command.requestId()).orElseThrow();
@@ -151,9 +170,13 @@ class AiMissionTextServiceTest {
         MissionTextGenerationResult second = aiMissionTextService.generateMissionTexts(command);
 
         assertThat(second.aiGenerationId()).isEqualTo(first.aiGenerationId());
+        assertThat(second.title()).isEqualTo(first.title());
+        assertThat(second.description()).isEqualTo(first.description());
         assertThat(second.characterMessage()).isEqualTo(first.characterMessage());
         assertThat(second.completionQuestion()).isEqualTo(first.completionQuestion());
         assertThat(second.completionCharacterResponse()).isEqualTo(first.completionCharacterResponse());
+        assertThat(second.category()).isEqualTo(first.category());
+        assertThat(second.difficulty()).isEqualTo(first.difficulty());
         assertThat(aiMissionGenerationRepository.count()).isEqualTo(1);
         assertThat(aiUsageLogRepository.count()).isEqualTo(1);
     }
@@ -204,6 +227,7 @@ class AiMissionTextServiceTest {
         assertThat(text)
                 .startsWith("무")
                 .contains("(해석:")
+                .contains("무무가")
                 .endsWith(")");
     }
 

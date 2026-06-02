@@ -42,6 +42,7 @@ class AiEventLogEventTest {
 
         Map<String, Object> metadata = event.metadata();
         assertThat(metadata)
+                .containsEntry("requestId", "request-1")
                 .containsEntry("characterId", 2001L)
                 .containsEntry("missionTemplateId", 3001L)
                 .containsEntry("promptTemplateId", 4L)

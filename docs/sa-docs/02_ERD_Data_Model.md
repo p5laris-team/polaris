@@ -1,6 +1,6 @@
 # 02_ERD_Data_Model
 
-> 기준일: 2026-05-26
+> 기준일: 2026-06-01
 > 이 문서는 현재 backend migration 기준으로 정리한다. API 응답에서 URL로 조립되는 값이 있더라도 DB에는 식별자, asset key, object key를 우선 저장한다.
 
 ---
@@ -20,6 +20,7 @@
 | refresh_token | varchar(512) nullable | OAuth refresh token |
 | role | varchar | USER / ADMIN |
 | status | varchar | ACTIVE / WITHDRAWN / BLOCKED |
+| weather_region_code | varchar(50) nullable | 사용자가 선택한 날씨 권역 코드 |
 | created_at | timestamp | 생성일 |
 | updated_at | timestamp | 수정일 |
 
@@ -58,6 +59,11 @@ MVP에서는 질문 마스터 테이블을 만들지 않고, 정해진 설문 �
 | routine_goal | varchar nullable | WAKE_UP / CLEAN_ROOM / GO_OUT / SELF_CARE / STUDY / LIGHT_ACTIVITY |
 | activity_preference | varchar nullable | INDOOR / OUTDOOR / BOTH |
 | mission_intensity | varchar nullable | VERY_LIGHT / LIGHT / NORMAL |
+| onboarding_version | int | 온보딩 응답 구조 버전 |
+| routine_goals_json | jsonb nullable | 사용자가 고른 루틴 목표 목록 |
+| preferred_time_slots_json | jsonb nullable | 선호 미션 시간대 목록 |
+| mission_place_contexts_json | jsonb nullable | 미션 수행 가능 장소/상황 목록 |
+| avoided_mission_tags_json | jsonb nullable | 피하고 싶은 미션 태그 목록 |
 | answers_json | jsonb nullable | 전체 설문 응답 snapshot |
 | completed | boolean | 온보딩 완료 여부 |
 | completed_at | timestamp nullable | 온보딩 완료 시각 |
@@ -67,35 +73,43 @@ MVP에서는 질문 마스터 테이블을 만들지 않고, 정해진 설문 �
 ### 설문 예시
 
 ```
-Q1. 지금 생활 환경은 어떤가요?
-- 혼자 살아요
-- 가족과 살아요
-- 룸메이트와 살아요
-- 기타
+Q1. 지금 만들고 싶은 루틴은 무엇인가요? (최대 3개)
+- HYDRATION_MEAL
+- SPACE_RESET
+- LIGHT_MOVEMENT
+- EXERCISE_HABIT
+- REST_RECOVERY
+- MOOD_RECORD
+- FOCUS_START
+- SOCIAL_LIGHT
+- OUTDOOR_SUNLIGHT
 
-Q2. 보통 몇 시쯤 일어나나요?
-- 6~8시
-- 8~10시
-- 10시 이후
-- 일정하지 않아요
+Q2. 미션을 받기 편한 시간대는 언제인가요? (최대 5개)
+- MORNING
+- AFTERNOON
+- EVENING
+- NIGHT
+- ANYTIME
 
-Q3. 지금 만들고 싶은 루틴은 무엇인가요?
-- 일어나기
-- 방 정리
-- 짧은 외출
-- 자기 돌봄
-- 공부/집중
-- 가벼운 활동
+Q3. 미션을 하기 편한 장소나 상황은 어디인가요? (최대 3개)
+- HOME
+- WORK_SCHOOL
+- COMMUTE
+- OUTSIDE
+- BED_REST
 
-Q4. 미션은 어느 정도가 좋아요?
-- 정말 가벼운 것
-- 5분 안에 할 수 있는 것
-- 조금 움직이는 것
+Q4. 미션 강도는 어느 정도가 좋아요? (1개)
+- VERY_LIGHT
+- LIGHT
+- NORMAL
 
-Q5. 실내/실외 중 무엇이 편한가요?
-- 실내
-- 실외
-- 둘 다 괜찮아요
+Q5. 피하고 싶은 미션이 있나요? (최대 5개)
+- OUTDOOR
+- SOCIAL_CONTACT
+- HEAVY_MOVEMENT
+- LONG_WRITING
+- NOISY_ACTION
+- NONE
 ```
 
 ### 제약 / 인덱스
@@ -280,6 +294,24 @@ index(character_id, created_at)
 partial unique(user_id, image_url) where image_url is not null
 ```
 
+운영 주의:
+
+- character V10은 `share_cards.image_url`의 full URL을 object key로 정규화한다.
+- character V12는 정규화된 `(user_id, image_url)` 기준 unique index를 생성한다.
+- V12 적용 전에는 아래 쿼리 결과가 0건인지 확인한다. 결과가 있으면 중복을 정리한 뒤 V12를 적용한다.
+
+```sql
+SELECT
+    user_id,
+    image_url,
+    COUNT(*) AS duplicate_count,
+    ARRAY_AGG(id ORDER BY id) AS share_card_ids
+FROM share_cards
+WHERE image_url IS NOT NULL
+GROUP BY user_id, image_url
+HAVING COUNT(*) > 1;
+```
+
 ---
 
 ## 1.5.2 `share_logs`
@@ -451,9 +483,9 @@ MOCK_PURCHASE, PAYMENT_CHARGE, CASH_PURCHASE 같은 reason은 MVP enum에 넣지
 
 ## 1.8 `mission_templates`
 
-AI fallback과 미션 생성을 위한 seed 미션 템플릿을 저장한다.
+AI 미션 생성의 안전한 fallback pool과 기본 미션 후보를 저장한다.
 
-AI가 완전 자유 생성하는 것이 아니라 템플릿 기반으로 미션을 선정하고, 캐릭터 말투로 문구를 변환하는 구조다.
+AI가 사용할 수 없는 응답을 반환하거나 외부 provider가 실패하면, 활성 seed 미션 템플릿과 fallback 문구를 기준으로 사용자에게 미션을 제안한다.
 
 | 컬럼 | 타입 | 설명 |
 | --- | --- | --- |
@@ -461,8 +493,8 @@ AI가 완전 자유 생성하는 것이 아니라 템플릿 기반으로 미션�
 | base_title | varchar | 기본 미션 제목 |
 | base_description | text | 기본 설명 |
 | category | varchar | BASIC_ROUTINE / SPACE_RESET / BODY_CARE / OUTDOOR_LIGHT / MIND_RECORD / REST_RECOVERY / SOCIAL_LIGHT |
-| difficulty | varchar | EASY / NORMAL |
-| reward_star_piece | int | 기본 별조각 보상 |
+| difficulty | varchar | EASY / NORMAL / CHALLENGE |
+| reward_star_piece | int | 기본 별조각 보상. EASY 10, NORMAL 15, CHALLENGE 30 기준 |
 | active | boolean | 활성 여부 |
 | fallback_character_message | text | AI 실패 시 사용할 기본 캐릭터 제안 문구 |
 | fallback_question | text | AI 실패 시 사용할 기본 완료 질문 |
@@ -517,7 +549,7 @@ index(category, active)
 
 ## 1.10 `ai_mission_generations`
 
-AI가 미션을 생성/선정한 결과를 저장한다.
+AI가 미션 후보와 캐릭터 말투 문구를 생성한 결과를 저장한다.
 
 | 컬럼 | 타입 | 설명 |
 | --- | --- | --- |
@@ -529,7 +561,7 @@ AI가 미션을 생성/선정한 결과를 저장한다.
 | request_hash | varchar | request_id를 제외한 요청 본문 SHA-256 |
 | request_context_json | jsonb | 온보딩, 최근 미션, 거절, 날씨, 캐릭터 상태 등 입력 요약 |
 | response_json | jsonb | AI 구조화 응답 |
-| selected_template_id | bigint nullable | 선택된 seed 미션 템플릿 |
+| selected_template_id | bigint nullable | fallback 또는 기준 후보로 사용한 seed 미션 템플릿 |
 | status | varchar | SUCCESS / FALLBACK / FAILED |
 | fallback_used | boolean | fallback 사용 여부 |
 | model | varchar | 사용 모델 |
@@ -537,8 +569,8 @@ AI가 미션을 생성/선정한 결과를 저장한다.
 | created_at | timestamp | 생성일 |
 
 
-prompt_template_id는 현재 prompt_templates 테이블의 활성 CHARACTER_TONE 템플릿을 참조한다.
-외부 provider가 붙기 전에는 local generator 결과도 같은 테이블에 저장한다.
+prompt_template_id는 현재 prompt_templates 테이블의 활성 미션 생성 프롬프트를 참조한다.
+외부 provider 호출 결과, fallback 결과, rate limit으로 인해 외부 호출을 생략한 결과를 같은 테이블에 저장한다.
 
 ### 제약 / 인덱스
 
@@ -616,11 +648,13 @@ index(user_id, mission_date, status)
 ### 정책
 
 ```
-하루 최대 미션 제안 수는 application에서 15개로 제한한다.
+하루 미션 완료 보상은 application에서 20회로 제한한다.
+하루 미션 거절은 application에서 10회로 제한한다.
+CHALLENGE 난이도 미션은 하루 1회로 제한한다.
 현재 미션은 해당 날짜의 최신 OFFERED 또는 ANSWERING 상태 미션으로 조회한다.
 미션 완료 보상은 missionId 기준 1회만 지급한다.
 idempotency_key가 있으면 mission 관점에서는 wallet 보상 지급 요청이 성공했거나 outbox가 SUCCEEDED 상태로 확정된 것으로 본다.
-AI 문구 생성이 성공하면 ai_generation_id와 캐릭터 말투 문구를 저장하고, 실패하면 mission_templates fallback 문구를 유지한다.
+AI 미션 생성이 성공하면 ai_generation_id와 AI가 반환한 미션 제목/설명/문구를 저장하고, 실패하면 mission_templates fallback 미션과 문구를 사용한다.
 ```
 
 ---
@@ -665,24 +699,56 @@ unique(mission_id)
 ```
 mission_completion_answers.answer_text가 저장된다.
 user_missions.status를 COMPLETED로 변경한다.
-MISSION_REWARD:{missionId} 멱등키로 mission_reward_outbox를 생성하거나 기존 row를 재사용한다.
+MISSION_REWARD:{missionId} 멱등키로 mission_outbox_events를 생성하거나 기존 row를 재사용한다.
 wallet 모듈 보상 요청이 성공하면 user_missions.idempotency_key에 같은 marker를 저장한다.
 일시 실패하면 outbox status와 next_attempt_at을 갱신하고 스케줄러가 재처리한다.
 ```
 
 ---
 
-## 1.12.1 `mission_reward_outbox`
+## 1.12.1 `mission_feedbacks`
 
-미션 완료 보상 지급 실패를 재처리하기 위한 outbox 테이블이다.
+미션 거절 이유와 만족/불만족 피드백을 저장한다.
+
+피드백은 보상 지급 조건이 아니라 개인화와 회피 신호 분석을 위한 데이터다.
 
 | 컬럼 | 타입 | 설명 |
 | --- | --- | --- |
-| id | bigint PK | outbox ID |
-| mission_id | bigint FK unique | 보상 대상 미션 ID |
+| id | bigint PK | 피드백 ID |
 | user_id | bigint | 사용자 ID |
-| reward_star_piece | int | 지급할 별조각 수량 |
-| idempotency_key | varchar unique | `MISSION_REWARD:{missionId}` |
+| mission_id | bigint FK | 미션 ID |
+| feedback_type | varchar | REJECTION / SATISFACTION |
+| reaction | varchar nullable | LIKE / DISLIKE |
+| reason_code | varchar nullable | NOT_NOW / TOO_HARD / NOT_INTERESTED / ALREADY_DONE / LOCATION_MISMATCH / MOOD_MISMATCH / REPEAT / JUST_SKIP / OTHER |
+| reason_text | varchar(100) nullable | 사용자가 직접 적은 짧은 이유 |
+| created_at | timestamp | 생성일 |
+| updated_at | timestamp | 수정일 |
+
+### 제약 / 인덱스
+
+```
+unique(user_id, mission_id, feedback_type)
+check(feedback_type in ('REJECTION', 'SATISFACTION'))
+check(reaction is null or reaction in ('LIKE', 'DISLIKE'))
+index(user_id, created_at desc)
+```
+
+---
+
+## 1.12.2 `mission_outbox_events`
+
+mission 모듈에서 외부 모듈 호출 또는 향후 Kafka 발행이 필요한 이벤트를 저장하는 공용 outbox 테이블이다.
+
+미션 완료 보상 지급 요청은 `MISSION_REWARD_REQUESTED` 이벤트로 저장하고, user wallet gRPC 지급 실패 시 스케줄러가 재처리한다.
+
+| 컬럼 | 타입 | 설명 |
+| --- | --- | --- |
+| id | bigint PK | outbox 이벤트 ID |
+| aggregate_type | varchar | 이벤트가 속한 aggregate 타입. 예: `MISSION` |
+| aggregate_id | bigint | aggregate ID. 미션 보상은 user_missions.id |
+| event_type | varchar | 이벤트 타입. 예: `MISSION_REWARD_REQUESTED` |
+| payload | jsonb | 이벤트 처리에 필요한 JSON payload |
+| idempotency_key | varchar(120) unique | 외부 호출/발행 멱등키 |
 | status | varchar | PENDING / PROCESSING / SUCCEEDED / FAILED |
 | attempt_count | int | 재시도 횟수 |
 | next_attempt_at | timestamp | 다음 처리 가능 시각 |
@@ -693,20 +759,83 @@ wallet 모듈 보상 요청이 성공하면 user_missions.idempotency_key에 같
 ### 제약 / 인덱스
 
 ```
-unique(mission_id)
 unique(idempotency_key)
-check(reward_star_piece >= 0)
 check(attempt_count >= 0)
 check(status in ('PENDING', 'PROCESSING', 'SUCCEEDED', 'FAILED'))
-index(status, next_attempt_at)
+index(event_type, status, next_attempt_at)
 ```
 
 ### 정책
 
 ```
-미션 보상 지급은 mission_id와 idempotency_key 기준으로 멱등 처리한다.
+미션 보상 지급은 aggregate_id와 idempotency_key 기준으로 멱등 처리한다.
 일시 실패한 보상은 next_attempt_at 이후 스케줄러가 재처리한다.
 영구 실패는 attempt_count 상한 이후 FAILED로 남기고 운영자가 확인할 수 있게 로그를 남긴다.
+```
+
+---
+
+## 1.12.3 `user_memories`
+
+미션 완료 답변과 피드백에서 개인화에 쓸 수 있는 사용자 기억을 저장한다.
+
+| 컬럼 | 타입 | 설명 |
+| --- | --- | --- |
+| id | bigint PK | 사용자 기억 ID |
+| user_id | bigint | 사용자 ID |
+| source_type | varchar | MISSION_COMPLETION_ANSWER / MISSION_FEEDBACK |
+| source_id | bigint | 원천 데이터 ID |
+| memory_type | varchar | MISSION_COMPLETION / MISSION_REJECTION / MISSION_SATISFACTION |
+| content | text | 개인화 검색에 사용할 요약 문장 |
+| metadata_json | jsonb | 원천 미션, 카테고리, 난이도 등 부가 정보 |
+| importance | int | 중요도. 0~100 |
+| created_at | timestamp | 생성일 |
+| updated_at | timestamp | 수정일 |
+
+### 제약 / 인덱스
+
+```
+unique(source_type, source_id, memory_type)
+check(source_type in ('MISSION_COMPLETION_ANSWER', 'MISSION_FEEDBACK'))
+check(memory_type in ('MISSION_COMPLETION', 'MISSION_REJECTION', 'MISSION_SATISFACTION'))
+check(importance between 0 and 100)
+index(user_id, created_at desc)
+index(user_id, memory_type, created_at desc)
+```
+
+---
+
+## 1.12.4 `user_memory_embeddings`
+
+`user_memories`를 vector 검색에 사용할 수 있도록 embedding 생성 상태와 vector 값을 저장한다.
+
+PostgreSQL `pgvector` 확장을 사용하며, embedding은 `gemini-embedding-001` 모델의 768차원 vector로 저장한다.
+
+| 컬럼 | 타입 | 설명 |
+| --- | --- | --- |
+| id | bigint PK | embedding ID |
+| user_memory_id | bigint FK | 사용자 기억 ID |
+| user_id | bigint | 사용자 ID |
+| embedding_model | varchar(80) | embedding 모델명 |
+| embedding_dimension | int | embedding 차원. 현재 768 |
+| embedding | vector(768) nullable | 정규화된 embedding vector |
+| status | varchar | PENDING / PROCESSING / COMPLETED / FAILED |
+| attempt_count | int | 재시도 횟수 |
+| next_attempt_at | timestamp | 다음 처리 가능 시각 |
+| last_error_message | text nullable | 마지막 실패 메시지 |
+| embedded_at | timestamp nullable | embedding 완료 시각 |
+| created_at | timestamp | 생성일 |
+| updated_at | timestamp | 수정일 |
+
+### 제약 / 인덱스
+
+```
+unique(user_memory_id, embedding_model, embedding_dimension)
+check(status in ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED'))
+check(embedding_dimension = 768)
+check(attempt_count >= 0)
+index(status, next_attempt_at, id)
+index(user_id, status)
 ```
 
 ---

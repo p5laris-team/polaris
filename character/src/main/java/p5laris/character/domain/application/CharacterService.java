@@ -5,6 +5,7 @@ import com.p5laris.proto.item.v1.GetUserItemsRequest;
 import com.p5laris.proto.item.v1.ItemServiceGrpc;
 import com.p5laris.proto.item.v1.UseItemRequest;
 import com.p5laris.proto.item.v1.UserItem;
+import io.grpc.StatusRuntimeException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.client.inject.GrpcClient;
@@ -26,10 +27,12 @@ import p5laris.character.domain.domain.repository.CharacterTypeRepository;
 import p5laris.character.domain.domain.repository.UserCharacterRepository;
 import p5laris.character.domain.exception.CharacterErrorCode;
 import p5laris.character.domain.exception.CharacterException;
+import p5laris.character.domain.infrastructure.config.CharacterItemGrpcProperties;
 
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import org.springframework.context.ApplicationEventPublisher;
 import p5laris.character.domain.application.event.CharacterEventLogEvent;
@@ -48,6 +51,7 @@ public class CharacterService {
     private final S3StorageService s3StorageService;
     private final ObjectMapper objectMapper;
     private final ApplicationEventPublisher eventPublisher;
+    private final CharacterItemGrpcProperties itemGrpcProperties;
 
     @GrpcClient("item")
     private ItemServiceGrpc.ItemServiceBlockingStub itemStub;
@@ -162,7 +166,7 @@ public class CharacterService {
         }
 
         try {
-            com.p5laris.proto.item.v1.GetSkinAssetsResponse response = itemStub.getSkinAssets(
+            com.p5laris.proto.item.v1.GetSkinAssetsResponse response = deadlineItemStub().getSkinAssets(
                     com.p5laris.proto.item.v1.GetSkinAssetsRequest.newBuilder()
                             .setSkinItemId(equippedSkinId)
                             .setCharacterTypeId(characterTypeId)
@@ -254,7 +258,7 @@ public class CharacterService {
             Long characterId, Long userId, String actionTypeStr, Long itemId, String idempotencyKey) {
 
         if (idempotencyKey == null || idempotencyKey.trim().isEmpty()) {
-            throw new IllegalArgumentException("Idempotency key is required");
+            throw new CharacterException(CharacterErrorCode.INVALID_IDEMPOTENCY_KEY);
         }
 
         var existingLog = characterCareLogRepository.findByIdempotencyKey(idempotencyKey);
@@ -262,17 +266,17 @@ public class CharacterService {
             return replayCareLog(existingLog.get());
         }
 
-        UserCharacter character = userCharacterRepository.findById(characterId)
+        ActionType actionType = parseActionType(actionTypeStr);
+        long resolvedItemId = requirePositiveItemId(itemId);
+        UserItem careItem = findOwnedItem(userId, resolvedItemId, "CONSUMABLE");
+        validateCareItemMatchesAction(careItem, actionType);
+
+        UserCharacter character = userCharacterRepository.findByIdForUpdate(characterId)
                 .orElseThrow(() -> new CharacterException(CharacterErrorCode.CHARACTER_NOT_FOUND));
 
         if (!character.getUserId().equals(userId)) {
             throw new CharacterException(CharacterErrorCode.NOT_CHARACTER_OWNER);
         }
-
-        ActionType actionType = parseActionType(actionTypeStr);
-        long resolvedItemId = requirePositiveItemId(itemId);
-        UserItem careItem = findOwnedItem(userId, resolvedItemId, "CONSUMABLE");
-        validateCareItemMatchesAction(careItem, actionType);
 
         var beforeStates = p5laris.character.domain.application.dto.CareActionResponse.States.builder()
                 .hunger(character.getFullness())
@@ -300,7 +304,7 @@ public class CharacterService {
         CharacterCareLog savedCareLog = characterCareLogRepository.save(careLog);
 
         try {
-            itemStub.useItem(
+            deadlineItemStub().useItem(
                     UseItemRequest.newBuilder()
                             .setUserId(userId)
                             .setItemId(resolvedItemId)
@@ -311,13 +315,13 @@ public class CharacterService {
                             .build()
             );
         } catch (Exception e) {
-            log.warn("[CharacterService] UseItem gRPC failed: userId={}, itemId={}, careLogId={}, msg={}",
-                    userId, resolvedItemId, careLog.getId(), e.getMessage());
+            log.warn("돌보기 아이템 사용 gRPC 호출에 실패했습니다. userId={}, itemId={}, careLogId={}, statusCode={}, errorCode={}",
+                    userId, resolvedItemId, savedCareLog.getId(), grpcStatusCode(e), grpcErrorCode(e), e);
             throw mapItemFailure(e);
         }
 
         return p5laris.character.domain.application.dto.CareActionResponse.builder()
-                .careLogId(careLog.getId())
+                .careLogId(savedCareLog.getId())
                 .characterId(characterId)
                 .actionType(actionType.name())
                 .consumedItemId(resolvedItemId)
@@ -413,7 +417,7 @@ public class CharacterService {
         String cursor = "";
         int guard = 0;
         do {
-            var response = itemStub.getUserItems(
+            var response = deadlineItemStub().getUserItems(
                     GetUserItemsRequest.newBuilder()
                             .setUserId(userId)
                             .setItemType(itemType)
@@ -450,14 +454,33 @@ public class CharacterService {
     }
 
     private CharacterException mapItemFailure(Exception e) {
-        String message = e.getMessage() != null ? e.getMessage() : "";
-        if (message.contains("ITEM_QUANTITY_NOT_ENOUGH") || message.contains("ITEM-006")) {
+        String errorCode = grpcErrorCode(e);
+        if ("ITEM-006".equals(errorCode)) {
             return new CharacterException(CharacterErrorCode.ITEM_QUANTITY_NOT_ENOUGH);
         }
-        if (message.contains("USER_ITEM_NOT_FOUND") || message.contains("ITEM_NOT_FOUND") || message.contains("ITEM-005")) {
+        if ("ITEM-001".equals(errorCode) || "ITEM-005".equals(errorCode)) {
             return new CharacterException(CharacterErrorCode.ITEM_NOT_OWNED);
         }
-        return new CharacterException(CharacterErrorCode.INVALID_CARE_ITEM);
+        return new CharacterException(CharacterErrorCode.ITEM_SERVICE_CALL_FAILED);
+    }
+
+    private ItemServiceGrpc.ItemServiceBlockingStub deadlineItemStub() {
+        return itemStub.withDeadlineAfter(itemGrpcProperties.getDeadlineMs(), TimeUnit.MILLISECONDS);
+    }
+
+    private String grpcErrorCode(Exception e) {
+        if (e instanceof StatusRuntimeException statusRuntimeException) {
+            String description = statusRuntimeException.getStatus().getDescription();
+            return description != null ? description : "";
+        }
+        return "";
+    }
+
+    private String grpcStatusCode(Exception e) {
+        if (e instanceof StatusRuntimeException statusRuntimeException) {
+            return statusRuntimeException.getStatus().getCode().name();
+        }
+        return e.getClass().getSimpleName();
     }
 
     private String toStateJson(p5laris.character.domain.application.dto.CareActionResponse.States states) {

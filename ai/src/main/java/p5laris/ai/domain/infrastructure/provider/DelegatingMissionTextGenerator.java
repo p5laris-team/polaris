@@ -28,17 +28,20 @@ public class DelegatingMissionTextGenerator implements MissionTextGenerator {
     private final AiProviderProperties aiProviderProperties;
     private final RuleBasedMissionTextGenerator ruleBasedMissionTextGenerator;
     private final AiRateLimiter aiRateLimiter;
+    private final AiProviderCircuitBreaker aiProviderCircuitBreaker;
     private final Map<AiProviderType, ExternalMissionTextGenerator> externalGenerators;
 
     public DelegatingMissionTextGenerator(
             AiProviderProperties aiProviderProperties,
             RuleBasedMissionTextGenerator ruleBasedMissionTextGenerator,
             AiRateLimiter aiRateLimiter,
+            AiProviderCircuitBreaker aiProviderCircuitBreaker,
             List<ExternalMissionTextGenerator> externalGenerators
     ) {
         this.aiProviderProperties = aiProviderProperties;
         this.ruleBasedMissionTextGenerator = ruleBasedMissionTextGenerator;
         this.aiRateLimiter = aiRateLimiter;
+        this.aiProviderCircuitBreaker = aiProviderCircuitBreaker;
         this.externalGenerators = toGeneratorMap(externalGenerators);
     }
 
@@ -59,7 +62,12 @@ public class DelegatingMissionTextGenerator implements MissionTextGenerator {
         }
 
         aiRateLimiter.checkAllowed(command, providerType, aiProviderProperties.resolvedModel());
-        return externalGenerator.generate(command);
+        return aiProviderCircuitBreaker.execute(
+                providerType,
+                aiProviderProperties.resolvedModel(),
+                command.requestId(),
+                () -> externalGenerator.generate(command)
+        );
     }
 
     private Map<AiProviderType, ExternalMissionTextGenerator> toGeneratorMap(

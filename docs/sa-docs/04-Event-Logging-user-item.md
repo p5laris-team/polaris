@@ -61,13 +61,18 @@ event-log 모듈 호출에 실패해도 로그인, 출석, 아이템 구매 같�
   "refId": 10,
   "metadata": {
     "completed": false,
-    "livingType": "LIVING_ALONE",
-    "wakeUpTime": "10:00",
-    "sleepTime": "23:00",
-    "preferredMissionTime": "EVENING",
-    "routineGoal": "SELF_CARE",
-    "activityPreference": "INDOOR",
-    "missionIntensity": "LIGHT"
+    "livingType": null,
+    "wakeUpTime": null,
+    "sleepTime": null,
+    "preferredMissionTime": null,
+    "routineGoal": null,
+    "activityPreference": null,
+    "missionIntensity": "LIGHT",
+    "onboardingVersion": 2,
+    "routineGoals": "[\"HYDRATION_MEAL\",\"SPACE_RESET\"]",
+    "preferredTimeSlots": "[\"EVENING\",\"NIGHT\"]",
+    "missionPlaceContexts": "[\"HOME\"]",
+    "avoidedMissionTags": "[\"OUTDOOR\",\"NOISY_ACTION\"]"
   },
   "createdAt": "2026-05-19T15:35:00+09:00"
 }
@@ -81,13 +86,18 @@ event-log 모듈 호출에 실패해도 로그인, 출석, 아이템 구매 같�
   "refType": "ONBOARDING_PROFILE",
   "refId": 10,
   "metadata": {
-    "livingType": "LIVING_ALONE",
-    "wakeUpTime": "10:00",
-    "sleepTime": "23:00",
-    "preferredMissionTime": "EVENING",
-    "routineGoal": "SELF_CARE",
-    "activityPreference": "INDOOR",
-    "missionIntensity": "LIGHT"
+    "livingType": null,
+    "wakeUpTime": null,
+    "sleepTime": null,
+    "preferredMissionTime": null,
+    "routineGoal": null,
+    "activityPreference": null,
+    "missionIntensity": "LIGHT",
+    "onboardingVersion": 2,
+    "routineGoals": "[\"HYDRATION_MEAL\",\"SPACE_RESET\"]",
+    "preferredTimeSlots": "[\"EVENING\",\"NIGHT\"]",
+    "missionPlaceContexts": "[\"HOME\"]",
+    "avoidedMissionTags": "[\"OUTDOOR\",\"NOISY_ACTION\"]"
   },
   "createdAt": "2026-05-19T15:36:00+09:00"
 }

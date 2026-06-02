@@ -89,9 +89,10 @@ public class MissionController {
     @PostMapping("/v1/missions/{missionId}/rejections")
     public ApiResponse<MissionDto.RejectMissionResponse> rejectMission(
             @LoginUserId Long userId,
-            @PathVariable Long missionId
+            @PathVariable Long missionId,
+            @Valid @RequestBody(required = false) MissionDto.RejectMissionRequest request
     ) {
-        return ApiResponse.success(missionGatewayService.rejectMission(userId, missionId));
+        return ApiResponse.success(missionGatewayService.rejectMission(userId, missionId, request));
     }
 
     /**
@@ -115,5 +116,17 @@ public class MissionController {
             @Valid @RequestBody MissionDto.SubmitCompletionAnswerRequest request
     ) {
         return ApiResponse.success(missionGatewayService.submitCompletionAnswer(userId, missionId, request));
+    }
+
+    /**
+     * 완료 만족도 또는 거절 이유 피드백을 저장한다.
+     */
+    @PostMapping("/v1/missions/{missionId}/feedback")
+    public ApiResponse<MissionDto.MissionFeedbackResponse> upsertMissionFeedback(
+            @LoginUserId Long userId,
+            @PathVariable Long missionId,
+            @Valid @RequestBody MissionDto.UpsertMissionFeedbackRequest request
+    ) {
+        return ApiResponse.success(missionGatewayService.upsertMissionFeedback(userId, missionId, request));
     }
 }

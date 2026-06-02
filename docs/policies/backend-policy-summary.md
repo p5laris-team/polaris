@@ -1,6 +1,6 @@
 # 백엔드 개발자용 정책 정리
 
-> 기준일: 2026-05-26
+> 기준일: 2026-06-01
 > 이 문서는 현재 `polaris` 백엔드 구현 기준으로 작성한다. 상세 API 계약은 `docs/sa-docs/01-API-spec.md`, 실제 테이블 구조는 `docs/sa-docs/02_ERD_Data_Model.md`를 따른다.
 
 ---
@@ -76,8 +76,10 @@
 ## 5. 온보딩 설문 정책
 
 - 온보딩 응답은 `onboarding_profiles`에 저장한다.
-- 설문 결과는 미션 추천과 AI 문구 생성 context로 사용한다.
-- MVP에서는 질문 마스터 테이블을 따로 두지 않고, 정해진 설문 결과를 프로필 row에 저장한다.
+- 설문 결과는 미션 후보 생성, RAG 검색 context, AI 문구 생성 context로 사용한다.
+- 온보딩 질문은 루틴 목표, 선호 시간대, 수행 가능 장소/상황, 미션 강도, 회피 태그 5개로 구성한다.
+- 루틴 목표는 최대 3개, 선호 시간대는 최대 5개, 수행 가능 장소/상황은 최대 3개, 회피 태그는 최대 5개까지 저장한다.
+- 질문 마스터 테이블은 두지 않고, 정해진 설문 결과를 `onboarding_profiles`의 scalar 필드와 v2 JSON 필드에 저장한다.
 
 ---
 
@@ -87,17 +89,26 @@
 - 오늘 제안된 미션은 `user_missions.stack_order`로 stack을 관리한다.
 - 사용자는 현재 미션을 완료하거나 거절할 수 있다.
 - 거절하면 다음 미션을 받을 수 있다.
-- 하루 최대 제안 수는 15개다.
+- 하루 완료 보상은 최대 20회다.
+- 하루 거절은 최대 10회다.
+- `CHALLENGE` 난이도 미션은 하루 1회까지만 제안한다.
+- 난이도별 기본 보상은 `EASY=10`, `NORMAL=15`, `CHALLENGE=30` 별조각이다.
 - 현재 미션은 해당 날짜의 최신 `OFFERED` 또는 `ANSWERING` 상태 미션이다.
 
-### 미션 템플릿 선택
+### 미션 후보 생성
 
-- 완전 자유 생성이 아니라 `seed 미션 템플릿 선택 + 캐릭터 말투 변환` 구조로 동작한다.
-- 후보 미션은 `active=true`인 `mission_templates`만 사용한다.
-- 오늘 이미 사용된 템플릿은 다시 선택하지 않는다.
-- 템플릿 순서는 `userId + missionDate + templateId` 기반 해시로 정렬해, 같은 사용자의 같은 날짜에는 안정적이고 날짜가 바뀌면 달라지는 랜덤 순서를 만든다.
-- AI는 seed 미션의 제목, 카테고리, 난이도, 보상을 바꾸지 않고 제안 문구, 완료 질문, 완료 반응만 생성한다.
-- AI 호출 실패 또는 응답 검증 실패 시 `mission_templates`의 fallback 문구를 사용한다.
+- AI는 온보딩, 최근 미션, 피드백, 시간대, 날씨 context, RAG 검색 결과를 바탕으로 미션 제목/설명/카테고리/난이도/캐릭터 문구를 생성한다.
+- mission 모듈은 AI 응답 저장 전 카테고리, 난이도, 보상, 문장 길이, 금지 표현, `CHALLENGE` 일일 제한을 검증한다.
+- 후보 미션 fallback은 `active=true`인 `mission_templates`만 사용한다.
+- 오늘 이미 사용된 템플릿은 fallback 후보에서 다시 선택하지 않는다.
+- AI 호출 실패, rate limit, 응답 구조 오류, 정책 위반, RAG 검색 실패는 사용자 흐름을 중단하지 않고 seed fallback으로 흡수한다.
+
+### 날씨 context
+
+- 사용자가 날씨 권역을 선택하면 `users.weather_region_code`를 기준으로 날씨 context를 만든다.
+- 선택한 권역이 없으면 mission 서비스의 기본 권역 환경변수를 사용한다.
+- 기상청 API 호출 실패, timeout, 응답 파싱 실패는 미션 생성 실패로 전파하지 않는다.
+- 날씨 context를 사용할 수 없을 때도 시간대, 온보딩, 최근 미션, RAG context만으로 미션을 생성한다.
 
 ---
 
@@ -120,7 +131,7 @@
 - 답변은 최소 1자 이상, 최대 300자 이하로 제한한다.
 - 답변 완료 후 미션 상태는 `COMPLETED`가 된다.
 - 미션 완료 보상은 `MISSION_REWARD:{missionId}` 멱등키로 1회만 지급한다.
-- 보상 지급 요청은 `mission_reward_outbox`에 기록하고, wallet 모듈 지급 성공 시 `user_missions.idempotency_key`에 같은 marker를 저장한다.
+- 보상 지급 요청은 `mission_outbox_events`에 `MISSION_REWARD_REQUESTED` 이벤트로 기록하고, wallet 모듈 지급 성공 시 `user_missions.idempotency_key`에 같은 marker를 저장한다.
 - 일시 실패한 보상은 outbox 스케줄러가 `next_attempt_at`, `attempt_count` 기준으로 재처리한다.
 
 ---
@@ -131,7 +142,7 @@
 
 | 획득처 | 보상 | 현재 처리 |
 | --- | --- | --- |
-| 미션 완료 | 10 | wallet 적립 + `star_piece_transactions` 기록 |
+| 미션 완료 | EASY 10 / NORMAL 15 / CHALLENGE 30 | wallet 적립 + `star_piece_transactions` 기록 |
 | 출석 | 10 | wallet 적립 + `attendance_records`, `star_piece_transactions` 기록 |
 | SNS 공유 시도 | 10 | `share_logs`와 `character_outbox_events`에 공유 보상 요청 기록. 커밋 후 wallet 적립을 즉시 시도하고 실패 시 outbox가 재처리 |
 

@@ -12,25 +12,50 @@ import com.p5laris.proto.mission.v1.MissionDetail;
 import com.p5laris.proto.mission.v1.MissionCategory;
 import com.p5laris.proto.mission.v1.MissionDifficulty;
 import com.p5laris.proto.mission.v1.MissionReward;
+import com.p5laris.proto.mission.v1.MissionRewardStatus;
+import com.p5laris.proto.mission.v1.MissionSatisfactionFeedback;
 import com.p5laris.proto.mission.v1.MissionStatus;
 import com.p5laris.proto.mission.v1.RejectMissionResponse;
 import com.p5laris.proto.mission.v1.StartCompletionSessionResponse;
 import com.p5laris.proto.mission.v1.SubmitCompletionAnswerResponse;
 import com.p5laris.proto.mission.v1.TodayMission;
+import com.p5laris.proto.mission.v1.UpsertMissionFeedbackResponse;
 import com.p5laris.proto.mission.v1.WalletSnapshot;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
+import p5laris.mission.domain.application.diversity.MissionDiversitySnapshot;
 import p5laris.mission.domain.application.event.MissionEventLogEvent;
+import p5laris.mission.domain.application.guard.AiMissionCandidateGuardRequest;
+import p5laris.mission.domain.application.guard.AiMissionCandidateGuardResult;
+import p5laris.mission.domain.application.guard.AiMissionCandidateRejectionReason;
+import p5laris.mission.domain.application.guard.MissionAiCandidateGuard;
+import p5laris.mission.domain.application.guard.ValidatedAiMissionCandidate;
+import p5laris.mission.domain.application.memory.MissionMemoryRecorder;
+import p5laris.mission.domain.application.personalization.MissionPersonalizationContext;
+import p5laris.mission.domain.application.personalization.MissionPersonalizationContextBuilder;
+import p5laris.mission.domain.application.personalization.MissionRagContextService;
+import p5laris.mission.domain.application.personalization.MissionRagQuery;
+import p5laris.mission.domain.application.time.MissionTimeSlot;
+import p5laris.mission.domain.application.weather.MissionWeatherContextService;
 import p5laris.mission.domain.domain.entity.MissionCompletionAnswer;
+import p5laris.mission.domain.domain.entity.MissionFeedback;
 import p5laris.mission.domain.domain.entity.MissionOutboxEvent;
 import p5laris.mission.domain.domain.entity.MissionTemplate;
 import p5laris.mission.domain.domain.entity.UserMission;
+import p5laris.mission.domain.domain.enums.MissionCategoryType;
+import p5laris.mission.domain.domain.enums.MissionDifficultyType;
+import p5laris.mission.domain.domain.enums.MissionFeedbackReaction;
+import p5laris.mission.domain.domain.enums.MissionFeedbackReasonCode;
+import p5laris.mission.domain.domain.enums.MissionFeedbackType;
+import p5laris.mission.domain.domain.enums.MissionOutboxEventStatus;
 import p5laris.mission.domain.domain.enums.UserMissionStatus;
 import p5laris.mission.domain.domain.repository.MissionCompletionAnswerRepository;
+import p5laris.mission.domain.domain.repository.MissionFeedbackRepository;
 import p5laris.mission.domain.domain.repository.MissionOutboxEventRepository;
 import p5laris.mission.domain.domain.repository.MissionTemplateRepository;
 import p5laris.mission.domain.domain.repository.UserMissionRepository;
@@ -63,6 +88,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class MissionService {
 
     /*
@@ -75,11 +101,16 @@ public class MissionService {
     private static final int COMPLETION_ANSWER_MIN_LENGTH = 1;
     private static final int COMPLETION_ANSWER_MAX_LENGTH = 300;
     private static final int ANSWER_PREVIEW_MAX_LENGTH = 40;
+    private static final int FEEDBACK_REASON_TEXT_MAX_LENGTH = 100;
+    private static final int AI_MISSION_CANDIDATE_MAX_ATTEMPTS = 2;
+    private static final int EASY_REWARD_STAR_PIECE = 10;
+    private static final int NORMAL_REWARD_STAR_PIECE = 15;
+    private static final int CHALLENGE_REWARD_STAR_PIECE = 30;
     private static final String MISSION_REWARD_IDEMPOTENCY_KEY_PREFIX = "MISSION_REWARD:";
     private static final String MISSION_TEXT_REQUEST_ID_PREFIX = "MISSION_TEXT:";
+    private static final String MISSION_TEXT_RETRY_REQUEST_ID_SUFFIX = ":RETRY:";
     private static final String DEFAULT_COMPLETION_QUESTION = "해보고 나서 어땠어?";
     private static final String REJECTION_CHARACTER_MESSAGE = "괜찮아요. 다른 별을 찾아볼게요.";
-    private static final String EMPTY_JSON_OBJECT = "{}";
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
     private static final Set<UserMissionStatus> ACTIVE_STATUSES = EnumSet.of(
             UserMissionStatus.OFFERED,
@@ -90,10 +121,16 @@ public class MissionService {
     private final MissionTemplateSelector missionTemplateSelector;
     private final UserMissionRepository userMissionRepository;
     private final MissionCompletionAnswerRepository missionCompletionAnswerRepository;
+    private final MissionFeedbackRepository missionFeedbackRepository;
     private final MissionOutboxEventRepository missionOutboxEventRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final AiMissionTextClient aiMissionTextClient;
     private final CharacterProfileClient characterProfileClient;
+    private final MissionPersonalizationContextBuilder missionPersonalizationContextBuilder;
+    private final MissionRagContextService missionRagContextService;
+    private final MissionWeatherContextService missionWeatherContextService;
+    private final MissionAiCandidateGuard missionAiCandidateGuard;
+    private final MissionMemoryRecorder missionMemoryRecorder;
     private final WalletRewardClient walletRewardClient;
     private final MissionRewardDispatcher missionRewardDispatcher;
     private final TransactionTemplate transactionTemplate;
@@ -180,9 +217,15 @@ public class MissionService {
         UserMission mission = userMissionRepository.findByIdAndUserId(missionId, userId)
                 .orElseThrow(() -> new MissionException(MissionErrorCode.MISSION_NOT_FOUND));
         Optional<MissionCompletionAnswer> answer = missionCompletionAnswerRepository.findByMissionId(mission.getId());
+        Optional<MissionFeedback> satisfactionFeedback =
+                missionFeedbackRepository.findByUserIdAndMissionIdAndFeedbackType(
+                        userId,
+                        mission.getId(),
+                        MissionFeedbackType.SATISFACTION
+                );
 
         return GetMissionDetailResponse.newBuilder()
-                .setMission(toProtoMissionDetail(mission, answer.orElse(null)))
+                .setMission(toProtoMissionDetail(mission, answer.orElse(null), satisfactionFeedback.orElse(null)))
                 .build();
     }
 
@@ -192,17 +235,18 @@ public class MissionService {
      * 진행 중인 미션이 이미 있으면 새 미션을 만들지 않는다.
      * 이 검사는 유저 기준으로 수행하고, characterId는 새 미션 row에 제안 캐릭터로 저장한다.
      *
-     * 미션 row는 먼저 template fallback 문구로 짧게 저장하고, 그 뒤 트랜잭션 밖에서 ai 모듈을 호출한다.
-     * AI 호출이 성공하면 다시 짧은 트랜잭션을 열어 캐릭터 말투 문구와 aiGenerationId를 반영한다.
+     * 미션 row는 먼저 seed template fallback으로 저장하고, 그 뒤 트랜잭션 밖에서 ai 모듈을 호출한다.
+     * AI 후보가 서버 검증을 통과하면 fallback row를 자율 미션으로 교체하고, 실패하면 seed fallback을 유지한다.
      */
     public CreateNextMissionResponse createNextMission(Long userId, Long characterId, Long lastMissionId) {
         LocalDate today = LocalDate.now(clock);
         validateMissionCreatable(userId, today);
+        MissionPersonalizationContext personalizationContext = missionPersonalizationContextBuilder.build(userId, today);
 
         MissionCreationContext context = Objects.requireNonNull(transactionTemplate.execute(
                 status -> createMissionWithFallback(userId, characterId, today)
         ));
-        Optional<AiMissionTextResult> generatedText = generateMissionText(context);
+        Optional<ValidatedAiMissionCandidate> generatedText = generateMissionText(context, personalizationContext);
         UserMission mission = Objects.requireNonNull(transactionTemplate.execute(
                 status -> finalizeMissionCreation(userId, context.missionId(), generatedText)
         ));
@@ -258,7 +302,7 @@ public class MissionService {
         validateMissionCreatable(userId, today);
 
         LocalDateTime now = LocalDateTime.now(clock);
-        MissionTemplate template = selectNextTemplate(userId, today);
+        MissionTemplate template = selectNextTemplate(userId, today, MissionTimeSlot.from(now));
         int nextStackOrder = userMissionRepository.findMaxStackOrder(userId, today) + 1;
         UserMission userMission = UserMission.offerFromTemplate(
                 userId,
@@ -287,37 +331,143 @@ public class MissionService {
     /**
      * character/ai 모듈을 트랜잭션 밖에서 호출한다.
      *
-     * character나 ai 모듈 호출이 실패하면 Optional.empty()를 반환해 fallback 문구로 미션 생성을 마무리한다.
+     * character나 ai 모듈 호출이 실패하면 Optional.empty()를 반환해 fallback 미션으로 생성을 마무리한다.
      */
-    private Optional<AiMissionTextResult> generateMissionText(MissionCreationContext context) {
-        return characterProfileClient.findActiveCharacterTypeCode(context.userId(), context.characterId())
-                .flatMap(characterType -> aiMissionTextClient.generateMissionTexts(new AiMissionTextRequest(
+    private Optional<ValidatedAiMissionCandidate> generateMissionText(
+            MissionCreationContext context,
+            MissionPersonalizationContext personalizationContext
+    ) {
+        String recentMissionContextJson = missionRagContextService.enrich(
+                context.userId(),
+                new MissionRagQuery(
                         context.userId(),
-                        context.characterId(),
-                        characterType,
                         context.missionTemplateId(),
                         context.baseTitle(),
                         context.baseDescription(),
-                        context.category(),
-                        context.difficulty(),
+                        context.category().name(),
+                        context.difficulty().name()
+                ),
+                personalizationContext.recentMissionContextJson()
+        );
+        recentMissionContextJson = missionWeatherContextService.enrich(context.userId(), recentMissionContextJson);
+
+        Optional<String> characterType = characterProfileClient.findActiveCharacterTypeCode(
+                context.userId(),
+                context.characterId()
+        );
+        if (characterType.isEmpty()) {
+            return Optional.empty();
+        }
+
+        boolean challengeAlreadyUsedToday = userMissionRepository.existsByUserIdAndMissionDateAndDifficultyAndIdNot(
+                context.userId(),
+                context.missionDate(),
+                MissionDifficultyType.CHALLENGE,
+                context.missionId()
+        );
+        List<MissionDiversitySnapshot> todayMissionSnapshots = findTodayMissionDiversitySnapshots(context);
+
+        for (int attempt = 0; attempt < AI_MISSION_CANDIDATE_MAX_ATTEMPTS; attempt++) {
+            String requestId = aiMissionRequestId(context.aiRequestId(), attempt);
+            Optional<AiMissionTextResult> generatedText = aiMissionTextClient.generateMissionTexts(new AiMissionTextRequest(
+                        context.userId(),
+                        context.characterId(),
+                        characterType.get(),
+                        context.missionTemplateId(),
+                        context.baseTitle(),
+                        context.baseDescription(),
+                        context.category().name(),
+                        context.difficulty().name(),
                         context.fallbackCharacterMessage(),
                         context.fallbackQuestion(),
                         context.fallbackCompletionResponse(),
-                        EMPTY_JSON_OBJECT,
-                        EMPTY_JSON_OBJECT,
-                        context.aiRequestId()
-                )));
+                        personalizationContext.onboardingContextJson(),
+                        recentMissionContextJson,
+                        requestId
+                ));
+
+            if (generatedText.isEmpty()) {
+                return Optional.empty();
+            }
+
+            AiMissionCandidateGuardResult guardResult = missionAiCandidateGuard.validate(new AiMissionCandidateGuardRequest(
+                    context.userId(),
+                    context.missionId(),
+                    context.category(),
+                    context.offeredAt(),
+                    challengeAlreadyUsedToday,
+                    todayMissionSnapshots,
+                    generatedText.get()
+            ));
+            if (guardResult.accepted()) {
+                return guardResult.candidate();
+            }
+
+            AiMissionCandidateRejectionReason reason = guardResult.rejectionReason()
+                    .orElse(AiMissionCandidateRejectionReason.INVALID_CATEGORY_OR_DIFFICULTY);
+            logRejectedAiCandidate(context, generatedText.get(), reason, attempt);
+            if (!shouldRetryAiCandidate(reason, attempt)) {
+                return Optional.empty();
+            }
+        }
+
+        return Optional.empty();
+    }
+
+    private List<MissionDiversitySnapshot> findTodayMissionDiversitySnapshots(MissionCreationContext context) {
+        return userMissionRepository.findByUserIdAndMissionDateOrderByStackOrderAsc(
+                        context.userId(),
+                        context.missionDate()
+                ).stream()
+                // 지금 저장 중인 fallback row는 아직 사용자에게 보여준 미션이 아니므로 중복 비교 대상에서 제외한다.
+                .filter(mission -> !Objects.equals(mission.getId(), context.missionId()))
+                .map(MissionDiversitySnapshot::from)
+                .toList();
+    }
+
+    private String aiMissionRequestId(String baseRequestId, int attempt) {
+        if (attempt == 0) {
+            return baseRequestId;
+        }
+        return baseRequestId + MISSION_TEXT_RETRY_REQUEST_ID_SUFFIX + attempt;
+    }
+
+    private boolean shouldRetryAiCandidate(AiMissionCandidateRejectionReason reason, int attempt) {
+        return attempt + 1 < AI_MISSION_CANDIDATE_MAX_ATTEMPTS
+                && reason != AiMissionCandidateRejectionReason.AI_FALLBACK_USED;
+    }
+
+    private void logRejectedAiCandidate(
+            MissionCreationContext context,
+            AiMissionTextResult generatedText,
+            AiMissionCandidateRejectionReason reason,
+            int attempt
+    ) {
+        log.info(
+                "AI 자율 미션 후보를 seed fallback으로 대체합니다. reason={}, userId={}, missionId={}, aiGenerationId={}, requestId={}, attempt={}, candidateCategory={}, candidateDifficulty={}, fallbackCategory={}, fallbackDifficulty={}, fallbackUsed={}",
+                reason,
+                context.userId(),
+                context.missionId(),
+                generatedText.aiGenerationId(),
+                generatedText.requestId(),
+                attempt + 1,
+                generatedText.category(),
+                generatedText.difficulty(),
+                context.category(),
+                context.difficulty(),
+                generatedText.fallbackUsed()
+        );
     }
 
     /**
-     * AI 결과가 있으면 미션 문구와 완료 질문을 교체하고, 없으면 fallback 상태 그대로 확정한다.
+     * AI 결과가 서버 검증을 통과하면 자율 미션으로 교체하고, 없거나 검증에 실패하면 fallback 상태 그대로 확정한다.
      *
      * MISSION_OFFERED 이벤트는 최종 문구가 정해진 뒤 발행해 event-log metadata에 aiGenerationId를 담을 수 있게 한다.
      */
     private UserMission finalizeMissionCreation(
             Long userId,
             Long missionId,
-            Optional<AiMissionTextResult> generatedText
+            Optional<ValidatedAiMissionCandidate> generatedText
     ) {
         UserMission mission = findOwnedMissionForUpdate(userId, missionId);
         MissionCompletionAnswer answer = missionCompletionAnswerRepository.findByMissionId(mission.getId())
@@ -327,13 +477,18 @@ public class MissionService {
                         resolveCompletionQuestion(mission)
                 )));
 
-        generatedText.ifPresent(text -> {
-            mission.applyGeneratedTexts(
-                    text.aiGenerationId(),
-                    text.characterMessage(),
-                    text.completionCharacterResponse()
+        generatedText.ifPresent(candidate -> {
+            mission.applyGeneratedMission(
+                    candidate.aiGenerationId(),
+                    candidate.title(),
+                    candidate.description(),
+                    candidate.characterMessage(),
+                    candidate.completionCharacterResponse(),
+                    candidate.category(),
+                    candidate.difficulty(),
+                    rewardForDifficulty(candidate.difficulty())
             );
-            answer.replaceQuestion(text.completionQuestion());
+            answer.replaceQuestion(candidate.completionQuestion());
         });
 
         eventPublisher.publishEvent(MissionEventLogEvent.missionOffered(
@@ -341,6 +496,14 @@ public class MissionService {
                 toOccurredAt(mission.getOfferedAt())
         ));
         return mission;
+    }
+
+    private int rewardForDifficulty(MissionDifficultyType difficulty) {
+        return switch (difficulty) {
+            case EASY -> EASY_REWARD_STAR_PIECE;
+            case NORMAL -> NORMAL_REWARD_STAR_PIECE;
+            case CHALLENGE -> CHALLENGE_REWARD_STAR_PIECE;
+        };
     }
 
     /**
@@ -354,6 +517,16 @@ public class MissionService {
      */
     @Transactional
     public RejectMissionResponse rejectMission(Long userId, Long missionId) {
+        return rejectMission(userId, missionId, null, null);
+    }
+
+    @Transactional
+    public RejectMissionResponse rejectMission(
+            Long userId,
+            Long missionId,
+            String reasonCode,
+            String reasonText
+    ) {
         UserMission mission = userMissionRepository.findByIdAndUserId(missionId, userId)
                 .orElseThrow(() -> new MissionException(MissionErrorCode.MISSION_NOT_FOUND));
 
@@ -365,6 +538,8 @@ public class MissionService {
 
         LocalDateTime now = LocalDateTime.now(clock);
         mission.reject(now);
+        MissionFeedback feedback = upsertRejectionFeedback(mission, reasonCode, reasonText);
+        missionMemoryRecorder.recordRejection(mission, feedback);
         eventPublisher.publishEvent(MissionEventLogEvent.missionRejected(mission, toOccurredAt(now)));
 
         return RejectMissionResponse.newBuilder()
@@ -373,6 +548,40 @@ public class MissionService {
                 .setRejectedAt(formatDateTime(mission.getRejectedAt()))
                 .setCharacterMessage(REJECTION_CHARACTER_MESSAGE)
                 .build();
+    }
+
+    /**
+     * 거절 이유 또는 완료 만족도 피드백을 저장한다.
+     *
+     * 피드백은 보상 조건이 아니라 이후 자율 미션 개인화에 쓰는 입력 신호다.
+     */
+    @Transactional
+    public UpsertMissionFeedbackResponse upsertMissionFeedback(
+            Long userId,
+            Long missionId,
+            MissionFeedbackType feedbackType,
+            MissionFeedbackReaction reaction,
+            String reasonCode,
+            String reasonText
+    ) {
+        UserMission mission = userMissionRepository.findByIdAndUserId(missionId, userId)
+                .orElseThrow(() -> new MissionException(MissionErrorCode.MISSION_NOT_FOUND));
+
+        if (feedbackType == MissionFeedbackType.SATISFACTION) {
+            validateSatisfactionFeedback(mission, reaction);
+            MissionFeedback feedback = upsertSatisfactionFeedback(mission, reaction);
+            missionMemoryRecorder.recordSatisfaction(mission, feedback);
+            return toFeedbackResponse(feedback);
+        }
+
+        if (feedbackType == MissionFeedbackType.REJECTION) {
+            validateRejectionFeedback(mission);
+            MissionFeedback feedback = upsertRejectionFeedback(mission, reasonCode, reasonText);
+            missionMemoryRecorder.recordRejection(mission, feedback);
+            return toFeedbackResponse(feedback);
+        }
+
+        throw new MissionException(MissionErrorCode.MISSION_FEEDBACK_INVALID);
     }
 
     /**
@@ -427,8 +636,8 @@ public class MissionService {
                 status -> completeMissionInTransaction(userId, missionId, normalizedAnswer)
         ));
 
-        WalletRewardResult rewardResult = resolveReward(userId, context);
-        return toCompletionResponse(context.mission(), context.answer(), rewardResult.starPiece());
+        MissionCompletionReward reward = resolveReward(userId, context);
+        return toCompletionResponse(context.mission(), context.answer(), reward);
     }
 
     /**
@@ -448,12 +657,30 @@ public class MissionService {
                 throw new MissionException(MissionErrorCode.MISSION_ALREADY_COMPLETED);
             }
 
+            missionMemoryRecorder.recordCompletion(mission, answer);
+
             if (mission.isRewardPaid()) {
-                return new MissionCompletionContext(mission, answer, true, rewardIdempotencyKey, null);
+                return new MissionCompletionContext(
+                        mission,
+                        answer,
+                        true,
+                        false,
+                        rewardIdempotencyKey,
+                        null,
+                        null
+                );
             }
 
             MissionOutboxEvent outbox = ensureRewardOutbox(mission, rewardIdempotencyKey, LocalDateTime.now(clock));
-            return new MissionCompletionContext(mission, answer, false, rewardIdempotencyKey, outbox.getId());
+            return new MissionCompletionContext(
+                    mission,
+                    answer,
+                    false,
+                    false,
+                    rewardIdempotencyKey,
+                    outbox.getId(),
+                    outbox.getStatus()
+            );
         }
 
         if (!mission.isAnswering()) {
@@ -472,10 +699,19 @@ public class MissionService {
         LocalDateTime now = LocalDateTime.now(clock);
         answer.submit(normalizedAnswer, now);
         mission.complete(now);
+        missionMemoryRecorder.recordCompletion(mission, answer);
         eventPublisher.publishEvent(MissionEventLogEvent.missionCompleted(mission, answer, toOccurredAt(now)));
         MissionOutboxEvent outbox = ensureRewardOutbox(mission, rewardIdempotencyKey, now);
 
-        return new MissionCompletionContext(mission, answer, false, rewardIdempotencyKey, outbox.getId());
+        return new MissionCompletionContext(
+                mission,
+                answer,
+                false,
+                true,
+                rewardIdempotencyKey,
+                outbox.getId(),
+                outbox.getStatus()
+        );
     }
 
     /**
@@ -484,12 +720,31 @@ public class MissionService {
      * 이미 user_missions.idempotency_key가 있으면 보상 지급이 끝난 것으로 보고 새 거래를 만들지 않는다.
      * marker가 없으면 같은 MISSION_REWARD:{missionId} 키로 outbox를 즉시 발송해 중복 지급을 방어한다.
      */
-    private WalletRewardResult resolveReward(Long userId, MissionCompletionContext context) {
+    private MissionCompletionReward resolveReward(Long userId, MissionCompletionContext context) {
         if (context.rewardAlreadyPaid()) {
-            return new WalletRewardResult(walletRewardClient.getWalletStarPiece(userId), null);
+            return MissionCompletionReward.paid(walletRewardClient.getWalletStarPiece(userId));
         }
 
-        return missionRewardDispatcher.dispatchNow(context.rewardOutboxId());
+        if (!context.dispatchRewardNow()) {
+            return MissionCompletionReward.withoutWallet(toProtoRewardStatus(context.rewardOutboxStatus()));
+        }
+
+        try {
+            WalletRewardResult rewardResult = missionRewardDispatcher.dispatchNow(context.rewardOutboxId());
+            return MissionCompletionReward.paid(rewardResult.starPiece());
+        } catch (MissionException e) {
+            if (e.getErrorCode() != MissionErrorCode.MISSION_REWARD_FAILED) {
+                throw e;
+            }
+
+            log.warn(
+                    "미션 완료는 성공했지만 즉시 보상 지급에 실패해 outbox 재처리로 전환합니다. missionId={}, userId={}, outboxId={}",
+                    context.mission().getId(),
+                    userId,
+                    context.rewardOutboxId()
+            );
+            return MissionCompletionReward.withoutWallet(MissionRewardStatus.MISSION_REWARD_STATUS_PENDING);
+        }
     }
 
     private MissionOutboxEvent ensureRewardOutbox(
@@ -513,11 +768,11 @@ public class MissionService {
     /**
      * 오늘 아직 사용하지 않은 활성 미션 템플릿을 하나 고른다.
      *
-     * AI가 미션 제목/보상/카테고리를 임의 생성하지 않도록 seed template을 기준으로 선택한다.
-     * 같은 날 같은 템플릿이 반복 제안되는 느낌을 줄이기 위해 오늘 사용한 template id는 제외한다.
+     * AI 후보가 실패하거나 검증을 통과하지 못할 때 사용할 seed fallback template을 고른다.
+     * 같은 날 같은 fallback 미션이 반복 제안되는 느낌을 줄이기 위해 오늘 사용한 template id는 제외한다.
      * 후보 선택 순서는 id 오름차순이 아니라 날짜 기준 랜덤 정책에 맡긴다.
      */
-    private MissionTemplate selectNextTemplate(Long userId, LocalDate missionDate) {
+    private MissionTemplate selectNextTemplate(Long userId, LocalDate missionDate, MissionTimeSlot timeSlot) {
         List<Long> usedTemplateIds = userMissionRepository.findMissionTemplateIdsByUserIdAndMissionDate(userId, missionDate);
         Set<Long> usedTemplateIdSet = Set.copyOf(usedTemplateIds);
         List<MissionTemplate> activeTemplates = missionTemplateRepository.findByActiveTrueOrderByIdAsc();
@@ -526,7 +781,8 @@ public class MissionService {
                 userId,
                 missionDate,
                 activeTemplates,
-                usedTemplateIdSet
+                usedTemplateIdSet,
+                timeSlot
         );
     }
 
@@ -568,6 +824,75 @@ public class MissionService {
         return normalizedAnswer;
     }
 
+    private void validateSatisfactionFeedback(UserMission mission, MissionFeedbackReaction reaction) {
+        if (!mission.isCompleted() || reaction == null) {
+            throw new MissionException(MissionErrorCode.MISSION_FEEDBACK_INVALID);
+        }
+    }
+
+    private void validateRejectionFeedback(UserMission mission) {
+        if (mission.getStatus() != UserMissionStatus.REJECTED) {
+            throw new MissionException(MissionErrorCode.MISSION_FEEDBACK_INVALID);
+        }
+    }
+
+    private MissionFeedback upsertSatisfactionFeedback(
+            UserMission mission,
+            MissionFeedbackReaction reaction
+    ) {
+        MissionFeedback feedback = missionFeedbackRepository
+                .findByUserIdAndMissionIdAndFeedbackType(
+                        mission.getUserId(),
+                        mission.getId(),
+                        MissionFeedbackType.SATISFACTION
+                )
+                .orElseGet(() -> MissionFeedback.satisfaction(mission, reaction));
+        feedback.updateSatisfaction(reaction);
+        return missionFeedbackRepository.saveAndFlush(feedback);
+    }
+
+    private MissionFeedback upsertRejectionFeedback(
+            UserMission mission,
+            String reasonCode,
+            String reasonText
+    ) {
+        MissionFeedbackReasonCode normalizedReasonCode = toReasonCode(reasonCode);
+        String normalizedReasonText = normalizeReasonText(reasonText);
+        MissionFeedback feedback = missionFeedbackRepository
+                .findByUserIdAndMissionIdAndFeedbackType(
+                        mission.getUserId(),
+                        mission.getId(),
+                        MissionFeedbackType.REJECTION
+                )
+                .orElseGet(() -> MissionFeedback.rejection(mission, normalizedReasonCode, normalizedReasonText));
+        feedback.updateRejection(normalizedReasonCode, normalizedReasonText);
+        return missionFeedbackRepository.saveAndFlush(feedback);
+    }
+
+    private MissionFeedbackReasonCode toReasonCode(String reasonCode) {
+        if (reasonCode == null || reasonCode.isBlank()) {
+            return MissionFeedbackReasonCode.JUST_SKIP;
+        }
+
+        try {
+            return MissionFeedbackReasonCode.valueOf(reasonCode.trim());
+        } catch (IllegalArgumentException e) {
+            throw new MissionException(MissionErrorCode.MISSION_FEEDBACK_INVALID);
+        }
+    }
+
+    private String normalizeReasonText(String reasonText) {
+        if (reasonText == null || reasonText.isBlank()) {
+            return null;
+        }
+
+        String normalized = reasonText.trim();
+        if (normalized.length() > FEEDBACK_REASON_TEXT_MAX_LENGTH) {
+            throw new MissionException(MissionErrorCode.MISSION_FEEDBACK_INVALID);
+        }
+        return normalized;
+    }
+
     private String rewardIdempotencyKey(Long missionId) {
         return MISSION_REWARD_IDEMPOTENCY_KEY_PREFIX + missionId;
     }
@@ -594,9 +919,9 @@ public class MissionService {
     private SubmitCompletionAnswerResponse toCompletionResponse(
             UserMission mission,
             MissionCompletionAnswer answer,
-            int walletStarPiece
+            MissionCompletionReward completionReward
     ) {
-        return SubmitCompletionAnswerResponse.newBuilder()
+        SubmitCompletionAnswerResponse.Builder builder = SubmitCompletionAnswerResponse.newBuilder()
                 .setMissionId(mission.getId())
                 .setStatus(toProtoStatus(mission.getStatus()))
                 .setAnswer(toProtoAnswer(answer))
@@ -604,11 +929,47 @@ public class MissionService {
                         .setStarPiece(mission.getRewardStarPiece())
                         .setAffection(0)
                         .build())
-                .setWallet(WalletSnapshot.newBuilder()
-                        .setStarPiece(walletStarPiece)
-                        .build())
                 .setCharacterMessage(mission.getCompletionCharacterResponse())
-                .build();
+                .setRewardStatus(completionReward.rewardStatus());
+
+        if (completionReward.walletStarPiece() != null) {
+            builder.setWallet(WalletSnapshot.newBuilder()
+                    .setStarPiece(completionReward.walletStarPiece())
+                    .build());
+        }
+
+        return builder.build();
+    }
+
+    private MissionRewardStatus toProtoRewardStatus(MissionOutboxEventStatus outboxStatus) {
+        if (outboxStatus == MissionOutboxEventStatus.PROCESSING) {
+            return MissionRewardStatus.MISSION_REWARD_STATUS_PROCESSING;
+        }
+        if (outboxStatus == MissionOutboxEventStatus.FAILED) {
+            return MissionRewardStatus.MISSION_REWARD_STATUS_FAILED;
+        }
+        if (outboxStatus == MissionOutboxEventStatus.SUCCEEDED) {
+            return MissionRewardStatus.MISSION_REWARD_STATUS_PAID;
+        }
+        return MissionRewardStatus.MISSION_REWARD_STATUS_PENDING;
+    }
+
+    private UpsertMissionFeedbackResponse toFeedbackResponse(MissionFeedback feedback) {
+        UpsertMissionFeedbackResponse.Builder builder = UpsertMissionFeedbackResponse.newBuilder()
+                .setMissionId(feedback.getMissionId())
+                .setFeedbackType(toProtoFeedbackType(feedback.getFeedbackType()))
+                .setUpdatedAt(formatDateTime(feedback.getUpdatedAt()));
+
+        if (feedback.getReaction() != null) {
+            builder.setReaction(toProtoFeedbackReaction(feedback.getReaction()));
+        }
+        if (feedback.getReasonCode() != null) {
+            builder.setReasonCode(feedback.getReasonCode().name());
+        }
+        if (feedback.getReasonText() != null) {
+            builder.setReasonText(feedback.getReasonText());
+        }
+        return builder.build();
     }
 
     /**
@@ -661,7 +1022,11 @@ public class MissionService {
         return builder.build();
     }
 
-    private MissionDetail toProtoMissionDetail(UserMission mission, MissionCompletionAnswer answer) {
+    private MissionDetail toProtoMissionDetail(
+            UserMission mission,
+            MissionCompletionAnswer answer,
+            MissionFeedback satisfactionFeedback
+    ) {
         MissionDetail.Builder builder = MissionDetail.newBuilder()
                 .setId(mission.getId())
                 .setMissionDate(mission.getMissionDate().toString())
@@ -684,6 +1049,13 @@ public class MissionService {
                 builder.setAnswer(toProtoAnswer(answer));
                 builder.setHasAnswer(true);
             }
+        }
+
+        if (satisfactionFeedback != null && satisfactionFeedback.getReaction() != null) {
+            builder.setSatisfactionFeedback(MissionSatisfactionFeedback.newBuilder()
+                    .setReaction(toProtoFeedbackReaction(satisfactionFeedback.getReaction()))
+                    .setUpdatedAt(formatDateTime(satisfactionFeedback.getUpdatedAt()))
+                    .build());
         }
 
         return builder.build();
@@ -763,6 +1135,20 @@ public class MissionService {
         return MissionStatus.valueOf("MISSION_STATUS_" + status.name());
     }
 
+    private com.p5laris.proto.mission.v1.MissionFeedbackType toProtoFeedbackType(MissionFeedbackType feedbackType) {
+        return com.p5laris.proto.mission.v1.MissionFeedbackType.valueOf(
+                "MISSION_FEEDBACK_TYPE_" + feedbackType.name()
+        );
+    }
+
+    private com.p5laris.proto.mission.v1.MissionFeedbackReaction toProtoFeedbackReaction(
+            MissionFeedbackReaction reaction
+    ) {
+        return com.p5laris.proto.mission.v1.MissionFeedbackReaction.valueOf(
+                "MISSION_FEEDBACK_REACTION_" + reaction.name()
+        );
+    }
+
     // proto에는 LocalDateTime 타입을 직접 쓰지 않으므로 ISO 문자열로 변환한다.
     private String formatDateTime(LocalDateTime dateTime) {
         if (dateTime == null) {
@@ -789,13 +1175,29 @@ public class MissionService {
             UserMission mission,
             MissionCompletionAnswer answer,
             boolean rewardAlreadyPaid,
+            boolean dispatchRewardNow,
             String rewardIdempotencyKey,
-            Long rewardOutboxId
+            Long rewardOutboxId,
+            MissionOutboxEventStatus rewardOutboxStatus
     ) {
     }
 
+    private record MissionCompletionReward(
+            MissionRewardStatus rewardStatus,
+            Integer walletStarPiece
+    ) {
+
+        private static MissionCompletionReward paid(int walletStarPiece) {
+            return new MissionCompletionReward(MissionRewardStatus.MISSION_REWARD_STATUS_PAID, walletStarPiece);
+        }
+
+        private static MissionCompletionReward withoutWallet(MissionRewardStatus rewardStatus) {
+            return new MissionCompletionReward(rewardStatus, null);
+        }
+    }
+
     /**
-     * fallback 미션 저장 후 AI 문구 생성을 요청하는 데 필요한 값만 담은 스냅샷이다.
+     * fallback 미션 저장 후 AI 자율 미션 후보 생성을 요청하는 데 필요한 값만 담은 스냅샷이다.
      *
      * 이 record는 트랜잭션 밖에서 사용되므로 JPA Entity 대신 문자열/ID 값만 들고 간다.
      */
@@ -804,10 +1206,12 @@ public class MissionService {
             Long userId,
             Long characterId,
             Long missionTemplateId,
+            LocalDate missionDate,
+            LocalDateTime offeredAt,
             String baseTitle,
             String baseDescription,
-            String category,
-            String difficulty,
+            MissionCategoryType category,
+            MissionDifficultyType difficulty,
             String fallbackCharacterMessage,
             String fallbackQuestion,
             String fallbackCompletionResponse,
@@ -824,10 +1228,12 @@ public class MissionService {
                     mission.getUserId(),
                     mission.getCharacterId(),
                     template.getId(),
+                    mission.getMissionDate(),
+                    mission.getOfferedAt(),
                     template.getBaseTitle(),
                     template.getBaseDescription(),
-                    template.getCategory().name(),
-                    template.getDifficulty().name(),
+                    template.getCategory(),
+                    template.getDifficulty(),
                     template.getFallbackCharacterMessage(),
                     template.getFallbackQuestion(),
                     template.getFallbackCompletionResponse(),

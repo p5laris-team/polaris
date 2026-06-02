@@ -47,6 +47,16 @@ public class NotificationController {
     }
 
     /**
+     * 로그인한 사용자의 안 읽은 알림을 모두 읽음 처리한다.
+     */
+    @PatchMapping("/v1/notifications/read-all")
+    public ApiResponse<NotificationDto.MarkAllNotificationsReadResponse> markAllNotificationsRead(
+            @LoginUserId Long userId
+    ) {
+        return ApiResponse.success(notificationGatewayService.markAllNotificationsRead(userId));
+    }
+
+    /**
      * 알림 읽음 여부를 변경한다.
      */
     @PatchMapping("/v1/notifications/{notificationId}")

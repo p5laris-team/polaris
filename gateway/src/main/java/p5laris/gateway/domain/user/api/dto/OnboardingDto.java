@@ -15,6 +15,8 @@ public class OnboardingDto {
         private String key;
         private String content;
         private List<AnswerOption> options;
+        private boolean multipleSelection;
+        private int maxSelectionCount;
     }
 
     @Getter
@@ -36,6 +38,11 @@ public class OnboardingDto {
         private String missionIntensity;
         private String answersJson;
         private boolean completed;
+        private int onboardingVersion;
+        private List<String> routineGoals;
+        private List<String> preferredTimeSlots;
+        private List<String> missionPlaceContexts;
+        private List<String> avoidedMissionTags;
     }
 
     @Getter
@@ -51,5 +58,10 @@ public class OnboardingDto {
         private String missionIntensity;
         private String answersJson;
         private Boolean completed;
+        private Integer onboardingVersion;
+        private List<String> routineGoals;
+        private List<String> preferredTimeSlots;
+        private List<String> missionPlaceContexts;
+        private List<String> avoidedMissionTags;
     }
 }

@@ -727,7 +727,9 @@ PLAY      → affection 회복
 
 ```text
 미션은 한 번에 하나씩 제안한다.
-하루 최대 제안 수는 15개다.
+하루 보상 완료는 최대 20회다.
+하루 거절은 최대 10회다.
+CHALLENGE 미션은 하루 1회까지만 제안한다.
 오늘 제안된 미션은 stack으로 관리한다.
 자정 또는 날짜 변경 시 당일 stack은 만료될 수 있다.
 거절은 실패가 아니다.
@@ -844,11 +846,10 @@ FCM 푸시 알림은 토큰 등록, 사용자 설정, 방해 금지 시간 정�
 ### 20.10 AI 미션
 
 ```text
-AI는 미션 자체를 무제한 자유 생성하지 않는다.
-seed 미션 + 날짜 기준 랜덤 선택 + 캐릭터 말투 문구 생성 구조를 유지한다.
+AI는 개인화 context를 바탕으로 미션 후보와 캐릭터 문구를 생성한다.
 AI 응답은 구조화 검증 후 저장한다.
-AI 실패 시 fallback 문구/템플릿을 사용한다.
-미션 제목, 보상, 카테고리를 AI가 임의 변경하게 두지 않는다.
+AI 실패 시 seed fallback 문구/템플릿을 사용한다.
+미션 제목, 보상, 카테고리, 난이도는 mission 서버의 정책 검증을 통과해야 한다.
 ```
 
 AI 실패 케이스:
@@ -1045,6 +1046,22 @@ unique/check/index가 필요한가?
 nullable 정책이 명확한가?
 기본값이 필요한가?
 삭제/soft delete 정책이 필요한가?
+```
+
+unique index를 추가하는 migration은 기존 데이터 중복 여부를 먼저 점검한다. 특히 기존 값을 정규화한 직후 unique index를 거는 경우에는 "정규화 후 값" 기준으로 중복 0건을 확인하는 쿼리를 배포 체크리스트에 남긴다.
+
+예: character `share_cards`는 V10에서 `image_url` full URL을 object key로 정규화하고 V12에서 `(user_id, image_url)` partial unique index를 생성한다. V12 적용 전 아래 결과가 0건이어야 한다.
+
+```sql
+SELECT
+    user_id,
+    image_url,
+    COUNT(*) AS duplicate_count,
+    ARRAY_AGG(id ORDER BY id) AS share_card_ids
+FROM share_cards
+WHERE image_url IS NOT NULL
+GROUP BY user_id, image_url
+HAVING COUNT(*) > 1;
 ```
 
 다음 테이블/기능은 사용자가 다시 요청하기 전까지 만들지 않는다.

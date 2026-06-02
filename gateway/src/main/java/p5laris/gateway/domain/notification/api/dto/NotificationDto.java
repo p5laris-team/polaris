@@ -66,6 +66,16 @@ public class NotificationDto {
     }
 
     /**
+     * 알림 모두 읽음 처리 응답이다.
+     */
+    public record MarkAllNotificationsReadResponse(
+            Long updatedCount,
+            Long unreadCount,
+            String updatedAt
+    ) {
+    }
+
+    /**
      * FCM registration token 등록/갱신 요청이다.
      */
     public record RegisterFcmTokenRequest(

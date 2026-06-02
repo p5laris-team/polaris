@@ -4,37 +4,57 @@ import com.p5laris.proto.mission.v1.CreateNextMissionResponse;
 import com.p5laris.proto.mission.v1.CompletionInputType;
 import com.p5laris.proto.mission.v1.GetCurrentMissionResponse;
 import com.p5laris.proto.mission.v1.GetTodayMissionsResponse;
+import com.p5laris.proto.mission.v1.MissionRewardStatus;
 import com.p5laris.proto.mission.v1.MissionStatus;
 import com.p5laris.proto.mission.v1.RejectMissionResponse;
 import com.p5laris.proto.mission.v1.StartCompletionSessionResponse;
 import com.p5laris.proto.mission.v1.SubmitCompletionAnswerResponse;
+import com.p5laris.proto.mission.v1.UpsertMissionFeedbackResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
 import p5laris.mission.domain.domain.entity.MissionCompletionAnswer;
+import p5laris.mission.domain.domain.entity.MissionFeedback;
 import p5laris.mission.domain.domain.entity.MissionOutboxEvent;
+import p5laris.mission.domain.domain.entity.UserMemory;
 import p5laris.mission.domain.domain.entity.UserMission;
+import p5laris.mission.domain.domain.enums.MissionFeedbackReaction;
+import p5laris.mission.domain.domain.enums.MissionFeedbackReasonCode;
+import p5laris.mission.domain.domain.enums.MissionFeedbackType;
 import p5laris.mission.domain.domain.enums.MissionOutboxEventStatus;
+import p5laris.mission.domain.domain.enums.UserMemorySourceType;
+import p5laris.mission.domain.domain.enums.UserMemoryType;
 import p5laris.mission.domain.domain.enums.UserMissionStatus;
 import p5laris.mission.domain.domain.repository.MissionCompletionAnswerRepository;
+import p5laris.mission.domain.domain.repository.MissionFeedbackRepository;
 import p5laris.mission.domain.domain.repository.MissionOutboxEventRepository;
 import p5laris.mission.domain.domain.repository.MissionTemplateRepository;
+import p5laris.mission.domain.domain.repository.UserMemoryRepository;
 import p5laris.mission.domain.domain.repository.UserMissionRepository;
 import p5laris.mission.domain.exception.MissionErrorCode;
 import p5laris.mission.domain.exception.MissionException;
 import p5laris.mission.domain.infrastructure.grpc.AiMissionTextClient;
+import p5laris.mission.domain.infrastructure.grpc.AiMissionTextRequest;
 import p5laris.mission.domain.infrastructure.grpc.AiMissionTextResult;
+import p5laris.mission.domain.infrastructure.grpc.AiTextEmbeddingClient;
 import p5laris.mission.domain.infrastructure.grpc.CharacterProfileClient;
 import p5laris.mission.domain.infrastructure.grpc.NotificationPushClient;
+import p5laris.mission.domain.infrastructure.grpc.OnboardingProfileClient;
+import p5laris.mission.domain.infrastructure.grpc.OnboardingProfileClient.OnboardingProfileSnapshot;
 import p5laris.mission.domain.infrastructure.grpc.WalletRewardClient;
 import p5laris.mission.domain.infrastructure.grpc.WalletRewardResult;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -42,6 +62,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -50,6 +72,38 @@ import static org.mockito.Mockito.when;
 @SpringBootTest(properties = {
         "grpc.server.port=0",
         "grpc.client.notification.address=static://localhost:9098",
+        "spring.data.redis.host=localhost",
+        "spring.data.redis.port=6379",
+        "spring.data.redis.password=",
+        "spring.data.redis.timeout=200ms",
+        "mission.weather.enabled=false",
+        "mission.weather.provider=kma",
+        "mission.weather.default-nx=60",
+        "mission.weather.default-ny=127",
+        "mission.weather.default-location-label=SEOUL",
+        "mission.weather.timeout-ms=1500",
+        "mission.weather.cache-ttl-seconds=1800",
+        "mission.weather.redis-cache-enabled=false",
+        "mission.weather.rate-limit-enabled=false",
+        "mission.weather.rate-limit-requests-per-minute=60",
+        "mission.weather.rate-limit-key-ttl-seconds=70",
+        "mission.weather.rate-limit-fail-closed=true",
+        "mission.weather.kma.base-url=http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0",
+        "mission.weather.kma.service-key=test-key",
+        "mission.rag.enabled=false",
+        "mission.rag.embedding-model=gemini-embedding-001",
+        "mission.rag.embedding-dimension=768",
+        "mission.rag.top-k=5",
+        "mission.rag.similarity-threshold=0.72",
+        "mission.rag.fallback-to-recent-memory=true",
+        "mission.memory-embedding.enabled=false",
+        "mission.memory-embedding.fixed-delay-ms=60000",
+        "mission.memory-embedding.initial-delay-ms=60000",
+        "mission.memory-embedding.batch-size=20",
+        "mission.memory-embedding.max-attempts=3",
+        "mission.memory-embedding.processing-timeout-seconds=60",
+        "mission.memory-embedding.retry-initial-delay-seconds=60",
+        "mission.memory-embedding.retry-max-delay-seconds=1800",
         "mission.reward-outbox.enabled=false",
         "mission.reward-outbox.fixed-delay-ms=60000",
         "mission.reward-outbox.initial-delay-ms=60000",
@@ -57,7 +111,8 @@ import static org.mockito.Mockito.when;
         "mission.reward-outbox.max-attempts=5",
         "mission.reward-outbox.processing-timeout-seconds=60",
         "mission.reward-outbox.retry-initial-delay-seconds=60",
-        "mission.reward-outbox.retry-max-delay-seconds=3600"
+        "mission.reward-outbox.retry-max-delay-seconds=3600",
+        "mission.reward-wallet.deadline-ms=1000"
 })
 class MissionServiceTest {
 
@@ -69,6 +124,9 @@ class MissionServiceTest {
     private MissionService missionService;
 
     @Autowired
+    private Clock clock;
+
+    @Autowired
     private MissionRewardDispatcher missionRewardDispatcher;
 
     @Autowired
@@ -76,6 +134,12 @@ class MissionServiceTest {
 
     @Autowired
     private MissionCompletionAnswerRepository missionCompletionAnswerRepository;
+
+    @Autowired
+    private MissionFeedbackRepository missionFeedbackRepository;
+
+    @Autowired
+    private UserMemoryRepository userMemoryRepository;
 
     @Autowired
     private MissionOutboxEventRepository missionOutboxEventRepository;
@@ -90,31 +154,46 @@ class MissionServiceTest {
     private AiMissionTextClient aiMissionTextClient;
 
     @MockitoBean
+    private AiTextEmbeddingClient aiTextEmbeddingClient;
+
+    @MockitoBean
     private CharacterProfileClient characterProfileClient;
+
+    @MockitoBean
+    private OnboardingProfileClient onboardingProfileClient;
 
     @MockitoBean
     private NotificationPushClient notificationPushClient;
 
     @BeforeEach
     void setUp() {
+        userMemoryRepository.deleteAll();
         missionOutboxEventRepository.deleteAll();
+        missionFeedbackRepository.deleteAll();
         missionCompletionAnswerRepository.deleteAll();
         userMissionRepository.deleteAll();
-        reset(walletRewardClient, aiMissionTextClient, characterProfileClient, notificationPushClient);
+        reset(walletRewardClient, aiMissionTextClient, aiTextEmbeddingClient, characterProfileClient, onboardingProfileClient, notificationPushClient);
         when(walletRewardClient.earnMissionReward(anyLong(), anyLong(), anyInt(), anyString()))
                 .thenReturn(new WalletRewardResult(110, 9001L));
         when(walletRewardClient.getWalletStarPiece(anyLong()))
                 .thenReturn(110);
         when(characterProfileClient.findActiveCharacterTypeCode(anyLong(), anyLong()))
                 .thenReturn(Optional.of("NOVA"));
+        when(onboardingProfileClient.findProfile(anyLong()))
+                .thenReturn(Optional.empty());
+        ReflectionTestUtils.setField(missionService, "clock", clock);
         when(aiMissionTextClient.generateMissionTexts(any()))
-                .thenReturn(Optional.of(new AiMissionTextResult(
-                        501L,
-                        "AI가 바꾼 제안 문구",
-                        "AI가 만든 완료 질문",
-                        "AI가 만든 완료 반응",
-                        false
-                )));
+                .thenAnswer(invocation -> {
+                    AiMissionTextRequest request = invocation.getArgument(0);
+                    String category = request == null ? "BASIC_ROUTINE" : request.category();
+                    return Optional.of(aiMissionTextResult(
+                            501L,
+                            "AI가 만든 자율 미션",
+                            "AI가 만든 자율 미션 설명",
+                            category,
+                            "EASY"
+                    ));
+                });
     }
 
     @Test
@@ -134,6 +213,8 @@ class MissionServiceTest {
         assertThat(created.hasMission()).isTrue();
         assertThat(created.getMission().getStatus()).isEqualTo(MissionStatus.MISSION_STATUS_OFFERED);
         assertThat(created.getMission().getRewardStarPiece()).isEqualTo(10);
+        assertThat(created.getMission().getTitle()).isEqualTo("AI가 만든 자율 미션");
+        assertThat(created.getMission().getDescription()).isEqualTo("AI가 만든 자율 미션 설명");
         assertThat(created.getMission().getCharacterMessage()).isEqualTo("AI가 바꾼 제안 문구");
         assertThat(current.hasMission()).isTrue();
         assertThat(current.getMission().getId()).isEqualTo(created.getMission().getId());
@@ -143,12 +224,13 @@ class MissionServiceTest {
                 .findByMissionId(created.getMission().getId())
                 .orElseThrow();
         assertThat(savedMission.getAiGenerationId()).isEqualTo(501L);
+        assertThat(savedMission.getMissionTemplateId()).isNull();
         assertThat(savedMission.getCompletionCharacterResponse()).isEqualTo("AI가 만든 완료 반응");
         assertThat(savedAnswer.getQuestionText()).isEqualTo("AI가 만든 완료 질문");
     }
 
     @Test
-    void AI_문구_생성에_실패하면_template_fallback_문구로_미션을_생성한다() {
+    void AI_후보_생성에_실패하면_template_fallback_미션을_생성한다() {
         when(aiMissionTextClient.generateMissionTexts(any()))
                 .thenReturn(Optional.empty());
 
@@ -163,6 +245,414 @@ class MissionServiceTest {
         assertThat(savedMission.getCharacterMessage()).isEqualTo(template.getFallbackCharacterMessage());
         assertThat(savedMission.getCompletionCharacterResponse()).isEqualTo(template.getFallbackCompletionResponse());
         assertThat(savedAnswer.getQuestionText()).isEqualTo(template.getFallbackQuestion());
+    }
+
+    @Test
+    void AI가_fallback_결과를_반환하면_seed_template_fallback을_유지한다() {
+        when(aiMissionTextClient.generateMissionTexts(any()))
+                .thenReturn(Optional.of(aiMissionTextResult(
+                        601L,
+                        "fallback 후보 제목",
+                        "fallback 후보 설명",
+                        "BASIC_ROUTINE",
+                        "EASY",
+                        true
+                )));
+
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        UserMission savedMission = userMissionRepository.findById(created.getMission().getId()).orElseThrow();
+        MissionCompletionAnswer savedAnswer = missionCompletionAnswerRepository
+                .findByMissionId(created.getMission().getId())
+                .orElseThrow();
+        var template = missionTemplateRepository.findById(savedMission.getMissionTemplateId()).orElseThrow();
+
+        assertThat(savedMission.getAiGenerationId()).isNull();
+        assertThat(savedMission.getTitle()).isEqualTo(template.getBaseTitle());
+        assertThat(savedMission.getCharacterMessage()).isEqualTo(template.getFallbackCharacterMessage());
+        assertThat(savedAnswer.getQuestionText()).isEqualTo(template.getFallbackQuestion());
+    }
+
+    @Test
+    void AI_후보가_정책을_위반하면_한_번_재요청하고_통과한_후보를_저장한다() {
+        when(aiMissionTextClient.generateMissionTexts(any()))
+                .thenAnswer(invocation -> {
+                    AiMissionTextRequest request = invocation.getArgument(0);
+                    return Optional.of(aiMissionTextResult(
+                            901L,
+                            "첫 번째 후보",
+                            "첫 번째 후보 설명",
+                            differentCategory(request.category()),
+                            "EASY"
+                    ));
+                })
+                .thenAnswer(invocation -> {
+                    AiMissionTextRequest request = invocation.getArgument(0);
+                    return Optional.of(aiMissionTextResult(
+                            902L,
+                            "다시 고른 후보",
+                            "다시 고른 후보 설명",
+                            request.category(),
+                            "EASY"
+                    ));
+                });
+        ArgumentCaptor<AiMissionTextRequest> requestCaptor = ArgumentCaptor.forClass(AiMissionTextRequest.class);
+
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        UserMission savedMission = userMissionRepository.findById(created.getMission().getId()).orElseThrow();
+
+        assertThat(savedMission.getAiGenerationId()).isEqualTo(902L);
+        assertThat(savedMission.getMissionTemplateId()).isNull();
+        assertThat(savedMission.getTitle()).isEqualTo("다시 고른 후보");
+        verify(aiMissionTextClient, times(2)).generateMissionTexts(requestCaptor.capture());
+        assertThat(requestCaptor.getAllValues().get(1).requestId())
+                .startsWith(requestCaptor.getAllValues().get(0).requestId())
+                .endsWith(":RETRY:1");
+    }
+
+    @Test
+    void AI_후보가_두_번_모두_정책을_위반하면_seed_template_fallback을_유지한다() {
+        when(aiMissionTextClient.generateMissionTexts(any()))
+                .thenAnswer(invocation -> {
+                    AiMissionTextRequest request = invocation.getArgument(0);
+                    return Optional.of(aiMissionTextResult(
+                            911L,
+                            "첫 번째 후보",
+                            "첫 번째 후보 설명",
+                            differentCategory(request.category()),
+                            "EASY"
+                    ));
+                })
+                .thenAnswer(invocation -> {
+                    AiMissionTextRequest request = invocation.getArgument(0);
+                    return Optional.of(aiMissionTextResult(
+                            912L,
+                            "두 번째 후보",
+                            "두 번째 후보 설명",
+                            differentCategory(request.category()),
+                            "EASY"
+                    ));
+                });
+
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        UserMission savedMission = userMissionRepository.findById(created.getMission().getId()).orElseThrow();
+        var template = missionTemplateRepository.findById(savedMission.getMissionTemplateId()).orElseThrow();
+
+        assertThat(savedMission.getAiGenerationId()).isNull();
+        assertThat(savedMission.getTitle()).isEqualTo(template.getBaseTitle());
+        assertThat(savedMission.getDescription()).isEqualTo(template.getBaseDescription());
+        verify(aiMissionTextClient, times(2)).generateMissionTexts(any());
+    }
+
+    @Test
+    void AI_후보가_오늘_이미_본_행동군과_겹치면_한_번_재요청한다() {
+        when(aiMissionTextClient.generateMissionTexts(any()))
+                .thenAnswer(invocation -> {
+                    AiMissionTextRequest request = invocation.getArgument(0);
+                    return Optional.of(aiMissionTextResult(
+                            921L,
+                            "물 한 모금 마시기",
+                            "가까운 물을 한 모금 마시고 잠깐 숨을 골라보세요.",
+                            request.category(),
+                            "EASY"
+                    ));
+                })
+                .thenAnswer(invocation -> {
+                    AiMissionTextRequest request = invocation.getArgument(0);
+                    return Optional.of(aiMissionTextResult(
+                            922L,
+                            "수분 채우기",
+                            "물을 한 잔 마시며 몸에 필요한 수분을 채워보세요.",
+                            request.category(),
+                            "EASY"
+                    ));
+                })
+                .thenAnswer(invocation -> {
+                    AiMissionTextRequest request = invocation.getArgument(0);
+                    return Optional.of(aiMissionTextResult(
+                            923L,
+                            "집중 타이머 켜기",
+                            "5분 동안 할 일을 하나 정하고 타이머를 켜보세요.",
+                            request.category(),
+                            "EASY"
+                    ));
+                });
+
+        CreateNextMissionResponse first = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        missionService.rejectMission(USER_ID, first.getMission().getId());
+
+        CreateNextMissionResponse second = missionService.createNextMission(USER_ID, CHARACTER_ID, first.getMission().getId());
+        UserMission savedSecond = userMissionRepository.findById(second.getMission().getId()).orElseThrow();
+
+        assertThat(savedSecond.getAiGenerationId()).isEqualTo(923L);
+        assertThat(savedSecond.getMissionTemplateId()).isNull();
+        assertThat(savedSecond.getTitle()).isEqualTo("집중 타이머 켜기");
+        verify(aiMissionTextClient, times(3)).generateMissionTexts(any());
+    }
+
+    @Test
+    void AI_후보가_오늘_이미_본_행동군과_두_번_겹치면_seed_template_fallback을_유지한다() {
+        when(aiMissionTextClient.generateMissionTexts(any()))
+                .thenAnswer(invocation -> {
+                    AiMissionTextRequest request = invocation.getArgument(0);
+                    return Optional.of(aiMissionTextResult(
+                            931L,
+                            "물 한 모금 마시기",
+                            "가까운 물을 한 모금 마시고 잠깐 숨을 골라보세요.",
+                            request.category(),
+                            "EASY"
+                    ));
+                })
+                .thenAnswer(invocation -> {
+                    AiMissionTextRequest request = invocation.getArgument(0);
+                    return Optional.of(aiMissionTextResult(
+                            932L,
+                            "수분 채우기",
+                            "물을 한 잔 마시며 몸에 필요한 수분을 채워보세요.",
+                            request.category(),
+                            "EASY"
+                    ));
+                })
+                .thenAnswer(invocation -> {
+                    AiMissionTextRequest request = invocation.getArgument(0);
+                    return Optional.of(aiMissionTextResult(
+                            933L,
+                            "따뜻한 차 한 모금",
+                            "가까운 컵에 담긴 음료를 한 모금 마셔보세요.",
+                            request.category(),
+                            "EASY"
+                    ));
+                });
+
+        CreateNextMissionResponse first = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        missionService.rejectMission(USER_ID, first.getMission().getId());
+
+        CreateNextMissionResponse second = missionService.createNextMission(USER_ID, CHARACTER_ID, first.getMission().getId());
+        UserMission savedSecond = userMissionRepository.findById(second.getMission().getId()).orElseThrow();
+        var template = missionTemplateRepository.findById(savedSecond.getMissionTemplateId()).orElseThrow();
+
+        assertThat(savedSecond.getAiGenerationId()).isNull();
+        assertThat(savedSecond.getTitle()).isEqualTo(template.getBaseTitle());
+        assertThat(savedSecond.getDescription()).isEqualTo(template.getBaseDescription());
+        verify(aiMissionTextClient, times(3)).generateMissionTexts(any());
+    }
+
+    @Test
+    void AI_제목이나_설명에_캐릭터_해석_형식이_섞이면_seed_template_fallback을_유지한다() {
+        when(aiMissionTextClient.generateMissionTexts(any()))
+                .thenReturn(Optional.of(aiMissionTextResult(
+                        602L,
+                        "무우... 무...? (해석: 몸 좌우 균형 느끼기)",
+                        "서 있거나 앉은 상태에서 몸이 어느 쪽으로 기우는지 느껴보세요.",
+                        "BODY_CARE",
+                        "EASY"
+                )));
+
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        UserMission savedMission = userMissionRepository.findById(created.getMission().getId()).orElseThrow();
+        MissionCompletionAnswer savedAnswer = missionCompletionAnswerRepository
+                .findByMissionId(created.getMission().getId())
+                .orElseThrow();
+        var template = missionTemplateRepository.findById(savedMission.getMissionTemplateId()).orElseThrow();
+
+        assertThat(savedMission.getAiGenerationId()).isNull();
+        assertThat(savedMission.getTitle()).isEqualTo(template.getBaseTitle());
+        assertThat(savedMission.getDescription()).isEqualTo(template.getBaseDescription());
+        assertThat(savedAnswer.getQuestionText()).isEqualTo(template.getFallbackQuestion());
+    }
+
+    @Test
+    void AI_제목이_캐릭터_발화로_시작하면_seed_template_fallback을_유지한다() {
+        when(aiMissionTextClient.generateMissionTexts(any()))
+                .thenReturn(Optional.of(aiMissionTextResult(
+                        603L,
+                        "무우... 몸 좌우 균형 느끼기",
+                        "서 있거나 앉은 상태에서 몸이 어느 쪽으로 기우는지 느껴보세요.",
+                        "BODY_CARE",
+                        "EASY"
+                )));
+
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        UserMission savedMission = userMissionRepository.findById(created.getMission().getId()).orElseThrow();
+        var template = missionTemplateRepository.findById(savedMission.getMissionTemplateId()).orElseThrow();
+
+        assertThat(savedMission.getAiGenerationId()).isNull();
+        assertThat(savedMission.getTitle()).isEqualTo(template.getBaseTitle());
+    }
+
+    @Test
+    void AI가_NORMAL_난이도를_반환하면_보상을_15개로_확정한다() {
+        when(aiMissionTextClient.generateMissionTexts(any()))
+                .thenAnswer(invocation -> {
+                    AiMissionTextRequest request = invocation.getArgument(0);
+                    return Optional.of(aiMissionTextResult(
+                            601L,
+                            "3분 창가 숨 고르기",
+                            "창가나 가까운 자리에서 3분 동안 천천히 숨을 골라보세요.",
+                            request.category(),
+                            "NORMAL"
+                    ));
+                });
+
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        UserMission savedMission = userMissionRepository.findById(created.getMission().getId()).orElseThrow();
+
+        assertThat(created.getMission().getRewardStarPiece()).isEqualTo(15);
+        assertThat(created.getMission().getDifficulty().name()).isEqualTo("MISSION_DIFFICULTY_NORMAL");
+        assertThat(savedMission.getAiGenerationId()).isEqualTo(601L);
+        assertThat(savedMission.getMissionTemplateId()).isNull();
+    }
+
+    @Test
+    void AI가_CHALLENGE_난이도를_반환하면_보상을_30개로_확정한다() {
+        when(aiMissionTextClient.generateMissionTexts(any()))
+                .thenAnswer(invocation -> {
+                    AiMissionTextRequest request = invocation.getArgument(0);
+                    return Optional.of(aiMissionTextResult(
+                            701L,
+                            "책상 한 구역 깊게 정리",
+                            "책상 위 한 구역을 정해서 5분 동안 물건을 분류하고 닦아보세요.",
+                            request.category(),
+                            "CHALLENGE"
+                    ));
+                });
+
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        UserMission savedMission = userMissionRepository.findById(created.getMission().getId()).orElseThrow();
+
+        assertThat(created.getMission().getRewardStarPiece()).isEqualTo(30);
+        assertThat(created.getMission().getDifficulty().name()).isEqualTo("MISSION_DIFFICULTY_CHALLENGE");
+        assertThat(savedMission.getAiGenerationId()).isEqualTo(701L);
+        assertThat(savedMission.getMissionTemplateId()).isNull();
+    }
+
+    @Test
+    void CHALLENGE_미션은_하루에_한_번만_AI_후보로_확정한다() {
+        AtomicInteger aiGenerationSequence = new AtomicInteger(700);
+        when(aiMissionTextClient.generateMissionTexts(any()))
+                .thenAnswer(invocation -> {
+                    AiMissionTextRequest request = invocation.getArgument(0);
+                    long aiGenerationId = aiGenerationSequence.incrementAndGet();
+                    return Optional.of(aiMissionTextResult(
+                            aiGenerationId,
+                            aiGenerationId == 701L ? "첫 도전 미션" : "두 번째 도전 미션",
+                            aiGenerationId == 701L ? "5분짜리 첫 도전 미션이에요." : "5분짜리 두 번째 도전 미션이에요.",
+                            request.category(),
+                            "CHALLENGE"
+                    ));
+                });
+        CreateNextMissionResponse first = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        missionService.rejectMission(USER_ID, first.getMission().getId());
+
+        CreateNextMissionResponse second = missionService.createNextMission(USER_ID, CHARACTER_ID, first.getMission().getId());
+        UserMission savedSecond = userMissionRepository.findById(second.getMission().getId()).orElseThrow();
+
+        assertThat(savedSecond.getAiGenerationId()).isNull();
+        assertThat(savedSecond.getMissionTemplateId()).isNotNull();
+        assertThat(second.getMission().getRewardStarPiece()).isNotEqualTo(30);
+    }
+
+    @Test
+    void 온보딩과_최근_미션_context를_AI_생성_요청에_전달한다() {
+        when(onboardingProfileClient.findProfile(USER_ID))
+                .thenReturn(Optional.of(new OnboardingProfileSnapshot(
+                        2,
+                        List.of("MOVE_BODY", "FOCUS"),
+                        List.of("MORNING"),
+                        List.of("HOME"),
+                        "NORMAL",
+                        List.of("OUTDOOR"),
+                        true
+                )));
+        ArgumentCaptor<AiMissionTextRequest> requestCaptor = ArgumentCaptor.forClass(AiMissionTextRequest.class);
+
+        missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+
+        verify(aiMissionTextClient).generateMissionTexts(requestCaptor.capture());
+        AiMissionTextRequest request = requestCaptor.getValue();
+        assertThat(request.onboardingContextJson())
+                .contains("\"available\":true")
+                .contains("\"routineGoals\":[\"MOVE_BODY\",\"FOCUS\"]")
+                .contains("\"missionIntensity\":\"NORMAL\"");
+        assertThat(request.recentMissionContextJson())
+                .contains("\"policyContext\"")
+                .contains("\"allowedDifficulties\"")
+                .contains("\"environmentContext\"")
+                .contains("\"currentTimeSlot\"")
+                .contains("\"timeSlotPolicy\"")
+                .contains("\"locationPolicy\"")
+                .contains("\"weatherPolicy\"")
+                .contains("\"weather\":null")
+                .contains("\"source\":\"NONE\"")
+                .contains("\"blockedCategories\"")
+                .contains("\"blockedMissionKeywords\"")
+                .contains("\"memoryPolicy\"")
+                .contains("\"referenceOnly\":true")
+                .contains("\"diversityPolicy\"")
+                .contains("\"avoidSameActionFamily\":true")
+                .contains("\"avoidSameCoreObject\":true")
+                .contains("\"serverGuard\"")
+                .contains("\"todayMissionDiversity\"")
+                .contains("\"userMemories\":[]")
+                .contains("\"recentMissions\"");
+    }
+
+    @Test
+    void 사용자_기억_context를_AI_생성_요청에_포함한다() {
+        ArgumentCaptor<AiMissionTextRequest> requestCaptor = ArgumentCaptor.forClass(AiMissionTextRequest.class);
+        AtomicInteger aiGenerationSequence = new AtomicInteger(500);
+        when(aiMissionTextClient.generateMissionTexts(any()))
+                .thenAnswer(invocation -> {
+                    AiMissionTextRequest request = invocation.getArgument(0);
+                    int sequence = aiGenerationSequence.incrementAndGet();
+                    return Optional.of(aiMissionTextResult(
+                            (long) sequence,
+                            "AI가 만든 자율 미션 " + sequence,
+                            "AI가 만든 자율 미션 설명 " + sequence,
+                            request.category(),
+                            "EASY"
+                    ));
+                });
+        CreateNextMissionResponse first = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        missionService.startCompletionSession(USER_ID, first.getMission().getId());
+        missionService.submitCompletionAnswer(USER_ID, first.getMission().getId(), "어깨가 덜 뻐근했어");
+
+        missionService.createNextMission(USER_ID, CHARACTER_ID, first.getMission().getId());
+
+        verify(aiMissionTextClient, times(2)).generateMissionTexts(requestCaptor.capture());
+        String secondContext = requestCaptor.getAllValues().get(1).recentMissionContextJson();
+        assertThat(secondContext)
+                .contains("\"memoryPolicy\"")
+                .contains("\"available\":true")
+                .contains("\"referenceOnly\":true")
+                .contains("\"todayMissionDiversity\"")
+                .contains("\"actionFamily\"")
+                .contains("\"userMemories\"")
+                .contains("\"type\":\"MISSION_COMPLETION\"")
+                .contains("\"sourceType\":\"MISSION_COMPLETION_ANSWER\"")
+                .contains("어깨가 덜 뻐근했어")
+                .contains("\"importance\":70")
+                .contains("\"metadata\"");
+    }
+
+    @Test
+    void 밤에_AI가_햇빛_미션을_반환하면_seed_template_fallback을_유지한다() {
+        ReflectionTestUtils.setField(missionService, "clock", fixedClockAt(2026, 5, 25, 22, 30));
+        when(aiMissionTextClient.generateMissionTexts(any()))
+                .thenReturn(Optional.of(aiMissionTextResult(
+                        801L,
+                        "짧은 햇빛 충전하기",
+                        "가능하다면 햇빛이나 밝은 곳에 1분 정도 머물러보세요.",
+                        "OUTDOOR_LIGHT",
+                        "EASY"
+                )));
+
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        UserMission savedMission = userMissionRepository.findById(created.getMission().getId()).orElseThrow();
+        var template = missionTemplateRepository.findById(savedMission.getMissionTemplateId()).orElseThrow();
+
+        assertThat(savedMission.getAiGenerationId()).isNull();
+        assertThat(savedMission.getTitle()).isEqualTo(template.getBaseTitle());
+        assertThat(savedMission.getCategory().name()).isNotEqualTo("OUTDOOR_LIGHT");
     }
 
     @Test
@@ -204,6 +694,46 @@ class MissionServiceTest {
         assertThat(current.hasMission()).isFalse();
         assertThat(saved.getStatus()).isEqualTo(UserMissionStatus.REJECTED);
         assertThat(saved.getRejectedAt()).isNotNull();
+    }
+
+    @Test
+    void 거절_이유가_없으면_JUST_SKIP으로_피드백을_저장한다() {
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+
+        missionService.rejectMission(USER_ID, created.getMission().getId());
+
+        MissionFeedback feedback = findFeedback(created.getMission().getId(), MissionFeedbackType.REJECTION);
+        assertThat(feedback.getReasonCode()).isEqualTo(MissionFeedbackReasonCode.JUST_SKIP);
+        assertThat(feedback.getReasonText()).isNull();
+        assertThat(userMemoryRepository.findBySourceTypeAndSourceIdAndMemoryType(
+                UserMemorySourceType.MISSION_FEEDBACK,
+                feedback.getId(),
+                UserMemoryType.MISSION_REJECTION
+        )).isEmpty();
+    }
+
+    @Test
+    void 거절_이유와_사유를_선택적으로_저장한다() {
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+
+        missionService.rejectMission(
+                USER_ID,
+                created.getMission().getId(),
+                "TOO_HARD",
+                "오늘은 몸이 무거워"
+        );
+
+        MissionFeedback feedback = findFeedback(created.getMission().getId(), MissionFeedbackType.REJECTION);
+        UserMemory memory = findMemory(
+                UserMemorySourceType.MISSION_FEEDBACK,
+                feedback.getId(),
+                UserMemoryType.MISSION_REJECTION
+        );
+        assertThat(feedback.getReasonCode()).isEqualTo(MissionFeedbackReasonCode.TOO_HARD);
+        assertThat(feedback.getReasonText()).isEqualTo("오늘은 몸이 무거워");
+        assertThat(memory.getContent()).contains("오늘은 몸이 무거워", "TOO_HARD");
+        assertThat(memory.getMetadataJson().get("missionId").asLong()).isEqualTo(created.getMission().getId());
+        assertThat(memory.getMetadataJson().get("reasonCode").asText()).isEqualTo("TOO_HARD");
     }
 
     @Test
@@ -317,6 +847,7 @@ class MissionServiceTest {
                 .isEqualTo("오늘은 책상 위 컵을 치우고 물도 한 모금 마셨어");
         assertThat(response.getMission().getAnswer().getAnsweredAt()).isNotBlank();
         assertThat(response.getMission().getCompletionCharacterResponse()).isEqualTo("AI가 만든 완료 반응");
+        assertThat(response.getMission().hasSatisfactionFeedback()).isFalse();
     }
 
     @Test
@@ -437,6 +968,8 @@ class MissionServiceTest {
         assertThat(response.getAnswer().getText()).isEqualTo("물 한 컵을 마셨어");
         assertThat(response.getAnswer().getAnsweredAt()).isNotBlank();
         assertThat(response.getReward().getStarPiece()).isEqualTo(10);
+        assertThat(response.getRewardStatus()).isEqualTo(MissionRewardStatus.MISSION_REWARD_STATUS_PAID);
+        assertThat(response.hasWallet()).isTrue();
         assertThat(response.getWallet().getStarPiece()).isEqualTo(110);
         assertThat(response.getCharacterMessage()).isNotBlank();
         assertThat(savedMission.getStatus()).isEqualTo(UserMissionStatus.COMPLETED);
@@ -444,6 +977,14 @@ class MissionServiceTest {
         assertThat(savedMission.getIdempotencyKey()).isEqualTo("MISSION_REWARD:" + created.getMission().getId());
         assertThat(savedAnswer.getAnswerText()).isEqualTo("물 한 컵을 마셨어");
         assertThat(savedAnswer.getAnsweredAt()).isNotNull();
+        UserMemory memory = findMemory(
+                UserMemorySourceType.MISSION_COMPLETION_ANSWER,
+                savedAnswer.getId(),
+                UserMemoryType.MISSION_COMPLETION
+        );
+        assertThat(memory.getContent()).contains("물 한 컵을 마셨어");
+        assertThat(memory.getImportance()).isEqualTo(70);
+        assertThat(memory.getMetadataJson().get("missionId").asLong()).isEqualTo(created.getMission().getId());
         assertThat(savedOutbox.getStatus()).isEqualTo(MissionOutboxEventStatus.SUCCEEDED);
         assertThat(savedOutbox.getAttemptCount()).isZero();
         assertThat(savedOutbox.getIdempotencyKey()).isEqualTo("MISSION_REWARD:" + created.getMission().getId());
@@ -453,6 +994,98 @@ class MissionServiceTest {
                 10,
                 "MISSION_REWARD:" + created.getMission().getId()
         );
+        verify(notificationPushClient, never()).sendMissionRewardRecoveredNotification(
+                USER_ID,
+                created.getMission().getId(),
+                10
+        );
+    }
+
+    @Test
+    void 완료_미션에_만족도_피드백을_저장하고_다시_보내면_갱신한다() {
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        missionService.startCompletionSession(USER_ID, created.getMission().getId());
+        missionService.submitCompletionAnswer(USER_ID, created.getMission().getId(), "완료했어");
+
+        UpsertMissionFeedbackResponse liked = missionService.upsertMissionFeedback(
+                USER_ID,
+                created.getMission().getId(),
+                MissionFeedbackType.SATISFACTION,
+                MissionFeedbackReaction.LIKE,
+                null,
+                null
+        );
+        UpsertMissionFeedbackResponse disliked = missionService.upsertMissionFeedback(
+                USER_ID,
+                created.getMission().getId(),
+                MissionFeedbackType.SATISFACTION,
+                MissionFeedbackReaction.DISLIKE,
+                null,
+                null
+        );
+
+        MissionFeedback feedback = findFeedback(created.getMission().getId(), MissionFeedbackType.SATISFACTION);
+        UserMemory memory = findMemory(
+                UserMemorySourceType.MISSION_FEEDBACK,
+                feedback.getId(),
+                UserMemoryType.MISSION_SATISFACTION
+        );
+        assertThat(liked.getReaction().name()).isEqualTo("MISSION_FEEDBACK_REACTION_LIKE");
+        assertThat(disliked.getReaction().name()).isEqualTo("MISSION_FEEDBACK_REACTION_DISLIKE");
+        assertThat(feedback.getReaction()).isEqualTo(MissionFeedbackReaction.DISLIKE);
+        assertThat(missionService.getMissionDetail(USER_ID, created.getMission().getId())
+                .getMission()
+                .getSatisfactionFeedback()
+                .getReaction()
+                .name()).isEqualTo("MISSION_FEEDBACK_REACTION_DISLIKE");
+        assertThat(memory.getContent()).contains("별로였어요");
+        assertThat(memory.getImportance()).isEqualTo(75);
+        assertThat(memory.getMetadataJson().get("reaction").asText()).isEqualTo("DISLIKE");
+        assertThat(missionFeedbackRepository.findAll())
+                .filteredOn(saved -> saved.getMissionId().equals(created.getMission().getId())
+                        && saved.getFeedbackType() == MissionFeedbackType.SATISFACTION)
+                .hasSize(1);
+        assertThat(userMemoryRepository.findAll())
+                .filteredOn(saved -> saved.getSourceType() == UserMemorySourceType.MISSION_FEEDBACK
+                        && saved.getSourceId().equals(feedback.getId())
+                        && saved.getMemoryType() == UserMemoryType.MISSION_SATISFACTION)
+                .hasSize(1);
+    }
+
+    @Test
+    void 다른_유저의_미션에는_만족도_피드백을_저장할_수_없다() {
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        missionService.startCompletionSession(USER_ID, created.getMission().getId());
+        missionService.submitCompletionAnswer(USER_ID, created.getMission().getId(), "완료했어");
+
+        assertThatThrownBy(() -> missionService.upsertMissionFeedback(
+                9999L,
+                created.getMission().getId(),
+                MissionFeedbackType.SATISFACTION,
+                MissionFeedbackReaction.LIKE,
+                null,
+                null
+        ))
+                .isInstanceOf(MissionException.class)
+                .extracting("errorCode")
+                .isEqualTo(MissionErrorCode.MISSION_NOT_FOUND);
+    }
+
+    @Test
+    void 완료되지_않은_미션에는_만족도_피드백을_저장할_수_없다() {
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+
+        assertThatThrownBy(() -> missionService.upsertMissionFeedback(
+                USER_ID,
+                created.getMission().getId(),
+                MissionFeedbackType.SATISFACTION,
+                MissionFeedbackReaction.LIKE,
+                null,
+                null
+        ))
+                .isInstanceOf(MissionException.class)
+                .extracting("errorCode")
+                .isEqualTo(MissionErrorCode.MISSION_FEEDBACK_INVALID);
     }
 
     @Test
@@ -493,6 +1126,8 @@ class MissionServiceTest {
 
         assertThat(response.getStatus()).isEqualTo(MissionStatus.MISSION_STATUS_COMPLETED);
         assertThat(response.getAnswer().getText()).isEqualTo("완료했어");
+        assertThat(response.getRewardStatus()).isEqualTo(MissionRewardStatus.MISSION_REWARD_STATUS_PAID);
+        assertThat(response.hasWallet()).isTrue();
         assertThat(response.getWallet().getStarPiece()).isEqualTo(110);
         MissionOutboxEvent savedOutbox = findRewardOutbox(created.getMission().getId());
         assertThat(savedOutbox.getStatus()).isEqualTo(MissionOutboxEventStatus.SUCCEEDED);
@@ -528,14 +1163,11 @@ class MissionServiceTest {
         when(walletRewardClient.earnMissionReward(anyLong(), anyLong(), anyInt(), anyString()))
                 .thenThrow(new MissionException(MissionErrorCode.MISSION_REWARD_FAILED));
 
-        assertThatThrownBy(() -> missionService.submitCompletionAnswer(
+        SubmitCompletionAnswerResponse response = missionService.submitCompletionAnswer(
                 USER_ID,
                 created.getMission().getId(),
                 "완료했어"
-        ))
-                .isInstanceOf(MissionException.class)
-                .extracting("errorCode")
-                .isEqualTo(MissionErrorCode.MISSION_REWARD_FAILED);
+        );
 
         UserMission savedMission = userMissionRepository.findById(created.getMission().getId()).orElseThrow();
         MissionCompletionAnswer savedAnswer = missionCompletionAnswerRepository
@@ -543,6 +1175,9 @@ class MissionServiceTest {
                 .orElseThrow();
         MissionOutboxEvent savedOutbox = findRewardOutbox(created.getMission().getId());
 
+        assertThat(response.getStatus()).isEqualTo(MissionStatus.MISSION_STATUS_COMPLETED);
+        assertThat(response.getRewardStatus()).isEqualTo(MissionRewardStatus.MISSION_REWARD_STATUS_PENDING);
+        assertThat(response.hasWallet()).isFalse();
         assertThat(savedMission.getStatus()).isEqualTo(UserMissionStatus.COMPLETED);
         assertThat(savedMission.getIdempotencyKey()).isNull();
         assertThat(savedAnswer.getAnswerText()).isEqualTo("완료했어");
@@ -552,21 +1187,17 @@ class MissionServiceTest {
     }
 
     @Test
-    void reward_marker가_없는_COMPLETED_미션은_같은_답변_재시도_시_wallet_적립을_다시_시도한다() {
+    void reward_marker가_없는_COMPLETED_미션은_같은_답변_재시도_시_PENDING을_반환한다() {
         CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
         missionService.startCompletionSession(USER_ID, created.getMission().getId());
         when(walletRewardClient.earnMissionReward(anyLong(), anyLong(), anyInt(), anyString()))
-                .thenThrow(new MissionException(MissionErrorCode.MISSION_REWARD_FAILED))
-                .thenReturn(new WalletRewardResult(110, 9001L));
+                .thenThrow(new MissionException(MissionErrorCode.MISSION_REWARD_FAILED));
 
-        assertThatThrownBy(() -> missionService.submitCompletionAnswer(
+        SubmitCompletionAnswerResponse first = missionService.submitCompletionAnswer(
                 USER_ID,
                 created.getMission().getId(),
                 "완료했어"
-        ))
-                .isInstanceOf(MissionException.class)
-                .extracting("errorCode")
-                .isEqualTo(MissionErrorCode.MISSION_REWARD_FAILED);
+        );
 
         SubmitCompletionAnswerResponse retried = missionService.submitCompletionAnswer(
                 USER_ID,
@@ -576,16 +1207,24 @@ class MissionServiceTest {
         UserMission savedMission = userMissionRepository.findById(created.getMission().getId()).orElseThrow();
         MissionOutboxEvent savedOutbox = findRewardOutbox(created.getMission().getId());
 
+        assertThat(first.getRewardStatus()).isEqualTo(MissionRewardStatus.MISSION_REWARD_STATUS_PENDING);
+        assertThat(first.hasWallet()).isFalse();
         assertThat(retried.getStatus()).isEqualTo(MissionStatus.MISSION_STATUS_COMPLETED);
-        assertThat(retried.getWallet().getStarPiece()).isEqualTo(110);
-        assertThat(savedMission.getIdempotencyKey()).isEqualTo("MISSION_REWARD:" + created.getMission().getId());
-        assertThat(savedOutbox.getStatus()).isEqualTo(MissionOutboxEventStatus.SUCCEEDED);
+        assertThat(retried.getRewardStatus()).isEqualTo(MissionRewardStatus.MISSION_REWARD_STATUS_PENDING);
+        assertThat(retried.hasWallet()).isFalse();
+        assertThat(savedMission.getIdempotencyKey()).isNull();
+        assertThat(savedOutbox.getStatus()).isEqualTo(MissionOutboxEventStatus.PENDING);
         assertThat(savedOutbox.getAttemptCount()).isEqualTo(1);
-        verify(walletRewardClient, times(2)).earnMissionReward(
+        verify(walletRewardClient, times(1)).earnMissionReward(
                 USER_ID,
                 created.getMission().getId(),
                 10,
                 "MISSION_REWARD:" + created.getMission().getId()
+        );
+        verify(notificationPushClient, never()).sendMissionRewardRecoveredNotification(
+                USER_ID,
+                created.getMission().getId(),
+                10
         );
     }
 
@@ -597,14 +1236,13 @@ class MissionServiceTest {
                 .thenThrow(new MissionException(MissionErrorCode.MISSION_REWARD_FAILED))
                 .thenReturn(new WalletRewardResult(110, 9001L));
 
-        assertThatThrownBy(() -> missionService.submitCompletionAnswer(
+        SubmitCompletionAnswerResponse response = missionService.submitCompletionAnswer(
                 USER_ID,
                 created.getMission().getId(),
                 "완료했어"
-        ))
-                .isInstanceOf(MissionException.class)
-                .extracting("errorCode")
-                .isEqualTo(MissionErrorCode.MISSION_REWARD_FAILED);
+        );
+        assertThat(response.getRewardStatus()).isEqualTo(MissionRewardStatus.MISSION_REWARD_STATUS_PENDING);
+        assertThat(response.hasWallet()).isFalse();
 
         MissionOutboxEvent pendingOutbox = findRewardOutbox(created.getMission().getId());
         ReflectionTestUtils.setField(pendingOutbox, "nextAttemptAt", LocalDateTime.now().minusSeconds(1));
@@ -624,11 +1262,113 @@ class MissionServiceTest {
                 10,
                 "MISSION_REWARD:" + created.getMission().getId()
         );
+        verify(notificationPushClient).sendMissionRewardRecoveredNotification(
+                USER_ID,
+                created.getMission().getId(),
+                10
+        );
+    }
+
+    @Test
+    void 보상_outbox_재처리_성공_알림이_실패해도_보상_성공은_유지된다() {
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        missionService.startCompletionSession(USER_ID, created.getMission().getId());
+        when(walletRewardClient.earnMissionReward(anyLong(), anyLong(), anyInt(), anyString()))
+                .thenThrow(new MissionException(MissionErrorCode.MISSION_REWARD_FAILED))
+                .thenReturn(new WalletRewardResult(110, 9001L));
+        doThrow(new RuntimeException("notification unavailable"))
+                .when(notificationPushClient)
+                .sendMissionRewardRecoveredNotification(USER_ID, created.getMission().getId(), 10);
+
+        SubmitCompletionAnswerResponse response = missionService.submitCompletionAnswer(
+                USER_ID,
+                created.getMission().getId(),
+                "완료했어"
+        );
+        assertThat(response.getRewardStatus()).isEqualTo(MissionRewardStatus.MISSION_REWARD_STATUS_PENDING);
+        assertThat(response.hasWallet()).isFalse();
+
+        MissionOutboxEvent pendingOutbox = findRewardOutbox(created.getMission().getId());
+        ReflectionTestUtils.setField(pendingOutbox, "nextAttemptAt", LocalDateTime.now().minusSeconds(1));
+        missionOutboxEventRepository.saveAndFlush(pendingOutbox);
+
+        int succeededCount = missionRewardDispatcher.dispatchDue(10);
+
+        UserMission savedMission = userMissionRepository.findById(created.getMission().getId()).orElseThrow();
+        MissionOutboxEvent savedOutbox = findRewardOutbox(created.getMission().getId());
+        assertThat(succeededCount).isEqualTo(1);
+        assertThat(savedMission.getIdempotencyKey()).isEqualTo("MISSION_REWARD:" + created.getMission().getId());
+        assertThat(savedOutbox.getStatus()).isEqualTo(MissionOutboxEventStatus.SUCCEEDED);
+        verify(notificationPushClient).sendMissionRewardRecoveredNotification(
+                USER_ID,
+                created.getMission().getId(),
+                10
+        );
     }
 
     private MissionOutboxEvent findRewardOutbox(Long missionId) {
         return missionOutboxEventRepository
                 .findByIdempotencyKey("MISSION_REWARD:" + missionId)
                 .orElseThrow();
+    }
+
+    private MissionFeedback findFeedback(Long missionId, MissionFeedbackType feedbackType) {
+        return missionFeedbackRepository
+                .findByUserIdAndMissionIdAndFeedbackType(USER_ID, missionId, feedbackType)
+                .orElseThrow();
+    }
+
+    private UserMemory findMemory(
+            UserMemorySourceType sourceType,
+            Long sourceId,
+            UserMemoryType memoryType
+    ) {
+        return userMemoryRepository
+                .findBySourceTypeAndSourceIdAndMemoryType(sourceType, sourceId, memoryType)
+                .orElseThrow();
+    }
+
+    private String differentCategory(String category) {
+        return "BASIC_ROUTINE".equals(category) ? "REST_RECOVERY" : "BASIC_ROUTINE";
+    }
+
+    private AiMissionTextResult aiMissionTextResult(
+            Long aiGenerationId,
+            String title,
+            String description,
+            String category,
+            String difficulty
+    ) {
+        return aiMissionTextResult(aiGenerationId, title, description, category, difficulty, false);
+    }
+
+    private AiMissionTextResult aiMissionTextResult(
+            Long aiGenerationId,
+            String title,
+            String description,
+            String category,
+            String difficulty,
+            boolean fallbackUsed
+    ) {
+        return new AiMissionTextResult(
+                aiGenerationId,
+                title,
+                description,
+                "AI가 바꾼 제안 문구",
+                "AI가 만든 완료 질문",
+                "AI가 만든 완료 반응",
+                category,
+                difficulty,
+                fallbackUsed,
+                "request-" + aiGenerationId
+        );
+    }
+
+    private Clock fixedClockAt(int year, int month, int day, int hour, int minute) {
+        ZoneId zone = ZoneId.of("Asia/Seoul");
+        return Clock.fixed(
+                LocalDateTime.of(year, month, day, hour, minute).atZone(zone).toInstant(),
+                zone
+        );
     }
 }

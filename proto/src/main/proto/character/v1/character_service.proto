@@ -219,6 +219,7 @@ message CreateShareEventResponse {
   bool reward_paid = 2;
   int32 reward_star_piece = 3;
   int32 wallet_star_piece = 4; // updated wallet balance (0 if wallet not yet integrated)
+  string reward_status = 5; // PAID | PENDING | NOT_ELIGIBLE | FAILED
 }
 
 // GetShareLink: public endpoint - returns shared card info (spec 9.4)
@@ -256,6 +257,7 @@ message GetTodayShareEventStatusRequest {
 message GetTodayShareEventStatusResponse {
   bool reward_claimed = 1;
   string last_shared_at = 2; // ISO-8601 instant; empty when never shared
+  string reward_status = 3; // AVAILABLE | PAID | PENDING | FAILED
 }
 
 // GetSharePresignedUrl: issues presigned URL for S3 upload

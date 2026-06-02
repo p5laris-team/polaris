@@ -3,6 +3,7 @@ package p5laris.notification.domain.application;
 import com.p5laris.proto.notification.v1.GetNotificationsResponse;
 import com.p5laris.proto.notification.v1.GetNotificationSettingResponse;
 import com.p5laris.proto.notification.v1.MarkNotificationReadResponse;
+import com.p5laris.proto.notification.v1.MarkAllNotificationsReadResponse;
 import com.p5laris.proto.notification.v1.NotificationSettingSnapshot;
 import com.p5laris.proto.notification.v1.PageInfo;
 import com.p5laris.proto.notification.v1.RegisterFcmTokenResponse;
@@ -120,6 +121,21 @@ public class NotificationService {
                 .setId(notification.getId())
                 .setRead(notification.isRead())
                 .setUpdatedAt(toString(notification.getUpdatedAt()))
+                .build();
+    }
+
+    @Transactional
+    public MarkAllNotificationsReadResponse markAllNotificationsRead(Long userId) {
+        validateUserId(userId);
+
+        LocalDateTime updatedAt = LocalDateTime.now();
+        int updatedCount = notificationRepository.markAllReadByUserId(userId, updatedAt, updatedAt);
+        long unreadCount = notificationRepository.countByUserIdAndReadFalse(userId);
+
+        return MarkAllNotificationsReadResponse.newBuilder()
+                .setUpdatedCount(updatedCount)
+                .setUnreadCount(unreadCount)
+                .setUpdatedAt(toString(updatedAt))
                 .build();
     }
 
