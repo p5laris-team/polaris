@@ -18,6 +18,8 @@ import p5laris.item.domain.domain.repository.UserItemRepository;
 import p5laris.item.domain.domain.repository.UserItemUsageRepository;
 import p5laris.item.domain.domain.repository.UserItemPurchaseRepository;
 import p5laris.item.domain.exception.ItemException;
+import p5laris.item.domain.infrastructure.config.ItemPurchaseWalletProperties;
+import java.util.concurrent.TimeUnit;
 
 import java.util.Arrays;
 import java.util.Optional;
@@ -50,6 +52,9 @@ class ItemServiceTest {
     @Mock
     private org.springframework.transaction.support.TransactionTemplate transactionTemplate;
 
+    @Mock
+    private ItemPurchaseWalletProperties itemPurchaseWalletProperties;
+
     @InjectMocks
     private ItemService itemService;
 
@@ -59,6 +64,9 @@ class ItemServiceTest {
             org.springframework.transaction.support.TransactionCallback<?> callback = invocation.getArgument(0);
             return callback.doInTransaction(null);
         });
+
+        lenient().when(itemPurchaseWalletProperties.getDeadlineMs()).thenReturn(1000L);
+        lenient().when(walletStub.withDeadlineAfter(anyLong(), any(TimeUnit.class))).thenReturn(walletStub);
 
         ReflectionTestUtils.setField(itemService, "cdnBaseUrl", "https://d24c6my56k1w5v.cloudfront.net");
         ReflectionTestUtils.setField(itemService, "walletStub", walletStub);

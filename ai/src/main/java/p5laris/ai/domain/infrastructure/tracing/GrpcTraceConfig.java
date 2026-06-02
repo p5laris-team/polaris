@@ -4,7 +4,9 @@ import io.grpc.ClientInterceptor;
 import io.grpc.ServerInterceptor;
 import net.devh.boot.grpc.client.interceptor.GrpcGlobalClientInterceptor;
 import net.devh.boot.grpc.server.interceptor.GrpcGlobalServerInterceptor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
+import p5laris.common.deadline.GrpcDeadlineClientInterceptor;
 import p5laris.common.tracing.GrpcTraceClientInterceptor;
 import p5laris.common.tracing.GrpcTraceServerInterceptor;
 
@@ -14,6 +16,9 @@ import p5laris.common.tracing.GrpcTraceServerInterceptor;
 @Configuration
 public class GrpcTraceConfig {
 
+    @Value("${grpc.default-deadline-ms:3000}")
+    private long defaultDeadlineMs;
+
     @GrpcGlobalServerInterceptor
     public ServerInterceptor traceServerInterceptor() {
         return new GrpcTraceServerInterceptor();
@@ -22,5 +27,10 @@ public class GrpcTraceConfig {
     @GrpcGlobalClientInterceptor
     public ClientInterceptor traceClientInterceptor() {
         return new GrpcTraceClientInterceptor();
+    }
+
+    @GrpcGlobalClientInterceptor
+    public ClientInterceptor deadlineClientInterceptor() {
+        return new GrpcDeadlineClientInterceptor(defaultDeadlineMs);
     }
 }

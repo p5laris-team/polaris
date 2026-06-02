@@ -1,25 +1,19 @@
-package p5laris.gateway.global.tracing;
+package p5laris.item.infrastructure.config;
 
 import io.grpc.ClientInterceptor;
 import net.devh.boot.grpc.client.interceptor.GrpcGlobalClientInterceptor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import p5laris.common.deadline.GrpcDeadlineClientInterceptor;
-import p5laris.common.tracing.GrpcTraceClientInterceptor;
 
 /**
- * gateway에서 각 도메인 모듈로 나가는 gRPC 호출에 현재 traceId를 전파한다.
+ * item 모듈에서 나가는 모든 gRPC 호출에 대해 기본 deadline(제한시간)을 설정하는 인터셉터를 등록합니다.
  */
 @Configuration
-public class GrpcTraceClientConfig {
+public class GrpcClientConfig {
 
-    @Value("${grpc.default-deadline-ms:5000}")
+    @Value("${grpc.default-deadline-ms:3000}")
     private long defaultDeadlineMs;
-
-    @GrpcGlobalClientInterceptor
-    public ClientInterceptor traceClientInterceptor() {
-        return new GrpcTraceClientInterceptor();
-    }
 
     @GrpcGlobalClientInterceptor
     public ClientInterceptor deadlineClientInterceptor() {

@@ -24,6 +24,8 @@ import p5laris.item.domain.domain.repository.UserItemUsageRepository;
 import p5laris.item.domain.domain.repository.UserItemPurchaseRepository;
 import p5laris.item.domain.exception.ItemErrorCode;
 import p5laris.item.domain.exception.ItemException;
+import p5laris.item.domain.infrastructure.config.ItemPurchaseWalletProperties;
+import java.util.concurrent.TimeUnit;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -39,6 +41,7 @@ public class ItemService {
     private final UserItemPurchaseRepository userItemPurchaseRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final org.springframework.transaction.support.TransactionTemplate transactionTemplate;
+    private final ItemPurchaseWalletProperties itemPurchaseWalletProperties;
 
     @Value("${asset.cdn-base-url}")
     private String cdnBaseUrl;
@@ -208,7 +211,7 @@ public class ItemService {
         SpendStarPieceResponse spendResponse = null;
         try {
             // Transaction 2: User 서버로 별조각 차감 API(gRPC) 호출
-            spendResponse = walletStub.spendStarPiece(
+            spendResponse = deadlineWalletStub().spendStarPiece(
                 SpendStarPieceRequest.newBuilder()
                     .setUserId(userId)
                     .setAmount(totalPrice)
@@ -425,5 +428,9 @@ public class ItemService {
             normalizedImageUrl = "/" + normalizedImageUrl;
         }
         return baseUrl + normalizedImageUrl;
+    }
+
+    private WalletServiceGrpc.WalletServiceBlockingStub deadlineWalletStub() {
+        return walletStub.withDeadlineAfter(itemPurchaseWalletProperties.getDeadlineMs(), TimeUnit.MILLISECONDS);
     }
 }

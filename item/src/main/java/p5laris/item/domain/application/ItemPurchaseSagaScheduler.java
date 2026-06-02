@@ -12,6 +12,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
 import p5laris.item.domain.domain.entity.UserItemPurchase;
 import p5laris.item.domain.domain.repository.UserItemPurchaseRepository;
+import p5laris.item.domain.infrastructure.config.ItemPurchaseWalletProperties;
+import java.util.concurrent.TimeUnit;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -24,6 +26,7 @@ public class ItemPurchaseSagaScheduler {
 
     private final UserItemPurchaseRepository userItemPurchaseRepository;
     private final TransactionTemplate transactionTemplate;
+    private final ItemPurchaseWalletProperties itemPurchaseWalletProperties;
 
     @GrpcClient("user")
     private WalletServiceGrpc.WalletServiceBlockingStub walletStub;
@@ -36,7 +39,7 @@ public class ItemPurchaseSagaScheduler {
         for (UserItemPurchase purchase : unknownPurchases) {
             try {
                 // 2. User 서버에 결제(재화 차감)가 실제로 성공했었는지 확인
-                CheckTransactionResponse checkResponse = walletStub.checkTransaction(
+                CheckTransactionResponse checkResponse = deadlineWalletStub().checkTransaction(
                         CheckTransactionRequest.newBuilder()
                                 .setIdempotencyKey(purchase.getIdempotencyKey())
                                 .build()
@@ -50,7 +53,7 @@ public class ItemPurchaseSagaScheduler {
                         log.info("Found orphan purchase transaction. Refunding {} star pieces for userId={}", 
                                 p.getPrice(), p.getUserId());
                                 
-                        walletStub.earnStarPiece(
+                        deadlineWalletStub().earnStarPiece(
                                 EarnStarPieceRequest.newBuilder()
                                         .setUserId(p.getUserId())
                                         .setAmount(p.getPrice())
@@ -82,5 +85,9 @@ public class ItemPurchaseSagaScheduler {
                 });
             }
         }
+    }
+
+    private WalletServiceGrpc.WalletServiceBlockingStub deadlineWalletStub() {
+        return walletStub.withDeadlineAfter(itemPurchaseWalletProperties.getDeadlineMs(), TimeUnit.MILLISECONDS);
     }
 }
