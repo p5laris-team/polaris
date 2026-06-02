@@ -5,7 +5,7 @@ import lombok.Builder;
 import java.time.Instant;
 
 /**
- * Response DTO for EquipSkin (API spec 4.8).
+ * 스킨 장착 응답 DTO다.
  */
 @Builder
 public record EquipSkinResponse(

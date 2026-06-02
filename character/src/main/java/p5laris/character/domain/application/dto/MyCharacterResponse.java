@@ -6,7 +6,7 @@ import java.util.Map;
 
 
 /**
- * DTO for GetMyCharacter API spec 4.4.
+ * 내 활성 캐릭터 조회 응답 DTO다.
  */
 @Builder
 public record MyCharacterResponse(

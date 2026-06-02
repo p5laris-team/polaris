@@ -28,7 +28,7 @@ public class ShareEventLogEventListener {
         try {
             eventLogStub.recordEventLog(toRequest(event));
         } catch (Exception e) {
-            log.error("Failed to record share event log via gRPC: {}", event.eventType(), e);
+            log.error("공유 이벤트 로그 gRPC 기록에 실패했습니다. eventType={}", event.eventType(), e);
         }
     }
 

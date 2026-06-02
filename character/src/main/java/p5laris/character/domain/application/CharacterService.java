@@ -15,10 +15,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import p5laris.character.domain.application.dto.CharacterAssetResponse;
 import p5laris.character.domain.application.dto.CharacterTypeResponse;
+import p5laris.character.domain.application.dto.GrantCharacterExpResponse;
 import p5laris.character.domain.domain.entity.CharacterCareLog;
+import p5laris.character.domain.domain.entity.CharacterExpLog;
 import p5laris.character.domain.domain.entity.CharacterType;
 import p5laris.character.domain.domain.entity.UserCharacter;
 import p5laris.character.domain.domain.enums.ActionType;
+import p5laris.character.domain.domain.enums.CharacterExpSourceType;
 import p5laris.character.domain.domain.enums.CharacterMood;
 import p5laris.character.domain.domain.enums.StatGrade;
 import p5laris.character.domain.domain.enums.StatType;
@@ -26,6 +29,7 @@ import p5laris.character.domain.domain.policy.CharacterCareGrowthPolicy;
 import p5laris.character.domain.domain.policy.CharacterGrowthPolicy;
 import p5laris.character.domain.domain.repository.CharacterAssetRepository;
 import p5laris.character.domain.domain.repository.CharacterCareLogRepository;
+import p5laris.character.domain.domain.repository.CharacterExpLogRepository;
 import p5laris.character.domain.domain.repository.CharacterTypeRepository;
 
 import p5laris.character.domain.domain.repository.UserCharacterRepository;
@@ -56,6 +60,7 @@ public class CharacterService {
     private final CharacterAssetRepository characterAssetRepository;
     private final UserCharacterRepository userCharacterRepository;
     private final CharacterCareLogRepository characterCareLogRepository;
+    private final CharacterExpLogRepository characterExpLogRepository;
     private final S3StorageService s3StorageService;
     private final ObjectMapper objectMapper;
     private final ApplicationEventPublisher eventPublisher;
@@ -187,7 +192,7 @@ public class CharacterService {
                 assetUrls.putAll(skinAssetUrls);
             }
         } catch (Exception e) {
-            log.error("Failed to get skin assets from item service for skinItemId: {}, characterTypeId: {}", 
+            log.error("아이템 서비스에서 스킨 에셋을 조회하지 못했습니다. skinItemId={}, characterTypeId={}",
                     equippedSkinId, characterTypeId, e);
         }
         return assetUrls;
@@ -207,7 +212,7 @@ public class CharacterService {
             CharacterMood mood = CharacterMood.fromAssetType(assetType);
             assetUrls.put(mood.responseKey(), s3StorageService.toPublicUrl(assetUrl));
         } catch (IllegalArgumentException e) {
-            log.debug("Skipping unknown character asset type: {}", assetType);
+            log.debug("알 수 없는 캐릭터 에셋 타입은 응답에서 제외합니다. assetType={}", assetType);
         }
     }
 
@@ -361,6 +366,76 @@ public class CharacterService {
     }
 
     @Transactional
+    public GrantCharacterExpResponse grantCharacterExp(
+            Long userId,
+            Long characterId,
+            String sourceTypeValue,
+            Long sourceId,
+            int expAmount,
+            String idempotencyKey
+    ) {
+        validateExpGrantRequest(sourceId, expAmount, idempotencyKey);
+        CharacterExpSourceType sourceType = parseExpSourceType(sourceTypeValue);
+
+        var existingByKey = characterExpLogRepository.findByIdempotencyKey(idempotencyKey);
+        if (existingByKey.isPresent()) {
+            return replayMatchingExpLog(existingByKey.get(), userId, characterId, sourceType, sourceId, idempotencyKey);
+        }
+
+        var existingBySource = characterExpLogRepository.findBySourceTypeAndSourceId(sourceType, sourceId);
+        if (existingBySource.isPresent()) {
+            return replayMatchingSourceExpLog(existingBySource.get(), userId, characterId, sourceType, sourceId);
+        }
+
+        UserCharacter character = userCharacterRepository.findByIdForUpdate(characterId)
+                .orElseThrow(() -> new CharacterException(CharacterErrorCode.CHARACTER_NOT_FOUND));
+        if (!character.getUserId().equals(userId)) {
+            throw new CharacterException(CharacterErrorCode.NOT_CHARACTER_OWNER);
+        }
+
+        /*
+         * 같은 캐릭터 lock을 기다리던 중 먼저 성공한 요청이 있을 수 있으므로
+         * lock 획득 뒤 한 번 더 로그를 확인해 최종 중복 지급을 막는다.
+         */
+        existingByKey = characterExpLogRepository.findByIdempotencyKey(idempotencyKey);
+        if (existingByKey.isPresent()) {
+            return replayMatchingExpLog(existingByKey.get(), userId, characterId, sourceType, sourceId, idempotencyKey);
+        }
+        existingBySource = characterExpLogRepository.findBySourceTypeAndSourceId(sourceType, sourceId);
+        if (existingBySource.isPresent()) {
+            return replayMatchingSourceExpLog(existingBySource.get(), userId, characterId, sourceType, sourceId);
+        }
+
+        var beforeGrowth = buildGrowth(character);
+        character.gainExp(expAmount);
+        var afterGrowth = buildGrowth(character);
+        boolean levelUp = afterGrowth.level() > beforeGrowth.level();
+
+        CharacterExpLog expLog = CharacterExpLog.builder()
+                .userId(userId)
+                .characterId(characterId)
+                .sourceType(sourceType)
+                .sourceId(sourceId)
+                .idempotencyKey(idempotencyKey)
+                .expAmount(expAmount)
+                .beforeExp(beforeGrowth.exp())
+                .afterExp(afterGrowth.exp())
+                .beforeLevel(beforeGrowth.level())
+                .afterLevel(afterGrowth.level())
+                .build();
+        characterExpLogRepository.save(expLog);
+
+        return GrantCharacterExpResponse.builder()
+                .characterId(characterId)
+                .expGained(expAmount)
+                .beforeGrowth(beforeGrowth)
+                .afterGrowth(afterGrowth)
+                .levelUp(levelUp)
+                .alreadyProcessed(false)
+                .build();
+    }
+
+    @Transactional
     public p5laris.character.domain.application.dto.EquipSkinResponse equipSkin(
             Long characterId, Long userId, Long itemId) {
 
@@ -371,14 +446,14 @@ public class CharacterService {
             throw new CharacterException(CharacterErrorCode.NOT_CHARACTER_OWNER);
         }
 
-        // 2. verify user owns the skin item.
+        // 스킨 장착 전 유저가 해당 스킨 아이템을 보유했는지 확인한다.
         if (itemId != null && itemId > 0) {
             try {
                 findOwnedItem(userId, itemId, "SKIN");
             } catch (CharacterException e) {
                 throw e;
             } catch (Exception e) {
-                log.error("Failed to verify skin ownership for userId: {}, itemId: {}", userId, itemId, e);
+                log.error("스킨 보유 여부를 확인하지 못했습니다. userId={}, itemId={}", userId, itemId, e);
                 throw new CharacterException(CharacterErrorCode.ITEM_SERVICE_CALL_FAILED);
             }
         }
@@ -422,7 +497,7 @@ public class CharacterService {
                     .characterMessage(characterMessage(log.getActionType()))
                     .build();
         } catch (Exception e) {
-            throw new RuntimeException("Failed to parse cached care log state", e);
+            throw new RuntimeException("저장된 돌봄 로그 상태를 파싱하지 못했습니다.", e);
         }
     }
 
@@ -432,6 +507,66 @@ public class CharacterService {
         } catch (IllegalArgumentException e) {
             throw new CharacterException(CharacterErrorCode.INVALID_ACTION_TYPE);
         }
+    }
+
+    private CharacterExpSourceType parseExpSourceType(String sourceTypeValue) {
+        if (sourceTypeValue == null || sourceTypeValue.isBlank()) {
+            throw new CharacterException(CharacterErrorCode.INVALID_EXP_GRANT_REQUEST);
+        }
+        try {
+            return CharacterExpSourceType.valueOf(sourceTypeValue.trim());
+        } catch (IllegalArgumentException e) {
+            throw new CharacterException(CharacterErrorCode.INVALID_EXP_GRANT_REQUEST);
+        }
+    }
+
+    private void validateExpGrantRequest(Long sourceId, int expAmount, String idempotencyKey) {
+        if (sourceId == null || sourceId <= 0 || expAmount <= 0) {
+            throw new CharacterException(CharacterErrorCode.INVALID_EXP_GRANT_REQUEST);
+        }
+        if (idempotencyKey == null || idempotencyKey.trim().isEmpty() || idempotencyKey.length() > 120) {
+            throw new CharacterException(CharacterErrorCode.INVALID_IDEMPOTENCY_KEY);
+        }
+    }
+
+    private GrantCharacterExpResponse replayMatchingExpLog(
+            CharacterExpLog expLog,
+            Long userId,
+            Long characterId,
+            CharacterExpSourceType sourceType,
+            Long sourceId,
+            String idempotencyKey
+    ) {
+        if (!expLog.matches(userId, characterId, sourceType, sourceId, idempotencyKey)) {
+            throw new CharacterException(CharacterErrorCode.INVALID_EXP_GRANT_REQUEST);
+        }
+        return replayExpLog(expLog);
+    }
+
+    private GrantCharacterExpResponse replayMatchingSourceExpLog(
+            CharacterExpLog expLog,
+            Long userId,
+            Long characterId,
+            CharacterExpSourceType sourceType,
+            Long sourceId
+    ) {
+        if (!expLog.matchesSource(userId, characterId, sourceType, sourceId)) {
+            throw new CharacterException(CharacterErrorCode.INVALID_EXP_GRANT_REQUEST);
+        }
+        return replayExpLog(expLog);
+    }
+
+    private GrantCharacterExpResponse replayExpLog(CharacterExpLog expLog) {
+        var beforeGrowth = toGrowthResponse(CharacterGrowthPolicy.calculate(expLog.getBeforeExp()));
+        var afterGrowth = toGrowthResponse(CharacterGrowthPolicy.calculate(expLog.getAfterExp()));
+        return GrantCharacterExpResponse.builder()
+                .characterId(expLog.getCharacterId())
+                .expGained(expLog.getExpAmount())
+                .beforeGrowth(beforeGrowth)
+                .afterGrowth(afterGrowth)
+                .levelUp(expLog.getAfterLevel() > expLog.getBeforeLevel())
+                .alreadyProcessed(true)
+                .build();
     }
 
     private long requirePositiveItemId(Long itemId) {

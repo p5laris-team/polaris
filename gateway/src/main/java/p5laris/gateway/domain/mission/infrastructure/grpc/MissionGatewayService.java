@@ -298,6 +298,9 @@ public class MissionGatewayService {
                             ? new MissionDto.WalletSnapshot(response.getWallet().getStarPiece())
                             : null,
                     toRestMissionRewardStatus(response.getRewardStatus().name()),
+                    response.hasCharacterExp()
+                            ? toCharacterExp(response.getCharacterExp())
+                            : null,
                     response.getCharacterMessage()
             );
         } catch (StatusRuntimeException e) {
@@ -445,6 +448,36 @@ public class MissionGatewayService {
 
     private String toRestMissionRewardStatus(String grpcStatus) {
         String value = removeGrpcPrefix(grpcStatus, "MISSION_REWARD_STATUS_");
+        return "UNSPECIFIED".equals(value) ? null : value;
+    }
+
+    private MissionDto.CharacterExp toCharacterExp(com.p5laris.proto.mission.v1.MissionCharacterExp characterExp) {
+        return new MissionDto.CharacterExp(
+                characterExp.getExpAmount(),
+                characterExp.getExpGained(),
+                characterExp.getLevelUp(),
+                toRestMissionCharacterExpStatus(characterExp.getStatus().name()),
+                characterExp.hasBeforeGrowth() ? toCharacterGrowth(characterExp.getBeforeGrowth()) : null,
+                characterExp.hasAfterGrowth() ? toCharacterGrowth(characterExp.getAfterGrowth()) : null
+        );
+    }
+
+    private MissionDto.CharacterGrowth toCharacterGrowth(com.p5laris.proto.character.v1.CharacterGrowth growth) {
+        return new MissionDto.CharacterGrowth(
+                growth.getLevel(),
+                growth.getExp(),
+                growth.getCurrentLevelExp(),
+                growth.getNextLevelExp(),
+                growth.getExpToNextLevel(),
+                growth.getProgressPercent(),
+                growth.getGrowthStage(),
+                growth.getGrowthStageLabel(),
+                growth.getMaxLevel()
+        );
+    }
+
+    private String toRestMissionCharacterExpStatus(String grpcStatus) {
+        String value = removeGrpcPrefix(grpcStatus, "MISSION_CHARACTER_EXP_STATUS_");
         return "UNSPECIFIED".equals(value) ? null : value;
     }
 

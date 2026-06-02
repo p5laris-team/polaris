@@ -10,6 +10,8 @@ import com.p5laris.proto.mission.v1.GetMissionDetailResponse;
 import com.p5laris.proto.mission.v1.GetTodayMissionsResponse;
 import com.p5laris.proto.mission.v1.MissionDetail;
 import com.p5laris.proto.mission.v1.MissionCategory;
+import com.p5laris.proto.mission.v1.MissionCharacterExp;
+import com.p5laris.proto.mission.v1.MissionCharacterExpStatus;
 import com.p5laris.proto.mission.v1.MissionDifficulty;
 import com.p5laris.proto.mission.v1.MissionReward;
 import com.p5laris.proto.mission.v1.MissionRewardStatus;
@@ -64,7 +66,9 @@ import p5laris.mission.domain.exception.MissionException;
 import p5laris.mission.domain.infrastructure.grpc.AiMissionTextClient;
 import p5laris.mission.domain.infrastructure.grpc.AiMissionTextRequest;
 import p5laris.mission.domain.infrastructure.grpc.AiMissionTextResult;
+import p5laris.mission.domain.infrastructure.grpc.CharacterExpGrantResult;
 import p5laris.mission.domain.infrastructure.grpc.CharacterProfileClient;
+import p5laris.mission.domain.infrastructure.grpc.MissionCharacterGrowth;
 import p5laris.mission.domain.infrastructure.grpc.WalletRewardClient;
 import p5laris.mission.domain.infrastructure.grpc.WalletRewardResult;
 
@@ -107,6 +111,7 @@ public class MissionService {
     private static final int NORMAL_REWARD_STAR_PIECE = 15;
     private static final int CHALLENGE_REWARD_STAR_PIECE = 30;
     private static final String MISSION_REWARD_IDEMPOTENCY_KEY_PREFIX = "MISSION_REWARD:";
+    private static final String MISSION_CHARACTER_EXP_IDEMPOTENCY_KEY_PREFIX = "MISSION_CHARACTER_EXP:";
     private static final String MISSION_TEXT_REQUEST_ID_PREFIX = "MISSION_TEXT:";
     private static final String MISSION_TEXT_RETRY_REQUEST_ID_SUFFIX = ":RETRY:";
     private static final String DEFAULT_COMPLETION_QUESTION = "해보고 나서 어땠어?";
@@ -133,6 +138,8 @@ public class MissionService {
     private final MissionMemoryRecorder missionMemoryRecorder;
     private final WalletRewardClient walletRewardClient;
     private final MissionRewardDispatcher missionRewardDispatcher;
+    private final MissionCharacterExpPolicy missionCharacterExpPolicy;
+    private final MissionCharacterExpDispatcher missionCharacterExpDispatcher;
     private final TransactionTemplate transactionTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final Clock clock;
@@ -637,7 +644,8 @@ public class MissionService {
         ));
 
         MissionCompletionReward reward = resolveReward(userId, context);
-        return toCompletionResponse(context.mission(), context.answer(), reward);
+        MissionCompletionCharacterExp characterExp = resolveCharacterExp(userId, context);
+        return toCompletionResponse(context.mission(), context.answer(), reward, characterExp);
     }
 
     /**
@@ -649,6 +657,8 @@ public class MissionService {
     private MissionCompletionContext completeMissionInTransaction(Long userId, Long missionId, String normalizedAnswer) {
         UserMission mission = findOwnedMissionForUpdate(userId, missionId);
         String rewardIdempotencyKey = rewardIdempotencyKey(mission.getId());
+        String characterExpIdempotencyKey = characterExpIdempotencyKey(mission.getId());
+        int characterExpAmount = missionCharacterExpPolicy.calculateExp(mission.getDifficulty());
 
         if (mission.isCompleted()) {
             MissionCompletionAnswer answer = missionCompletionAnswerRepository.findByMissionId(mission.getId())
@@ -658,6 +668,8 @@ public class MissionService {
             }
 
             missionMemoryRecorder.recordCompletion(mission, answer);
+            Optional<MissionOutboxEvent> characterExpOutbox =
+                    missionOutboxEventRepository.findByIdempotencyKey(characterExpIdempotencyKey);
 
             if (mission.isRewardPaid()) {
                 return new MissionCompletionContext(
@@ -667,7 +679,12 @@ public class MissionService {
                         false,
                         rewardIdempotencyKey,
                         null,
-                        null
+                        null,
+                        false,
+                        characterExpIdempotencyKey,
+                        characterExpAmount,
+                        characterExpOutbox.map(MissionOutboxEvent::getId).orElse(null),
+                        characterExpOutbox.map(MissionOutboxEvent::getStatus).orElse(null)
                 );
             }
 
@@ -679,7 +696,12 @@ public class MissionService {
                     false,
                     rewardIdempotencyKey,
                     outbox.getId(),
-                    outbox.getStatus()
+                    outbox.getStatus(),
+                    false,
+                    characterExpIdempotencyKey,
+                    characterExpAmount,
+                    characterExpOutbox.map(MissionOutboxEvent::getId).orElse(null),
+                    characterExpOutbox.map(MissionOutboxEvent::getStatus).orElse(null)
             );
         }
 
@@ -702,6 +724,12 @@ public class MissionService {
         missionMemoryRecorder.recordCompletion(mission, answer);
         eventPublisher.publishEvent(MissionEventLogEvent.missionCompleted(mission, answer, toOccurredAt(now)));
         MissionOutboxEvent outbox = ensureRewardOutbox(mission, rewardIdempotencyKey, now);
+        MissionOutboxEvent characterExpOutbox = ensureCharacterExpOutbox(
+                mission,
+                characterExpIdempotencyKey,
+                characterExpAmount,
+                now
+        );
 
         return new MissionCompletionContext(
                 mission,
@@ -710,7 +738,12 @@ public class MissionService {
                 true,
                 rewardIdempotencyKey,
                 outbox.getId(),
-                outbox.getStatus()
+                outbox.getStatus(),
+                true,
+                characterExpIdempotencyKey,
+                characterExpAmount,
+                characterExpOutbox.getId(),
+                characterExpOutbox.getStatus()
         );
     }
 
@@ -747,6 +780,44 @@ public class MissionService {
         }
     }
 
+    /**
+     * 캐릭터 경험치 지급 결과를 구한다.
+     *
+     * 미션 완료 트랜잭션과 character gRPC 호출을 분리하고, 실패하면 PENDING으로 응답해 outbox 재처리에 맡긴다.
+     */
+    private MissionCompletionCharacterExp resolveCharacterExp(Long userId, MissionCompletionContext context) {
+        if (context.characterExpOutboxId() == null) {
+            return MissionCompletionCharacterExp.none();
+        }
+
+        if (!context.dispatchCharacterExpNow()) {
+            return MissionCompletionCharacterExp.withoutGrowth(
+                    context.characterExpAmount(),
+                    toProtoCharacterExpStatus(context.characterExpOutboxStatus())
+            );
+        }
+
+        try {
+            CharacterExpGrantResult result = missionCharacterExpDispatcher.dispatchNow(context.characterExpOutboxId());
+            return MissionCompletionCharacterExp.applied(context.characterExpAmount(), result);
+        } catch (MissionException e) {
+            if (e.getErrorCode() != MissionErrorCode.MISSION_CHARACTER_EXP_FAILED) {
+                throw e;
+            }
+
+            log.warn(
+                    "미션 완료는 성공했지만 즉시 캐릭터 경험치 지급에 실패해 outbox 재처리로 전환합니다. missionId={}, userId={}, outboxId={}",
+                    context.mission().getId(),
+                    userId,
+                    context.characterExpOutboxId()
+            );
+            return MissionCompletionCharacterExp.withoutGrowth(
+                    context.characterExpAmount(),
+                    MissionCharacterExpStatus.MISSION_CHARACTER_EXP_STATUS_PENDING
+            );
+        }
+    }
+
     private MissionOutboxEvent ensureRewardOutbox(
             UserMission mission,
             String rewardIdempotencyKey,
@@ -761,6 +832,27 @@ public class MissionService {
                                 mission.getRewardStarPiece()
                         )),
                         rewardIdempotencyKey,
+                        nextAttemptAt
+                )));
+    }
+
+    private MissionOutboxEvent ensureCharacterExpOutbox(
+            UserMission mission,
+            String characterExpIdempotencyKey,
+            int expAmount,
+            LocalDateTime nextAttemptAt
+    ) {
+        return missionOutboxEventRepository.findByIdempotencyKey(characterExpIdempotencyKey)
+                .orElseGet(() -> missionOutboxEventRepository.save(MissionOutboxEvent.characterExpRequested(
+                        mission,
+                        objectMapper.valueToTree(new MissionCharacterExpRequestedPayload(
+                                mission.getId(),
+                                mission.getUserId(),
+                                mission.getCharacterId(),
+                                mission.getDifficulty().name(),
+                                expAmount
+                        )),
+                        characterExpIdempotencyKey,
                         nextAttemptAt
                 )));
     }
@@ -897,6 +989,10 @@ public class MissionService {
         return MISSION_REWARD_IDEMPOTENCY_KEY_PREFIX + missionId;
     }
 
+    private String characterExpIdempotencyKey(Long missionId) {
+        return MISSION_CHARACTER_EXP_IDEMPOTENCY_KEY_PREFIX + missionId;
+    }
+
     private String missionTextRequestId(UserMission mission) {
         return MISSION_TEXT_REQUEST_ID_PREFIX + sha256(String.join(
                 "|",
@@ -919,7 +1015,8 @@ public class MissionService {
     private SubmitCompletionAnswerResponse toCompletionResponse(
             UserMission mission,
             MissionCompletionAnswer answer,
-            MissionCompletionReward completionReward
+            MissionCompletionReward completionReward,
+            MissionCompletionCharacterExp characterExp
     ) {
         SubmitCompletionAnswerResponse.Builder builder = SubmitCompletionAnswerResponse.newBuilder()
                 .setMissionId(mission.getId())
@@ -938,6 +1035,10 @@ public class MissionService {
                     .build());
         }
 
+        if (characterExp.present()) {
+            builder.setCharacterExp(toProtoCharacterExp(characterExp));
+        }
+
         return builder.build();
     }
 
@@ -952,6 +1053,50 @@ public class MissionService {
             return MissionRewardStatus.MISSION_REWARD_STATUS_PAID;
         }
         return MissionRewardStatus.MISSION_REWARD_STATUS_PENDING;
+    }
+
+    private MissionCharacterExpStatus toProtoCharacterExpStatus(MissionOutboxEventStatus outboxStatus) {
+        if (outboxStatus == MissionOutboxEventStatus.PROCESSING) {
+            return MissionCharacterExpStatus.MISSION_CHARACTER_EXP_STATUS_PROCESSING;
+        }
+        if (outboxStatus == MissionOutboxEventStatus.FAILED) {
+            return MissionCharacterExpStatus.MISSION_CHARACTER_EXP_STATUS_FAILED;
+        }
+        if (outboxStatus == MissionOutboxEventStatus.SUCCEEDED) {
+            return MissionCharacterExpStatus.MISSION_CHARACTER_EXP_STATUS_APPLIED;
+        }
+        return MissionCharacterExpStatus.MISSION_CHARACTER_EXP_STATUS_PENDING;
+    }
+
+    private MissionCharacterExp toProtoCharacterExp(MissionCompletionCharacterExp characterExp) {
+        MissionCharacterExp.Builder builder = MissionCharacterExp.newBuilder()
+                .setExpAmount(characterExp.expAmount())
+                .setExpGained(characterExp.expGained())
+                .setLevelUp(characterExp.levelUp())
+                .setStatus(characterExp.status());
+
+        if (characterExp.beforeGrowth() != null) {
+            builder.setBeforeGrowth(toProtoCharacterGrowth(characterExp.beforeGrowth()));
+        }
+        if (characterExp.afterGrowth() != null) {
+            builder.setAfterGrowth(toProtoCharacterGrowth(characterExp.afterGrowth()));
+        }
+
+        return builder.build();
+    }
+
+    private com.p5laris.proto.character.v1.CharacterGrowth toProtoCharacterGrowth(MissionCharacterGrowth growth) {
+        return com.p5laris.proto.character.v1.CharacterGrowth.newBuilder()
+                .setLevel(growth.level())
+                .setExp(growth.exp())
+                .setCurrentLevelExp(growth.currentLevelExp())
+                .setNextLevelExp(growth.nextLevelExp())
+                .setExpToNextLevel(growth.expToNextLevel())
+                .setProgressPercent(growth.progressPercent())
+                .setGrowthStage(growth.growthStage())
+                .setGrowthStageLabel(growth.growthStageLabel())
+                .setMaxLevel(growth.maxLevel())
+                .build();
     }
 
     private UpsertMissionFeedbackResponse toFeedbackResponse(MissionFeedback feedback) {
@@ -1178,7 +1323,12 @@ public class MissionService {
             boolean dispatchRewardNow,
             String rewardIdempotencyKey,
             Long rewardOutboxId,
-            MissionOutboxEventStatus rewardOutboxStatus
+            MissionOutboxEventStatus rewardOutboxStatus,
+            boolean dispatchCharacterExpNow,
+            String characterExpIdempotencyKey,
+            int characterExpAmount,
+            Long characterExpOutboxId,
+            MissionOutboxEventStatus characterExpOutboxStatus
     ) {
     }
 
@@ -1193,6 +1343,56 @@ public class MissionService {
 
         private static MissionCompletionReward withoutWallet(MissionRewardStatus rewardStatus) {
             return new MissionCompletionReward(rewardStatus, null);
+        }
+    }
+
+    private record MissionCompletionCharacterExp(
+            boolean present,
+            int expAmount,
+            int expGained,
+            MissionCharacterExpStatus status,
+            MissionCharacterGrowth beforeGrowth,
+            MissionCharacterGrowth afterGrowth,
+            boolean levelUp
+    ) {
+
+        private static MissionCompletionCharacterExp none() {
+            return new MissionCompletionCharacterExp(
+                    false,
+                    0,
+                    0,
+                    MissionCharacterExpStatus.MISSION_CHARACTER_EXP_STATUS_UNSPECIFIED,
+                    null,
+                    null,
+                    false
+            );
+        }
+
+        private static MissionCompletionCharacterExp applied(int expAmount, CharacterExpGrantResult result) {
+            return new MissionCompletionCharacterExp(
+                    true,
+                    expAmount,
+                    result.expGained(),
+                    MissionCharacterExpStatus.MISSION_CHARACTER_EXP_STATUS_APPLIED,
+                    result.beforeGrowth(),
+                    result.afterGrowth(),
+                    result.levelUp()
+            );
+        }
+
+        private static MissionCompletionCharacterExp withoutGrowth(
+                int expAmount,
+                MissionCharacterExpStatus status
+        ) {
+            return new MissionCompletionCharacterExp(
+                    true,
+                    expAmount,
+                    status == MissionCharacterExpStatus.MISSION_CHARACTER_EXP_STATUS_APPLIED ? expAmount : 0,
+                    status,
+                    null,
+                    null,
+                    false
+            );
         }
     }
 

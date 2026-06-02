@@ -13,10 +13,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 import p5laris.character.domain.application.dto.CareActionResponse;
 import p5laris.character.domain.domain.entity.CharacterCareLog;
+import p5laris.character.domain.domain.entity.CharacterExpLog;
 import p5laris.character.domain.domain.entity.UserCharacter;
 import p5laris.character.domain.domain.enums.ActionType;
+import p5laris.character.domain.domain.enums.CharacterExpSourceType;
 import p5laris.character.domain.domain.repository.CharacterAssetRepository;
 import p5laris.character.domain.domain.repository.CharacterCareLogRepository;
+import p5laris.character.domain.domain.repository.CharacterExpLogRepository;
 import p5laris.character.domain.domain.repository.CharacterTypeRepository;
 import p5laris.character.domain.domain.repository.UserCharacterRepository;
 import p5laris.character.domain.exception.CharacterErrorCode;
@@ -50,6 +53,9 @@ class CharacterServiceTest {
 
     @Mock
     private CharacterCareLogRepository characterCareLogRepository;
+
+    @Mock
+    private CharacterExpLogRepository characterExpLogRepository;
 
     @Mock
     private S3StorageService s3StorageService;
@@ -98,7 +104,7 @@ class CharacterServiceTest {
     }
 
     @Test
-    @DisplayName("createCharacter - 생성 직후 초기 성장 정보 반환")
+    @DisplayName("캐릭터 생성 - 생성 직후 초기 성장 정보 반환")
     void createCharacter_returnsInitialGrowth() {
         CharacterType characterType = character.getCharacterType();
         when(characterTypeRepository.findById(1L)).thenReturn(Optional.of(characterType));
@@ -116,7 +122,7 @@ class CharacterServiceTest {
     }
 
     @Test
-    @DisplayName("getCharacterStatus - 상태 응답에 성장 정보 포함")
+    @DisplayName("캐릭터 상태 조회 - 상태 응답에 성장 정보 포함")
     void getCharacterStatus_returnsGrowth() {
         org.springframework.test.util.ReflectionTestUtils.setField(character, "exp", 200);
         org.springframework.test.util.ReflectionTestUtils.setField(character, "level", 2);
@@ -132,26 +138,26 @@ class CharacterServiceTest {
     }
 
     @Test
-    @DisplayName("Idempotency key null or empty validation")
+    @DisplayName("돌봄 활동 - 멱등키가 null 또는 빈 값이면 예외 발생")
     void testPerformCareAction_IdempotencyKeyNullOrEmpty() {
-        // null key
+        // null 멱등키
         assertEquals(CharacterErrorCode.INVALID_IDEMPOTENCY_KEY, assertThrows(CharacterException.class, () ->
                 characterService.performCareAction(1L, 1L, "FEED", null, null)
         ).getErrorCode());
 
-        // empty key
+        // 빈 멱등키
         assertEquals(CharacterErrorCode.INVALID_IDEMPOTENCY_KEY, assertThrows(CharacterException.class, () ->
                 characterService.performCareAction(1L, 1L, "FEED", null, "")
         ).getErrorCode());
 
-        // whitespace key
+        // 공백 멱등키
         assertEquals(CharacterErrorCode.INVALID_IDEMPOTENCY_KEY, assertThrows(CharacterException.class, () ->
                 characterService.performCareAction(1L, 1L, "FEED", null, "   ")
         ).getErrorCode());
     }
 
     @Test
-    @DisplayName("Cached care log is returned for existing idempotency key")
+    @DisplayName("돌봄 활동 - 이미 처리된 멱등키면 저장된 돌봄 로그를 재사용")
     void testPerformCareAction_ExistingIdempotencyKey() {
         String key = "test-idempotency-key";
         CharacterCareLog cachedLog = CharacterCareLog.builder()
@@ -164,9 +170,6 @@ class CharacterServiceTest {
                 .idempotencyKey(key)
                 .build();
 
-        // Reflection or using mock to return ID
-        // (For simplicity we assume getId() returns null or we can mock/stub, but standard entity field getter works)
-        
         when(characterCareLogRepository.findByIdempotencyKey(key)).thenReturn(Optional.of(cachedLog));
 
         CareActionResponse response = characterService.performCareAction(1L, 1L, "FEED", null, key);
@@ -181,13 +184,13 @@ class CharacterServiceTest {
         assertNotNull(response.beforeGrowth());
         assertNotNull(response.afterGrowth());
 
-        // Verify no repository interactions for userCharacter
+        // 캐시된 돌봄 로그를 재사용하므로 캐릭터 조회/저장은 수행하지 않는다.
         verifyNoInteractions(userCharacterRepository);
         verify(characterCareLogRepository, never()).save(any());
     }
 
     @Test
-    @DisplayName("Successful care action performance for new idempotency key")
+    @DisplayName("돌봄 활동 - 새로운 멱등키면 돌봄을 정상 수행")
     void testPerformCareAction_NewIdempotencyKey() {
         String key = "new-idempotency-key";
         Long itemId = 10L;
@@ -241,11 +244,10 @@ class CharacterServiceTest {
             assertEquals(0, response.beforeGrowth().exp());
             assertEquals(5, response.afterGrowth().exp());
         } catch (p5laris.character.domain.exception.CharacterException e) {
-            System.out.println("DEBUG - CharacterException thrown with code: " + e.getErrorCode());
             throw e;
         }
         
-        // Verify database saves the care log
+        // 돌봄 로그 저장과 캐릭터 잠금 조회가 수행되는지 확인한다.
         verify(characterCareLogRepository).save(any(CharacterCareLog.class));
         verify(userCharacterRepository).findByIdForUpdate(1L);
         verify(userCharacterRepository, never()).findById(1L);
@@ -257,7 +259,7 @@ class CharacterServiceTest {
     }
 
     @Test
-    @DisplayName("performCareAction - 같은 액션 하루 3회 이후에는 돌봄은 성공하지만 경험치는 지급하지 않음")
+    @DisplayName("돌봄 활동 - 같은 액션 하루 3회 이후에는 돌봄은 성공하지만 경험치는 지급하지 않음")
     void performCareAction_dailyExpLimitPerAction() {
         String key = "care-exp-limit-key";
         Long itemId = 10L;
@@ -295,7 +297,7 @@ class CharacterServiceTest {
     }
 
     @Test
-    @DisplayName("performCareAction - 돌봄 경험치로 레벨 경계에 도달하면 levelUp 반환")
+    @DisplayName("돌봄 활동 - 돌봄 경험치로 레벨 경계에 도달하면 levelUp 반환")
     void performCareAction_levelUpByCareExp() {
         String key = "care-level-up-key";
         Long itemId = 10L;
@@ -329,7 +331,69 @@ class CharacterServiceTest {
     }
 
     @Test
-    @DisplayName("performCareAction - item 사용 실패 시 빠르게 실패하고 item error code를 캐릭터 예외로 매핑")
+    @DisplayName("캐릭터 경험치 지급 - 미션 완료 경험치를 지급하고 로그를 저장")
+    void grantCharacterExp_success() {
+        String key = "MISSION_CHARACTER_EXP:100";
+        when(characterExpLogRepository.findByIdempotencyKey(key)).thenReturn(Optional.empty());
+        when(characterExpLogRepository.findBySourceTypeAndSourceId(CharacterExpSourceType.MISSION_COMPLETION, 100L))
+                .thenReturn(Optional.empty());
+        when(userCharacterRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(character));
+        when(characterExpLogRepository.save(any(CharacterExpLog.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var response = characterService.grantCharacterExp(
+                1L,
+                1L,
+                "MISSION_COMPLETION",
+                100L,
+                15,
+                key
+        );
+
+        assertEquals(15, response.expGained());
+        assertFalse(response.alreadyProcessed());
+        assertEquals(0, response.beforeGrowth().exp());
+        assertEquals(15, response.afterGrowth().exp());
+        assertEquals(15, character.getExp());
+        verify(userCharacterRepository).findByIdForUpdate(1L);
+        verify(characterExpLogRepository).save(any(CharacterExpLog.class));
+    }
+
+    @Test
+    @DisplayName("캐릭터 경험치 지급 - 같은 멱등키는 저장된 로그를 재사용하고 중복 지급하지 않음")
+    void grantCharacterExp_duplicateIdempotency_replaysLog() {
+        String key = "MISSION_CHARACTER_EXP:100";
+        CharacterExpLog existingLog = CharacterExpLog.builder()
+                .userId(1L)
+                .characterId(1L)
+                .sourceType(CharacterExpSourceType.MISSION_COMPLETION)
+                .sourceId(100L)
+                .idempotencyKey(key)
+                .expAmount(10)
+                .beforeExp(0)
+                .afterExp(10)
+                .beforeLevel(1)
+                .afterLevel(1)
+                .build();
+        when(characterExpLogRepository.findByIdempotencyKey(key)).thenReturn(Optional.of(existingLog));
+
+        var response = characterService.grantCharacterExp(
+                1L,
+                1L,
+                "MISSION_COMPLETION",
+                100L,
+                10,
+                key
+        );
+
+        assertEquals(10, response.expGained());
+        assertTrue(response.alreadyProcessed());
+        assertEquals(0, character.getExp());
+        verify(userCharacterRepository, never()).findByIdForUpdate(any());
+        verify(characterExpLogRepository, never()).save(any(CharacterExpLog.class));
+    }
+
+    @Test
+    @DisplayName("돌봄 활동 - 아이템 사용 실패 시 빠르게 실패하고 아이템 에러 코드를 캐릭터 예외로 매핑")
     void performCareAction_itemUseFailed_fastFail() {
         String key = "care-item-fail-key";
         Long itemId = 10L;
@@ -373,7 +437,7 @@ class CharacterServiceTest {
     }
 
     @Test
-    @DisplayName("performCareAction - item timeout은 돌보기 전체 실패로 처리")
+    @DisplayName("돌봄 활동 - 아이템 timeout은 돌보기 전체 실패로 처리")
     void performCareAction_itemTimeout_fastFail() {
         String key = "care-item-timeout-key";
         Long itemId = 10L;
@@ -410,9 +474,9 @@ class CharacterServiceTest {
     }
 
     @Test
-    @DisplayName("equipSkin - 보유한 스킨의 경우 정상 장착")
+    @DisplayName("스킨 장착 - 보유한 스킨이면 정상 장착")
     void equipSkin_ownedSkin_success() {
-        // given
+        // 준비
         Long characterId = 1L;
         Long userId = 1L;
         Long itemId = 10L;
@@ -431,19 +495,19 @@ class CharacterServiceTest {
         when(itemStub.getUserItems(any(com.p5laris.proto.item.v1.GetUserItemsRequest.class)))
                 .thenReturn(ownedItems);
 
-        // when
+        // 실행
         var response = characterService.equipSkin(characterId, userId, itemId);
 
-        // then
+        // 검증
         assertNotNull(response);
         assertEquals(itemId, response.equippedSkinId());
         assertEquals(itemId, character.getEquippedSkinId());
     }
 
     @Test
-    @DisplayName("equipSkin - 보유하지 않은 스킨의 경우 예외 발생")
+    @DisplayName("스킨 장착 - 보유하지 않은 스킨이면 예외 발생")
     void equipSkin_notOwnedSkin_throwsException() {
-        // given
+        // 준비
         Long characterId = 1L;
         Long userId = 1L;
         Long itemId = 10L;
@@ -456,7 +520,7 @@ class CharacterServiceTest {
         when(itemStub.getUserItems(any(com.p5laris.proto.item.v1.GetUserItemsRequest.class)))
                 .thenReturn(emptyItems);
 
-        // when & then
+        // 실행 및 검증
         p5laris.character.domain.exception.CharacterException exception = assertThrows(
                 p5laris.character.domain.exception.CharacterException.class,
                 () -> characterService.equipSkin(characterId, userId, itemId)
@@ -474,16 +538,16 @@ class CharacterServiceTest {
     }
 
     @Test
-    @DisplayName("getMyCharacter - 기분이 IDLE 일 때 기본 IDLE 이미지 반환")
+    @DisplayName("내 캐릭터 조회 - 기분이 IDLE 일 때 기본 IDLE 이미지 반환")
     void getMyCharacter_idleMood_returnsIdleUrl() {
-        // given
+        // 준비
         when(userCharacterRepository.findByUserIdAndActiveTrue(1L)).thenReturn(Optional.of(character));
         when(characterAssetRepository.findByCharacterTypeId(1L)).thenReturn(createMockAssets(character.getCharacterType()));
 
-        // when
+        // 실행
         var response = characterService.getMyCharacter(1L);
 
-        // then
+        // 검증
         assertNotNull(response);
         assertEquals("http://cdn/idle.png", response.currentAssetUrl());
         assertEquals("http://cdn/idle.png", response.assetUrls().get("idle"));
@@ -495,57 +559,57 @@ class CharacterServiceTest {
     }
 
     @Test
-    @DisplayName("getMyCharacter - 기분이 HUNGRY 일 때 (포만감 < 40) HUNGRY 이미지 반환")
+    @DisplayName("내 캐릭터 조회 - 기분이 HUNGRY 일 때 HUNGRY 이미지 반환")
     void getMyCharacter_hungryMood_returnsHungryUrl() {
-        // given
+        // 준비
         org.springframework.test.util.ReflectionTestUtils.setField(character, "fullness", 30);
         when(userCharacterRepository.findByUserIdAndActiveTrue(1L)).thenReturn(Optional.of(character));
         when(characterAssetRepository.findByCharacterTypeId(1L)).thenReturn(createMockAssets(character.getCharacterType()));
 
-        // when
+        // 실행
         var response = characterService.getMyCharacter(1L);
 
-        // then
+        // 검증
         assertNotNull(response);
         assertEquals("http://cdn/hungry.png", response.currentAssetUrl());
     }
 
     @Test
-    @DisplayName("getMyCharacter - 기분이 LOW_ENERGY 일 때 (에너지 < 40) LOW_ENERGY 이미지 반환")
+    @DisplayName("내 캐릭터 조회 - 기분이 LOW_ENERGY 일 때 LOW_ENERGY 이미지 반환")
     void getMyCharacter_lowEnergyMood_returnsLowEnergyUrl() {
-        // given
+        // 준비
         org.springframework.test.util.ReflectionTestUtils.setField(character, "energy", 30);
         when(userCharacterRepository.findByUserIdAndActiveTrue(1L)).thenReturn(Optional.of(character));
         when(characterAssetRepository.findByCharacterTypeId(1L)).thenReturn(createMockAssets(character.getCharacterType()));
 
-        // when
+        // 실행
         var response = characterService.getMyCharacter(1L);
 
-        // then
+        // 검증
         assertNotNull(response);
         assertEquals("http://cdn/lowEnergy.png", response.currentAssetUrl());
     }
 
     @Test
-    @DisplayName("getMyCharacter - 기분이 LONELY 일 때 (애정도 < 40) LONELY 이미지 반환")
+    @DisplayName("내 캐릭터 조회 - 기분이 LONELY 일 때 LONELY 이미지 반환")
     void getMyCharacter_lonelyMood_returnsLonelyUrl() {
-        // given
+        // 준비
         org.springframework.test.util.ReflectionTestUtils.setField(character, "affection", 30);
         when(userCharacterRepository.findByUserIdAndActiveTrue(1L)).thenReturn(Optional.of(character));
         when(characterAssetRepository.findByCharacterTypeId(1L)).thenReturn(createMockAssets(character.getCharacterType()));
 
-        // when
+        // 실행
         var response = characterService.getMyCharacter(1L);
 
-        // then
+        // 검증
         assertNotNull(response);
         assertEquals("http://cdn/lonely.png", response.currentAssetUrl());
     }
 
     @Test
-    @DisplayName("getMyCharacter - 스킨이 장착되어 있고 포만감이 낮을 때, 스킨의 HUNGRY 이미지 반환")
+    @DisplayName("내 캐릭터 조회 - 스킨이 장착되어 있고 포만감이 낮으면 스킨 HUNGRY 이미지 반환")
     void getMyCharacter_equippedSkin_returnsSkinHungryUrl() {
-        // given
+        // 준비
         org.springframework.test.util.ReflectionTestUtils.setField(character, "fullness", 30);
         org.springframework.test.util.ReflectionTestUtils.setField(character, "equippedSkinId", 100L);
 
@@ -559,10 +623,10 @@ class CharacterServiceTest {
         when(itemStub.getSkinAssets(any(com.p5laris.proto.item.v1.GetSkinAssetsRequest.class)))
                 .thenReturn(skinResponse);
 
-        // when
+        // 실행
         var response = characterService.getMyCharacter(1L);
 
-        // then
+        // 검증
         assertNotNull(response);
         assertEquals("http://cdn/skin-hungry.png", response.currentAssetUrl());
         assertEquals("http://cdn/skin-hungry.png", response.assetUrls().get("hungry"));

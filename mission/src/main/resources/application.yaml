@@ -116,6 +116,8 @@ mission:
     retry-max-delay-seconds: ${MISSION_REWARD_OUTBOX_RETRY_MAX_DELAY_SECONDS}
   reward-wallet:
     deadline-ms: ${MISSION_REWARD_WALLET_DEADLINE_MS}
+  character-exp:
+    deadline-ms: ${MISSION_CHARACTER_EXP_DEADLINE_MS}
 
 management:
   endpoints:
