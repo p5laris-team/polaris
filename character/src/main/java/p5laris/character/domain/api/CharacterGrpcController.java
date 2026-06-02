@@ -26,8 +26,8 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
     }
 
     /**
-     * Get character types (API spec 4.1).
-     * Returns active character types sorted by sort_order ascending.
+     * 캐릭터 타입 목록을 조회한다.
+     * 활성화된 캐릭터 타입을 sort_order 오름차순으로 내려준다.
      */
     @Override
     public void getCharacterTypes(GetCharacterTypesRequest request,
@@ -53,7 +53,7 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
     }
 
     /**
-     * Get character assets (API spec 4.2).
+     * 캐릭터 타입별 상태 에셋을 조회한다.
      */
     @Override
     public void getCharacterAssets(GetCharacterAssetsRequest request,
@@ -76,7 +76,7 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
     }
 
     /**
-     * Create a user character (API spec 4.3).
+     * 유저 캐릭터를 생성한다.
      */
     @Override
     public void createCharacter(CreateCharacterRequest request,
@@ -106,7 +106,7 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
     }
 
     /**
-     * Get my character (API spec 4.4).
+     * 유저의 활성 캐릭터를 조회한다.
      */
     @Override
     public void getMyCharacter(GetMyCharacterRequest request,
@@ -134,7 +134,7 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
     }
 
     /**
-     * Update character name (API spec 4.5).
+     * 캐릭터 이름을 수정한다.
      */
     @Override
     public void updateCharacterName(UpdateCharacterNameRequest request,
@@ -156,7 +156,7 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
     }
 
     /**
-     * Get character status (API spec 4.6).
+     * 캐릭터 상태 수치와 라벨을 조회한다.
      */
     @Override
     public void getCharacterStatus(GetCharacterStatusRequest request,
@@ -188,7 +188,7 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
     }
 
     /**
-     * Perform care action (API spec 4.7).
+     * 캐릭터 돌봄 활동을 수행한다.
      */
     @Override
     public void performCareAction(PerformCareActionRequest request,
@@ -229,7 +229,35 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
     }
 
     /**
-     * Equip skin on character (API spec 4.8).
+     * 외부 도메인 이벤트 기준으로 캐릭터 경험치를 지급한다.
+     */
+    @Override
+    public void grantCharacterExp(GrantCharacterExpRequest request,
+                                  StreamObserver<GrantCharacterExpResponse> responseObserver) {
+        var result = characterService.grantCharacterExp(
+                request.getUserId(),
+                request.getCharacterId(),
+                request.getSourceType(),
+                request.getSourceId(),
+                request.getExpAmount(),
+                request.getIdempotencyKey()
+        );
+
+        GrantCharacterExpResponse response = GrantCharacterExpResponse.newBuilder()
+                .setCharacterId(result.characterId())
+                .setExpGained(result.expGained())
+                .setBeforeGrowth(toProtoGrowth(result.beforeGrowth()))
+                .setAfterGrowth(toProtoGrowth(result.afterGrowth()))
+                .setLevelUp(result.levelUp())
+                .setAlreadyProcessed(result.alreadyProcessed())
+                .build();
+
+        responseObserver.onNext(response);
+        responseObserver.onCompleted();
+    }
+
+    /**
+     * 캐릭터 스킨을 장착하거나 해제한다. (API 명세 4.8)
      */
     @Override
     public void equipSkin(EquipSkinRequest request,
@@ -250,7 +278,7 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
         responseObserver.onCompleted();
     }
 
-    // ---------- Share APIs (§9) ----------
+    // ---------- 공유 API (§9) ----------
 
     @Override
     public void createShareCard(CreateShareCardRequest request,
