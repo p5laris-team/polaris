@@ -43,7 +43,7 @@ logging:
 grpc:
   server:
     port: ${GRPC_SERVER_PORT}
-    reflection-service-enabled: true
+    reflection-service-enabled: ${GRPC_REFLECTION_ENABLED:false}
 
   client:
     user:
@@ -65,6 +65,11 @@ grpc:
     notification:
       address: ${NOTIFICATION_GRPC_ADDRESS}
       negotiationType: plaintext
+
+internal:
+  grpc-auth:
+    enabled: ${INTERNAL_GRPC_AUTH_ENABLED:true}
+    token: ${INTERNAL_GRPC_AUTH_TOKEN:}
 
 mission:
   weather:

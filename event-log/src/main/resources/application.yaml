@@ -27,7 +27,12 @@ flyway:
 grpc:
   server:
     port: ${GRPC_SERVER_PORT:9099}
-    reflection-service-enabled: true
+    reflection-service-enabled: ${GRPC_REFLECTION_ENABLED:false}
+
+internal:
+  grpc-auth:
+    enabled: ${INTERNAL_GRPC_AUTH_ENABLED:true}
+    token: ${INTERNAL_GRPC_AUTH_TOKEN:}
 
 management:
   endpoints:

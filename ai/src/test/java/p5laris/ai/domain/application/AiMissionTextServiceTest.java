@@ -37,7 +37,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
         "ai.circuit-breaker.failure-rate-threshold=50",
         "ai.circuit-breaker.slow-call-duration-ms=3000",
         "ai.circuit-breaker.slow-call-rate-threshold=50",
-        "ai.circuit-breaker.wait-duration-open-ms=30000"
+        "ai.circuit-breaker.wait-duration-open-ms=30000",
+        "internal.grpc-auth.enabled=true",
+        "internal.grpc-auth.token=test-internal-grpc-token"
 })
 class AiMissionTextServiceTest {
 
