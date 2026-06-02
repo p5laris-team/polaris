@@ -16,6 +16,7 @@ public record MyCharacterResponse(
         boolean active,
         Long equippedSkinId,
         States states,
+        CharacterGrowthResponse growth,
         String currentAssetUrl,
         Map<String, String> assetUrls
 ) {

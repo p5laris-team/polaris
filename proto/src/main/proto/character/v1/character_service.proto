@@ -88,12 +88,25 @@ message CreateCharacterResponse {
   bool active = 4;
   CharacterStates states = 5;
   string created_at = 6;
+  CharacterGrowth growth = 7;
 }
 
 message CharacterStates {
   int32 hunger = 1;
   int32 energy = 2;
   int32 affection = 3;
+}
+
+message CharacterGrowth {
+  int32 level = 1;
+  int32 exp = 2;
+  int32 current_level_exp = 3;
+  int32 next_level_exp = 4;
+  int32 exp_to_next_level = 5;
+  int32 progress_percent = 6;
+  string growth_stage = 7;
+  string growth_stage_label = 8;
+  bool max_level = 9;
 }
 
 // GetMyCharacter: returns the user's active character
@@ -110,6 +123,7 @@ message GetMyCharacterResponse {
   CharacterStates states = 6;
   string current_asset_url = 7;
   map<string, string> asset_urls = 8;
+  CharacterGrowth growth = 9;
 }
 
 // UpdateCharacterName: updates character name
@@ -136,6 +150,7 @@ message GetCharacterStatusResponse {
   CharacterStateDetail hunger = 2;
   CharacterStateDetail energy = 3;
   CharacterStateDetail affection = 4;
+  CharacterGrowth growth = 5;
 }
 
 message CharacterStateDetail {
