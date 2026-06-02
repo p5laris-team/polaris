@@ -10,6 +10,7 @@ import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import p5laris.character.domain.application.dto.CareActionResponse;
 import p5laris.character.domain.domain.entity.CharacterCareLog;
 import p5laris.character.domain.domain.entity.UserCharacter;
@@ -59,6 +60,9 @@ class CharacterServiceTest {
     @Mock
     private CharacterItemGrpcProperties itemGrpcProperties;
 
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
+
     @Spy
     private ObjectMapper objectMapper = new ObjectMapper();
 
@@ -91,6 +95,40 @@ class CharacterServiceTest {
                 .affection(50)
                 .active(true)
                 .build();
+    }
+
+    @Test
+    @DisplayName("createCharacter - 생성 직후 초기 성장 정보 반환")
+    void createCharacter_returnsInitialGrowth() {
+        CharacterType characterType = character.getCharacterType();
+        when(characterTypeRepository.findById(1L)).thenReturn(Optional.of(characterType));
+        when(userCharacterRepository.findByUserIdAndActiveTrue(1L)).thenReturn(Optional.empty());
+        when(userCharacterRepository.save(any(UserCharacter.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var response = characterService.createCharacter(1L, 1L, "Nova");
+
+        assertNotNull(response.growth());
+        assertEquals(1, response.growth().level());
+        assertEquals(0, response.growth().exp());
+        assertEquals(200, response.growth().nextLevelExp());
+        assertEquals("BABY", response.growth().growthStage());
+        assertFalse(response.growth().maxLevel());
+    }
+
+    @Test
+    @DisplayName("getCharacterStatus - 상태 응답에 성장 정보 포함")
+    void getCharacterStatus_returnsGrowth() {
+        org.springframework.test.util.ReflectionTestUtils.setField(character, "exp", 200);
+        org.springframework.test.util.ReflectionTestUtils.setField(character, "level", 2);
+        when(userCharacterRepository.findById(1L)).thenReturn(Optional.of(character));
+
+        var response = characterService.getCharacterStatus(1L, 1L);
+
+        assertNotNull(response.growth());
+        assertEquals(2, response.growth().level());
+        assertEquals(200, response.growth().exp());
+        assertEquals("GROWING", response.growth().growthStage());
+        assertEquals(0, response.growth().progressPercent());
     }
 
     @Test
@@ -370,6 +408,10 @@ class CharacterServiceTest {
         assertEquals("http://cdn/idle.png", response.currentAssetUrl());
         assertEquals("http://cdn/idle.png", response.assetUrls().get("idle"));
         assertEquals("Nova", response.name());
+        assertNotNull(response.growth());
+        assertEquals(1, response.growth().level());
+        assertEquals(0, response.growth().exp());
+        assertEquals("BABY", response.growth().growthStage());
     }
 
     @Test
