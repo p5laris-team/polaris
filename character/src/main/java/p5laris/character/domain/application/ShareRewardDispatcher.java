@@ -17,6 +17,8 @@ import p5laris.character.domain.infrastructure.config.ShareRewardOutboxPropertie
 import p5laris.character.domain.infrastructure.grpc.NotificationPushClient;
 import p5laris.character.domain.infrastructure.grpc.ShareRewardWalletClient;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import jakarta.annotation.PostConstruct;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -39,6 +41,13 @@ public class ShareRewardDispatcher {
     private final TransactionTemplate transactionTemplate;
     private final ObjectMapper objectMapper;
     private final Clock clock;
+    private final MeterRegistry meterRegistry;
+
+    @PostConstruct
+    public void init() {
+        meterRegistry.gauge("outbox.pending.count", characterOutboxEventRepository,
+                repo -> repo.countByStatus(CharacterOutboxEventStatus.PENDING));
+    }
 
     public ShareRewardWalletClient.WalletRewardResult dispatchNow(Long outboxId) {
         RewardDispatchCommand command = claim(outboxId, true)
@@ -144,12 +153,30 @@ public class ShareRewardDispatcher {
                     command.idempotencyKey()
             );
             markSucceeded(command);
+
+            meterRegistry.counter("outbox.events.processed",
+                    "status", "SUCCESS",
+                    "aggregate_type", AGGREGATE_TYPE_SHARE_LOG
+            ).increment();
+
             return result;
         } catch (CharacterException e) {
             markFailed(command, e.getMessage());
+
+            meterRegistry.counter("outbox.events.processed",
+                    "status", "FAILURE",
+                    "aggregate_type", AGGREGATE_TYPE_SHARE_LOG
+            ).increment();
+
             throw e;
         } catch (Exception e) {
             markFailed(command, e.getMessage());
+
+            meterRegistry.counter("outbox.events.processed",
+                    "status", "FAILURE",
+                    "aggregate_type", AGGREGATE_TYPE_SHARE_LOG
+            ).increment();
+
             throw new CharacterException(CharacterErrorCode.SHARE_REWARD_FAILED);
         }
     }

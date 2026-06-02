@@ -1,5 +1,6 @@
 package p5laris.ai.domain.application;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -38,14 +39,18 @@ class AiMissionTextPersistenceServiceTest {
     @Mock
     private ApplicationEventPublisher eventPublisher;
 
+    private SimpleMeterRegistry meterRegistry;
+
     private AiMissionTextPersistenceService persistenceService;
 
     @BeforeEach
     void setUp() {
+        meterRegistry = new SimpleMeterRegistry();
         persistenceService = new AiMissionTextPersistenceService(
                 aiMissionGenerationRepository,
                 aiUsageLogRepository,
-                eventPublisher
+                eventPublisher,
+                meterRegistry
         );
     }
 
@@ -101,6 +106,15 @@ class AiMissionTextPersistenceServiceTest {
                 .containsEntry("usageStatus", AiUsageStatus.FALLBACK)
                 .containsEntry("errorType", AiErrorType.PROVIDER_ERROR)
                 .containsEntry("latencyMs", 120);
+
+        // Prometheus Counter 검증
+        var counter = meterRegistry.find("ai.generation.requests").counter();
+        assertThat(counter).isNotNull();
+        assertThat(counter.count()).isEqualTo(1.0);
+        assertThat(counter.getId().getTag("status")).isEqualTo("FALLBACK");
+        assertThat(counter.getId().getTag("fallback")).isEqualTo("true");
+        assertThat(counter.getId().getTag("error_type")).isEqualTo("PROVIDER_ERROR");
+        assertThat(counter.getId().getTag("model")).isEqualTo("gemini-2.5-flash");
     }
 
     @Test
@@ -125,6 +139,15 @@ class AiMissionTextPersistenceServiceTest {
 
         verify(aiUsageLogRepository).save(any(AiUsageLog.class));
         verify(eventPublisher, never()).publishEvent(any());
+
+        // Prometheus Counter 검증
+        var counter = meterRegistry.find("ai.generation.requests").counter();
+        assertThat(counter).isNotNull();
+        assertThat(counter.count()).isEqualTo(1.0);
+        assertThat(counter.getId().getTag("status")).isEqualTo("SUCCESS");
+        assertThat(counter.getId().getTag("fallback")).isEqualTo("false");
+        assertThat(counter.getId().getTag("error_type")).isEqualTo("NONE");
+        assertThat(counter.getId().getTag("model")).isEqualTo("local-tone-v1");
     }
 
     private MissionTextGenerationCommand command() {

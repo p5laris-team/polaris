@@ -28,6 +28,7 @@ asset:
   cdn-base-url: ${ASSET_CDN_BASE_URL:https://d24c6my56k1w5v.cloudfront.net}
 
 grpc:
+  default-deadline-ms: 3000
   server:
     port: ${GRPC_SERVER_PORT}
     reflection-service-enabled: ${GRPC_REFLECTION_ENABLED:false}
@@ -65,3 +66,7 @@ management:
   health:
     db:
       enabled: true
+
+item:
+  purchase-wallet:
+    deadline-ms: ${ITEM_PURCHASE_WALLET_DEADLINE_MS:1000}

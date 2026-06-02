@@ -4,7 +4,8 @@ import com.p5laris.proto.eventlog.v1.EventLogServiceGrpc;
 import com.p5laris.proto.eventlog.v1.RecordEventLogRequest;
 import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.client.inject.GrpcClient;
-import org.springframework.context.event.EventListener;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 
@@ -22,7 +23,7 @@ public class CharacterEventLogEventListener {
     private EventLogServiceGrpc.EventLogServiceBlockingStub eventLogStub;
 
     @Async
-    @EventListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handle(CharacterEventLogEvent event) {
         try {
             eventLogStub.recordEventLog(toRequest(event));
