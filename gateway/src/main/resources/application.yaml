@@ -10,6 +10,10 @@ spring:
       host: ${REDIS_HOST}
       port: ${REDIS_PORT}
 
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%thread] [traceId=%X{traceId}] %logger{36} - %msg%n"
+
 grpc:
   client:
     user:
@@ -56,3 +60,11 @@ jwt:
 app:
   public-base-url: ${APP_PUBLIC_BASE_URL:https://p5laris.life}
   default-share-image-url: ${APP_DEFAULT_SHARE_IMAGE_URL:https://d24c6my56k1w5v.cloudfront.net/assets/share-cards/placeholder.png}
+
+ad:
+  banner:
+    enabled: ${ADSENSE_BANNER_ENABLED:false}
+    client-id: ${ADSENSE_CLIENT_ID:}
+    bottom-web-slot-id: ${ADSENSE_BOTTOM_WEB_SLOT_ID:}
+    refresh-seconds: ${ADSENSE_BANNER_REFRESH_SECONDS:60}
+    reserved-height-px: ${ADSENSE_BANNER_RESERVED_HEIGHT_PX:64}
