@@ -10,6 +10,10 @@ spring:
       host: ${REDIS_HOST}
       port: ${REDIS_PORT}
 
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%thread] [traceId=%X{traceId}] %logger{36} - %msg%n"
+
 grpc:
   client:
     user:
