@@ -190,7 +190,37 @@ public class MissionDto {
             MissionReward reward,
             WalletSnapshot wallet,
             String rewardStatus,
+            CharacterExp characterExp,
             String characterMessage
+    ) {
+    }
+
+    /**
+     * 미션 완료로 캐릭터 성장에 반영된 경험치 상태다.
+     */
+    public record CharacterExp(
+            Integer expAmount,
+            Integer expGained,
+            Boolean levelUp,
+            String status,
+            CharacterGrowth beforeGrowth,
+            CharacterGrowth afterGrowth
+    ) {
+    }
+
+    /**
+     * 캐릭터 성장 스냅샷이다.
+     */
+    public record CharacterGrowth(
+            Integer level,
+            Integer exp,
+            Integer currentLevelExp,
+            Integer nextLevelExp,
+            Integer expToNextLevel,
+            Integer progressPercent,
+            String growthStage,
+            String growthStageLabel,
+            Boolean maxLevel
     ) {
     }
 
