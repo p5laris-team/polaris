@@ -100,6 +100,14 @@ ai:
     window-seconds: ${AI_RATE_LIMIT_WINDOW_SECONDS}
     key-ttl-seconds: ${AI_RATE_LIMIT_KEY_TTL_SECONDS}
     fail-closed: ${AI_RATE_LIMIT_FAIL_CLOSED}
+  circuit-breaker:
+    enabled: ${AI_CIRCUIT_BREAKER_ENABLED}
+    sliding-window-size: ${AI_CIRCUIT_BREAKER_SLIDING_WINDOW_SIZE}
+    minimum-number-of-calls: ${AI_CIRCUIT_BREAKER_MINIMUM_NUMBER_OF_CALLS}
+    failure-rate-threshold: ${AI_CIRCUIT_BREAKER_FAILURE_RATE_THRESHOLD}
+    slow-call-duration-ms: ${AI_CIRCUIT_BREAKER_SLOW_CALL_DURATION_MS}
+    slow-call-rate-threshold: ${AI_CIRCUIT_BREAKER_SLOW_CALL_RATE_THRESHOLD}
+    wait-duration-open-ms: ${AI_CIRCUIT_BREAKER_WAIT_DURATION_OPEN_MS}
 
 management:
   endpoints:
