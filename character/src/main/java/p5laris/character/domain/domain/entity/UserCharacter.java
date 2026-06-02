@@ -7,6 +7,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import p5laris.character.domain.domain.enums.ActionType;
 import p5laris.character.domain.domain.enums.CharacterMood;
+import p5laris.character.domain.domain.policy.CharacterGrowthPolicy;
 
 import java.time.Instant;
 
@@ -168,17 +169,13 @@ public class UserCharacter {
     }
 
     /**
-     * PRD 6.3 기준 경험치별 레벨업 테이블
-     * Lv.1: 0~99
-     * Lv.2: 100~299
-     * Lv.3: 300~599
-     * Lv.4: 600 이상 (만렙)
+     * 캐릭터 성장 정책 기준 경험치별 레벨업 테이블.
+     * Lv.1: 0~199
+     * Lv.2: 200~599
+     * Lv.3: 600 이상 (만렙)
      */
     private int calculateLevel(int currentExp) {
-        if (currentExp >= 600) return 4;
-        if (currentExp >= 300) return 3;
-        if (currentExp >= 100) return 2;
-        return 1;
+        return CharacterGrowthPolicy.calculateLevel(currentExp);
     }
 
     public void equipSkin(Long skinId) {
