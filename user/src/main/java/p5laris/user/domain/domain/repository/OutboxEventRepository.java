@@ -25,4 +25,6 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, Long> 
     @Modifying
     @Query("DELETE FROM OutboxEvent o WHERE o.status = 'SUCCEEDED' AND o.updatedAt <= :threshold")
     void deleteSucceededEvents(@Param("threshold") LocalDateTime threshold);
+
+    long countByStatus(String status);
 }

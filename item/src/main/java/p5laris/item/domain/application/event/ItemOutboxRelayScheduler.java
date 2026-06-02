@@ -15,6 +15,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import p5laris.item.domain.domain.entity.OutboxEvent;
 import p5laris.item.domain.domain.repository.OutboxEventRepository;
+import io.micrometer.core.instrument.MeterRegistry;
+import jakarta.annotation.PostConstruct;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -29,6 +31,13 @@ public class ItemOutboxRelayScheduler {
 
     private final OutboxEventRepository outboxEventRepository;
     private final ObjectMapper objectMapper;
+    private final MeterRegistry meterRegistry;
+
+    @PostConstruct
+    public void init() {
+        meterRegistry.gauge("outbox.pending.count", outboxEventRepository,
+                repo -> repo.countByStatus("PENDING"));
+    }
 
     @Value("${spring.application.name:item}")
     private String sourceService;
@@ -83,6 +92,11 @@ public class ItemOutboxRelayScheduler {
                 outboxEvent.success();
                 outboxEventRepository.saveAndFlush(outboxEvent);
                 log.debug("Outbox event succeeded. id={}", outboxEvent.getId());
+
+                meterRegistry.counter("outbox.events.processed",
+                        "status", "SUCCESS",
+                        "aggregate_type", outboxEvent.getAggregateType()
+                ).increment();
                 
             } catch (Exception e) {
                 log.error("Outbox event failed. id={}, type={}", pendingEvent.getId(), pendingEvent.getAggregateType(), e);
@@ -92,6 +106,11 @@ public class ItemOutboxRelayScheduler {
                 LocalDateTime nextAttempt = LocalDateTime.now().plusMinutes((long) Math.pow(2, outboxEvent.getAttemptCount()));
                 outboxEvent.fail(e.getMessage(), nextAttempt, MAX_ATTEMPTS);
                 outboxEventRepository.saveAndFlush(outboxEvent);
+
+                meterRegistry.counter("outbox.events.processed",
+                        "status", "FAILURE",
+                        "aggregate_type", pendingEvent.getAggregateType()
+                ).increment();
             }
         }
     }

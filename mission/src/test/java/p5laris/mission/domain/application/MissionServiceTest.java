@@ -47,6 +47,7 @@ import p5laris.mission.domain.infrastructure.grpc.OnboardingProfileClient;
 import p5laris.mission.domain.infrastructure.grpc.OnboardingProfileClient.OnboardingProfileSnapshot;
 import p5laris.mission.domain.infrastructure.grpc.WalletRewardClient;
 import p5laris.mission.domain.infrastructure.grpc.WalletRewardResult;
+import io.micrometer.core.instrument.MeterRegistry;
 
 import java.time.Clock;
 import java.time.LocalDate;
@@ -128,6 +129,9 @@ class MissionServiceTest {
 
     @Autowired
     private MissionRewardDispatcher missionRewardDispatcher;
+
+    @Autowired
+    private MeterRegistry meterRegistry;
 
     @Autowired
     private UserMissionRepository userMissionRepository;
@@ -1304,6 +1308,18 @@ class MissionServiceTest {
                 created.getMission().getId(),
                 10
         );
+
+        // Prometheus Counter 및 Gauge 검증
+        var counter = meterRegistry.find("outbox.events.processed")
+                .tag("status", "SUCCESS")
+                .counter();
+        assertThat(counter).isNotNull();
+        assertThat(counter.count()).isPositive();
+        assertThat(counter.getId().getTag("status")).isEqualTo("SUCCESS");
+        assertThat(counter.getId().getTag("aggregate_type")).isEqualTo("MISSION");
+
+        double count = meterRegistry.find("outbox.pending.count").gauge().value();
+        assertThat(count).isGreaterThanOrEqualTo(0.0);
     }
 
     private MissionOutboxEvent findRewardOutbox(Long missionId) {

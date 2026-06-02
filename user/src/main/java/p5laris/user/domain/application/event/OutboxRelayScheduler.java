@@ -13,6 +13,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import p5laris.user.domain.domain.entity.OutboxEvent;
 import p5laris.user.domain.domain.repository.OutboxEventRepository;
+import io.micrometer.core.instrument.MeterRegistry;
+import jakarta.annotation.PostConstruct;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -26,6 +28,13 @@ public class OutboxRelayScheduler {
 
     private final OutboxEventRepository outboxEventRepository;
     private final ObjectMapper objectMapper;
+    private final MeterRegistry meterRegistry;
+
+    @PostConstruct
+    public void init() {
+        meterRegistry.gauge("outbox.pending.count", outboxEventRepository,
+                repo -> repo.countByStatus("PENDING"));
+    }
 
     @Value("${spring.application.name:user}")
     private String sourceService;
@@ -88,6 +97,11 @@ public class OutboxRelayScheduler {
                 outboxEvent.success();
                 outboxEventRepository.saveAndFlush(outboxEvent);
                 log.debug("Successfully relayed outbox event: {}", outboxEvent.getId());
+
+                meterRegistry.counter("outbox.events.processed",
+                        "status", "SUCCESS",
+                        "aggregate_type", outboxEvent.getAggregateType()
+                ).increment();
             } catch (Exception e) {
                 log.error("Failed to relay outbox event: {}", pendingEvent.getId(), e);
                 
@@ -100,6 +114,11 @@ public class OutboxRelayScheduler {
                 
                 outboxEvent.fail(e.getMessage(), nextAttempt, MAX_ATTEMPTS);
                 outboxEventRepository.saveAndFlush(outboxEvent);
+
+                meterRegistry.counter("outbox.events.processed",
+                        "status", "FAILURE",
+                        "aggregate_type", pendingEvent.getAggregateType()
+                ).increment();
             }
         }
     }
