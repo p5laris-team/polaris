@@ -1,5 +1,6 @@
 package p5laris.ai.domain.application;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -28,6 +29,7 @@ public class AiMissionTextPersistenceService {
     private final AiMissionGenerationRepository aiMissionGenerationRepository;
     private final AiUsageLogRepository aiUsageLogRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final MeterRegistry meterRegistry;
 
     /**
      * ai_mission_generations와 ai_usage_logs를 함께 저장한다.
@@ -75,6 +77,14 @@ public class AiMissionTextPersistenceService {
                 errorType
         );
         aiUsageLogRepository.save(usageLog);
+
+        // Prometheus Counter로 실시간 지표 수집
+        meterRegistry.counter("ai.generation.requests",
+                "status", usageStatus != null ? usageStatus.name() : "UNKNOWN",
+                "fallback", String.valueOf(fallbackUsed),
+                "error_type", errorType != null ? errorType.name() : "NONE",
+                "model", model != null ? model : "unknown"
+        ).increment();
 
         if (fallbackUsed) {
             eventPublisher.publishEvent(AiEventLogEvent.fallbackUsed(
