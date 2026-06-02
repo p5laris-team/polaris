@@ -37,7 +37,7 @@ public class WalletService {
             }
         }
 
-        Wallet wallet = walletRepository.findByUserId(userId)
+        Wallet wallet = walletRepository.findByUserIdForUpdate(userId)
                 .orElseThrow(() -> new UserException(UserErrorCode.WALLET_NOT_FOUND));
 
         // 보상 지급
@@ -74,7 +74,7 @@ public class WalletService {
             }
         }
 
-        Wallet wallet = walletRepository.findByUserId(userId)
+        Wallet wallet = walletRepository.findByUserIdForUpdate(userId)
                 .orElseThrow(() -> new UserException(UserErrorCode.WALLET_NOT_FOUND));
 
         if (wallet.getStarPiece() < amount) {
