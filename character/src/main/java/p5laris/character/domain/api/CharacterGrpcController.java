@@ -294,6 +294,7 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
                 .setRewardPaid(result.rewardPaid())
                 .setRewardStarPiece(result.rewardStarPiece())
                 .setWalletStarPiece(result.walletStarPiece())
+                .setRewardStatus(result.rewardStatus().name())
                 .build());
         responseObserver.onCompleted();
     }
@@ -352,6 +353,7 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
         responseObserver.onNext(GetTodayShareEventStatusResponse.newBuilder()
                 .setRewardClaimed(result.rewardClaimed())
                 .setLastSharedAt(result.lastSharedAt() != null ? result.lastSharedAt() : "")
+                .setRewardStatus(result.rewardStatus() != null ? result.rewardStatus() : "")
                 .build());
         responseObserver.onCompleted();
     }

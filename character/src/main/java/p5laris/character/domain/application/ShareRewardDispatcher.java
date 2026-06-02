@@ -14,6 +14,7 @@ import p5laris.character.domain.domain.repository.ShareLogRepository;
 import p5laris.character.domain.exception.CharacterErrorCode;
 import p5laris.character.domain.exception.CharacterException;
 import p5laris.character.domain.infrastructure.config.ShareRewardOutboxProperties;
+import p5laris.character.domain.infrastructure.grpc.NotificationPushClient;
 import p5laris.character.domain.infrastructure.grpc.ShareRewardWalletClient;
 
 import java.time.Clock;
@@ -32,6 +33,7 @@ public class ShareRewardDispatcher {
     private final CharacterOutboxEventRepository characterOutboxEventRepository;
     private final ShareLogRepository shareLogRepository;
     private final ShareRewardWalletClient shareRewardWalletClient;
+    private final NotificationPushClient notificationPushClient;
     private final ShareRewardBackoffPolicy shareRewardBackoffPolicy;
     private final ShareRewardOutboxProperties properties;
     private final TransactionTemplate transactionTemplate;
@@ -63,6 +65,7 @@ public class ShareRewardDispatcher {
 
             try {
                 dispatchClaimed(command.get());
+                requestRewardCompletedNotification(command.get());
                 succeededCount++;
             } catch (CharacterException e) {
                 log.warn("Share reward outbox dispatch failed. outboxId={}, shareLogId={}, errorCode={}",
@@ -70,6 +73,19 @@ public class ShareRewardDispatcher {
             }
         }
         return succeededCount;
+    }
+
+    private void requestRewardCompletedNotification(RewardDispatchCommand command) {
+        try {
+            notificationPushClient.sendShareRewardCompletedNotification(
+                    command.userId(),
+                    command.shareLogId(),
+                    command.rewardStarPiece()
+            );
+        } catch (Exception e) {
+            log.warn("Share reward completion notification request failed. userId={}, shareLogId={}",
+                    command.userId(), command.shareLogId(), e);
+        }
     }
 
     private Optional<RewardDispatchCommand> claim(Long outboxId, boolean immediateDispatch) {

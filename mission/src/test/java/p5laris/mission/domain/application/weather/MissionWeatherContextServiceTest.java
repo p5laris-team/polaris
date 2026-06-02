@@ -78,6 +78,30 @@ class MissionWeatherContextServiceTest {
     }
 
     @Test
+    void 사용자_선택_권역이면_USER_SELECTED_location_policy를_붙인다() throws Exception {
+        WeatherLocation userSelectedLocation = new WeatherLocation(
+                60,
+                121,
+                "경기 남부",
+                WeatherLocationSource.USER_SELECTED
+        );
+        MissionWeatherContextService service = service(
+                properties(true),
+                new FakeWeatherProvider(),
+                FakeWeatherCache.miss(),
+                FakeWeatherRateLimiter.allowed(),
+                userId -> Optional.of(userSelectedLocation)
+        );
+
+        String enriched = service.enrich(USER_ID, baseContextJson());
+
+        assertThat(weatherPolicy(enriched).get("available")).isEqualTo(true);
+        assertThat(locationPolicy(enriched).get("locationLabel")).isEqualTo("경기 남부");
+        assertThat(locationPolicy(enriched).get("source")).isEqualTo("USER_SELECTED");
+        assertThat(weather(enriched).get("summaryTraits").toString()).contains("RAINY");
+    }
+
+    @Test
     void Redis_cache를_조회할_수_없으면_provider를_호출하지_않고_unavailable로_닫는다() throws Exception {
         FakeWeatherProvider provider = new FakeWeatherProvider();
         MissionWeatherContextService service = service(
@@ -134,9 +158,25 @@ class MissionWeatherContextServiceTest {
             FakeWeatherCache cache,
             FakeWeatherRateLimiter rateLimiter
     ) {
+        return service(
+                properties,
+                provider,
+                cache,
+                rateLimiter,
+                userId -> Optional.of(new WeatherLocation(60, 127, "SEOUL", WeatherLocationSource.SERVICE_DEFAULT))
+        );
+    }
+
+    private MissionWeatherContextService service(
+            MissionWeatherProperties properties,
+            FakeWeatherProvider provider,
+            FakeWeatherCache cache,
+            FakeWeatherRateLimiter rateLimiter,
+            WeatherLocationResolver locationResolver
+    ) {
         return new MissionWeatherContextService(
                 properties,
-                userId -> Optional.of(new WeatherLocation(60, 127, "SEOUL", WeatherLocationSource.SERVICE_DEFAULT)),
+                locationResolver,
                 cache,
                 rateLimiter,
                 List.of(provider),
@@ -178,6 +218,13 @@ class MissionWeatherContextServiceTest {
     }
 
     @SuppressWarnings("unchecked")
+    private Map<String, Object> locationPolicy(String json) throws Exception {
+        Map<String, Object> root = objectMapper.readValue(json, MAP_TYPE_REFERENCE);
+        Map<String, Object> environment = (Map<String, Object>) root.get("environmentContext");
+        return (Map<String, Object>) environment.get("locationPolicy");
+    }
+
+    @SuppressWarnings("unchecked")
     private Map<String, Object> weather(String json) throws Exception {
         Map<String, Object> root = objectMapper.readValue(json, MAP_TYPE_REFERENCE);
         Map<String, Object> environment = (Map<String, Object>) root.get("environmentContext");
@@ -185,12 +232,16 @@ class MissionWeatherContextServiceTest {
     }
 
     private WeatherSnapshot snapshot() {
+        return snapshot(new WeatherLocation(60, 127, "SEOUL", WeatherLocationSource.SERVICE_DEFAULT));
+    }
+
+    private WeatherSnapshot snapshot(WeatherLocation location) {
         return new WeatherSnapshot(
                 "KMA",
-                "SEOUL",
-                WeatherLocationSource.SERVICE_DEFAULT,
-                60,
-                127,
+                location.locationLabel(),
+                location.source(),
+                location.nx(),
+                location.ny(),
                 "20260601",
                 "1230",
                 "20260601",
@@ -231,7 +282,7 @@ class MissionWeatherContextServiceTest {
             if (failureReason != null) {
                 throw new WeatherProviderException(failureReason, "provider failed");
             }
-            return snapshot();
+            return snapshot(location);
         }
     }
 

@@ -12,6 +12,8 @@ import com.p5laris.proto.mission.v1.MissionDetail;
 import com.p5laris.proto.mission.v1.MissionCategory;
 import com.p5laris.proto.mission.v1.MissionDifficulty;
 import com.p5laris.proto.mission.v1.MissionReward;
+import com.p5laris.proto.mission.v1.MissionRewardStatus;
+import com.p5laris.proto.mission.v1.MissionSatisfactionFeedback;
 import com.p5laris.proto.mission.v1.MissionStatus;
 import com.p5laris.proto.mission.v1.RejectMissionResponse;
 import com.p5laris.proto.mission.v1.StartCompletionSessionResponse;
@@ -50,6 +52,7 @@ import p5laris.mission.domain.domain.enums.MissionDifficultyType;
 import p5laris.mission.domain.domain.enums.MissionFeedbackReaction;
 import p5laris.mission.domain.domain.enums.MissionFeedbackReasonCode;
 import p5laris.mission.domain.domain.enums.MissionFeedbackType;
+import p5laris.mission.domain.domain.enums.MissionOutboxEventStatus;
 import p5laris.mission.domain.domain.enums.UserMissionStatus;
 import p5laris.mission.domain.domain.repository.MissionCompletionAnswerRepository;
 import p5laris.mission.domain.domain.repository.MissionFeedbackRepository;
@@ -214,9 +217,15 @@ public class MissionService {
         UserMission mission = userMissionRepository.findByIdAndUserId(missionId, userId)
                 .orElseThrow(() -> new MissionException(MissionErrorCode.MISSION_NOT_FOUND));
         Optional<MissionCompletionAnswer> answer = missionCompletionAnswerRepository.findByMissionId(mission.getId());
+        Optional<MissionFeedback> satisfactionFeedback =
+                missionFeedbackRepository.findByUserIdAndMissionIdAndFeedbackType(
+                        userId,
+                        mission.getId(),
+                        MissionFeedbackType.SATISFACTION
+                );
 
         return GetMissionDetailResponse.newBuilder()
-                .setMission(toProtoMissionDetail(mission, answer.orElse(null)))
+                .setMission(toProtoMissionDetail(mission, answer.orElse(null), satisfactionFeedback.orElse(null)))
                 .build();
     }
 
@@ -627,8 +636,8 @@ public class MissionService {
                 status -> completeMissionInTransaction(userId, missionId, normalizedAnswer)
         ));
 
-        WalletRewardResult rewardResult = resolveReward(userId, context);
-        return toCompletionResponse(context.mission(), context.answer(), rewardResult.starPiece());
+        MissionCompletionReward reward = resolveReward(userId, context);
+        return toCompletionResponse(context.mission(), context.answer(), reward);
     }
 
     /**
@@ -651,11 +660,27 @@ public class MissionService {
             missionMemoryRecorder.recordCompletion(mission, answer);
 
             if (mission.isRewardPaid()) {
-                return new MissionCompletionContext(mission, answer, true, rewardIdempotencyKey, null);
+                return new MissionCompletionContext(
+                        mission,
+                        answer,
+                        true,
+                        false,
+                        rewardIdempotencyKey,
+                        null,
+                        null
+                );
             }
 
             MissionOutboxEvent outbox = ensureRewardOutbox(mission, rewardIdempotencyKey, LocalDateTime.now(clock));
-            return new MissionCompletionContext(mission, answer, false, rewardIdempotencyKey, outbox.getId());
+            return new MissionCompletionContext(
+                    mission,
+                    answer,
+                    false,
+                    false,
+                    rewardIdempotencyKey,
+                    outbox.getId(),
+                    outbox.getStatus()
+            );
         }
 
         if (!mission.isAnswering()) {
@@ -678,7 +703,15 @@ public class MissionService {
         eventPublisher.publishEvent(MissionEventLogEvent.missionCompleted(mission, answer, toOccurredAt(now)));
         MissionOutboxEvent outbox = ensureRewardOutbox(mission, rewardIdempotencyKey, now);
 
-        return new MissionCompletionContext(mission, answer, false, rewardIdempotencyKey, outbox.getId());
+        return new MissionCompletionContext(
+                mission,
+                answer,
+                false,
+                true,
+                rewardIdempotencyKey,
+                outbox.getId(),
+                outbox.getStatus()
+        );
     }
 
     /**
@@ -687,12 +720,31 @@ public class MissionService {
      * 이미 user_missions.idempotency_key가 있으면 보상 지급이 끝난 것으로 보고 새 거래를 만들지 않는다.
      * marker가 없으면 같은 MISSION_REWARD:{missionId} 키로 outbox를 즉시 발송해 중복 지급을 방어한다.
      */
-    private WalletRewardResult resolveReward(Long userId, MissionCompletionContext context) {
+    private MissionCompletionReward resolveReward(Long userId, MissionCompletionContext context) {
         if (context.rewardAlreadyPaid()) {
-            return new WalletRewardResult(walletRewardClient.getWalletStarPiece(userId), null);
+            return MissionCompletionReward.paid(walletRewardClient.getWalletStarPiece(userId));
         }
 
-        return missionRewardDispatcher.dispatchNow(context.rewardOutboxId());
+        if (!context.dispatchRewardNow()) {
+            return MissionCompletionReward.withoutWallet(toProtoRewardStatus(context.rewardOutboxStatus()));
+        }
+
+        try {
+            WalletRewardResult rewardResult = missionRewardDispatcher.dispatchNow(context.rewardOutboxId());
+            return MissionCompletionReward.paid(rewardResult.starPiece());
+        } catch (MissionException e) {
+            if (e.getErrorCode() != MissionErrorCode.MISSION_REWARD_FAILED) {
+                throw e;
+            }
+
+            log.warn(
+                    "미션 완료는 성공했지만 즉시 보상 지급에 실패해 outbox 재처리로 전환합니다. missionId={}, userId={}, outboxId={}",
+                    context.mission().getId(),
+                    userId,
+                    context.rewardOutboxId()
+            );
+            return MissionCompletionReward.withoutWallet(MissionRewardStatus.MISSION_REWARD_STATUS_PENDING);
+        }
     }
 
     private MissionOutboxEvent ensureRewardOutbox(
@@ -867,9 +919,9 @@ public class MissionService {
     private SubmitCompletionAnswerResponse toCompletionResponse(
             UserMission mission,
             MissionCompletionAnswer answer,
-            int walletStarPiece
+            MissionCompletionReward completionReward
     ) {
-        return SubmitCompletionAnswerResponse.newBuilder()
+        SubmitCompletionAnswerResponse.Builder builder = SubmitCompletionAnswerResponse.newBuilder()
                 .setMissionId(mission.getId())
                 .setStatus(toProtoStatus(mission.getStatus()))
                 .setAnswer(toProtoAnswer(answer))
@@ -877,11 +929,29 @@ public class MissionService {
                         .setStarPiece(mission.getRewardStarPiece())
                         .setAffection(0)
                         .build())
-                .setWallet(WalletSnapshot.newBuilder()
-                        .setStarPiece(walletStarPiece)
-                        .build())
                 .setCharacterMessage(mission.getCompletionCharacterResponse())
-                .build();
+                .setRewardStatus(completionReward.rewardStatus());
+
+        if (completionReward.walletStarPiece() != null) {
+            builder.setWallet(WalletSnapshot.newBuilder()
+                    .setStarPiece(completionReward.walletStarPiece())
+                    .build());
+        }
+
+        return builder.build();
+    }
+
+    private MissionRewardStatus toProtoRewardStatus(MissionOutboxEventStatus outboxStatus) {
+        if (outboxStatus == MissionOutboxEventStatus.PROCESSING) {
+            return MissionRewardStatus.MISSION_REWARD_STATUS_PROCESSING;
+        }
+        if (outboxStatus == MissionOutboxEventStatus.FAILED) {
+            return MissionRewardStatus.MISSION_REWARD_STATUS_FAILED;
+        }
+        if (outboxStatus == MissionOutboxEventStatus.SUCCEEDED) {
+            return MissionRewardStatus.MISSION_REWARD_STATUS_PAID;
+        }
+        return MissionRewardStatus.MISSION_REWARD_STATUS_PENDING;
     }
 
     private UpsertMissionFeedbackResponse toFeedbackResponse(MissionFeedback feedback) {
@@ -952,7 +1022,11 @@ public class MissionService {
         return builder.build();
     }
 
-    private MissionDetail toProtoMissionDetail(UserMission mission, MissionCompletionAnswer answer) {
+    private MissionDetail toProtoMissionDetail(
+            UserMission mission,
+            MissionCompletionAnswer answer,
+            MissionFeedback satisfactionFeedback
+    ) {
         MissionDetail.Builder builder = MissionDetail.newBuilder()
                 .setId(mission.getId())
                 .setMissionDate(mission.getMissionDate().toString())
@@ -975,6 +1049,13 @@ public class MissionService {
                 builder.setAnswer(toProtoAnswer(answer));
                 builder.setHasAnswer(true);
             }
+        }
+
+        if (satisfactionFeedback != null && satisfactionFeedback.getReaction() != null) {
+            builder.setSatisfactionFeedback(MissionSatisfactionFeedback.newBuilder()
+                    .setReaction(toProtoFeedbackReaction(satisfactionFeedback.getReaction()))
+                    .setUpdatedAt(formatDateTime(satisfactionFeedback.getUpdatedAt()))
+                    .build());
         }
 
         return builder.build();
@@ -1094,9 +1175,25 @@ public class MissionService {
             UserMission mission,
             MissionCompletionAnswer answer,
             boolean rewardAlreadyPaid,
+            boolean dispatchRewardNow,
             String rewardIdempotencyKey,
-            Long rewardOutboxId
+            Long rewardOutboxId,
+            MissionOutboxEventStatus rewardOutboxStatus
     ) {
+    }
+
+    private record MissionCompletionReward(
+            MissionRewardStatus rewardStatus,
+            Integer walletStarPiece
+    ) {
+
+        private static MissionCompletionReward paid(int walletStarPiece) {
+            return new MissionCompletionReward(MissionRewardStatus.MISSION_REWARD_STATUS_PAID, walletStarPiece);
+        }
+
+        private static MissionCompletionReward withoutWallet(MissionRewardStatus rewardStatus) {
+            return new MissionCompletionReward(rewardStatus, null);
+        }
     }
 
     /**

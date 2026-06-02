@@ -9,6 +9,7 @@ option java_outer_classname = "NotificationProto";
 service NotificationService {
   rpc GetNotifications(GetNotificationsRequest) returns (GetNotificationsResponse);
   rpc MarkNotificationRead(MarkNotificationReadRequest) returns (MarkNotificationReadResponse);
+  rpc MarkAllNotificationsRead(MarkAllNotificationsReadRequest) returns (MarkAllNotificationsReadResponse);
   rpc RegisterFcmToken(RegisterFcmTokenRequest) returns (RegisterFcmTokenResponse);
   rpc GetNotificationSetting(GetNotificationSettingRequest) returns (GetNotificationSettingResponse);
   rpc UpdateNotificationSetting(UpdateNotificationSettingRequest) returns (UpdateNotificationSettingResponse);
@@ -37,6 +38,16 @@ message MarkNotificationReadRequest {
 message MarkNotificationReadResponse {
   int64 id = 1;
   bool read = 2;
+  string updated_at = 3;
+}
+
+message MarkAllNotificationsReadRequest {
+  int64 user_id = 1;
+}
+
+message MarkAllNotificationsReadResponse {
+  int64 updated_count = 1;
+  int64 unread_count = 2;
   string updated_at = 3;
 }
 

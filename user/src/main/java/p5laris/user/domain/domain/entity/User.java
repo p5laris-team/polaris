@@ -40,6 +40,9 @@ public class User extends BaseEntity {
     @Column(name = "refresh_token", length = 512)
     private String refreshToken;
 
+    @Column(name = "weather_region_code", length = 50)
+    private String weatherRegionCode;
+
     @Builder
     public User(String email, String nickname, String provider, String role, String status) {
         this.email = email;
@@ -55,5 +58,9 @@ public class User extends BaseEntity {
 
     public void clearRefreshToken() {
         this.refreshToken = null;
+    }
+
+    public void updateWeatherRegionCode(String weatherRegionCode) {
+        this.weatherRegionCode = weatherRegionCode;
     }
 }

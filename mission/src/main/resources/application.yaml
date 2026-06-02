@@ -104,6 +104,8 @@ mission:
     processing-timeout-seconds: ${MISSION_REWARD_OUTBOX_PROCESSING_TIMEOUT_SECONDS}
     retry-initial-delay-seconds: ${MISSION_REWARD_OUTBOX_RETRY_INITIAL_DELAY_SECONDS}
     retry-max-delay-seconds: ${MISSION_REWARD_OUTBOX_RETRY_MAX_DELAY_SECONDS}
+  reward-wallet:
+    deadline-ms: ${MISSION_REWARD_WALLET_DEADLINE_MS}
 
 management:
   endpoints:

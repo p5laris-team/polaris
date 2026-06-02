@@ -6,11 +6,15 @@ import com.p5laris.proto.user.v1.GetMyWalletRequest;
 import com.p5laris.proto.user.v1.WalletResponse;
 import com.p5laris.proto.user.v1.WalletServiceGrpc;
 import io.grpc.StatusRuntimeException;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.client.inject.GrpcClient;
 import org.springframework.stereotype.Component;
 import p5laris.mission.domain.exception.MissionErrorCode;
 import p5laris.mission.domain.exception.MissionException;
+import p5laris.mission.domain.infrastructure.config.MissionRewardWalletProperties;
+
+import java.util.concurrent.TimeUnit;
 
 /**
  * mission 모듈에서 user/wallet 모듈로 별조각 보상 지급을 요청하는 gRPC adapter다.
@@ -20,10 +24,13 @@ import p5laris.mission.domain.exception.MissionException;
  */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class WalletRewardClient {
 
     private static final String MISSION_REWARD_REASON = "MISSION_REWARD";
     private static final String MISSION_REF_TYPE = "MISSION";
+
+    private final MissionRewardWalletProperties properties;
 
     @GrpcClient("user")
     private WalletServiceGrpc.WalletServiceBlockingStub walletStub;
@@ -40,7 +47,7 @@ public class WalletRewardClient {
             String idempotencyKey
     ) {
         try {
-            EarnStarPieceResponse response = walletStub.earnStarPiece(
+            EarnStarPieceResponse response = deadlineWalletStub().earnStarPiece(
                     EarnStarPieceRequest.newBuilder()
                             .setUserId(userId)
                             .setAmount(rewardStarPiece)
@@ -69,7 +76,7 @@ public class WalletRewardClient {
      */
     public int getWalletStarPiece(Long userId) {
         try {
-            WalletResponse response = walletStub.getMyWallet(
+            WalletResponse response = deadlineWalletStub().getMyWallet(
                     GetMyWalletRequest.newBuilder()
                             .setUserId(userId)
                             .build()
@@ -83,5 +90,9 @@ public class WalletRewardClient {
             log.warn("wallet 잔액 조회 실패. userId={}", userId, e);
             throw new MissionException(MissionErrorCode.MISSION_REWARD_FAILED);
         }
+    }
+
+    private WalletServiceGrpc.WalletServiceBlockingStub deadlineWalletStub() {
+        return walletStub.withDeadlineAfter(properties.getDeadlineMs(), TimeUnit.MILLISECONDS);
     }
 }

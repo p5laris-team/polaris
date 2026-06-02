@@ -96,7 +96,17 @@ public class MissionDto {
             CompletionQuestion question,
             CompletionAnswer answer,
             String completionCharacterResponse,
-            Boolean hasAnswer
+            Boolean hasAnswer,
+            MissionSatisfactionFeedback satisfactionFeedback
+    ) {
+    }
+
+    /**
+     * 완료 미션에 사용자가 이미 남긴 만족도 피드백 요약이다.
+     */
+    public record MissionSatisfactionFeedback(
+            String reaction,
+            String updatedAt
     ) {
     }
 
@@ -179,6 +189,7 @@ public class MissionDto {
             CompletionAnswer answer,
             MissionReward reward,
             WalletSnapshot wallet,
+            String rewardStatus,
             String characterMessage
     ) {
     }
