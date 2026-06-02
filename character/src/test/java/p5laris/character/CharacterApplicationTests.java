@@ -15,6 +15,7 @@ import org.springframework.boot.test.context.SpringBootTest;
         "grpc.client.event-log.address=static://localhost:9099",
         "character.state-notification.enabled=false",
         "character.share-reward-wallet.deadline-ms=1000",
+        "character.item-grpc.deadline-ms=1000",
         "cloud.aws.region=ap-northeast-2",
         "cloud.aws.s3.bucket-name=polaris-share-cards",
         "cloud.aws.s3.public-domain=https://cdn.p5laris.life",
