@@ -14,6 +14,10 @@ public record CareActionResponse(
         int consumedQuantity,    // 0 if no item used
         States beforeStates,
         States afterStates,
+        CharacterGrowthResponse beforeGrowth,
+        CharacterGrowthResponse afterGrowth,
+        int expGained,
+        boolean levelUp,
         String characterMessage
 ) {
     @Builder

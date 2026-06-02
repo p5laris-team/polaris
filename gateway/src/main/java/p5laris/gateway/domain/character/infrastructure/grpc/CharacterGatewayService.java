@@ -202,6 +202,10 @@ public class CharacterGatewayService {
                         .energy(response.getAfterStates().getEnergy())
                         .affection(response.getAfterStates().getAffection())
                         .build())
+                .beforeGrowth(toGrowth(response.getBeforeGrowth()))
+                .afterGrowth(toGrowth(response.getAfterGrowth()))
+                .expGained(response.getExpGained())
+                .levelUp(response.getLevelUp())
                 .characterMessage(response.getCharacterMessage())
                 .build();
     }

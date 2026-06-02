@@ -163,6 +163,9 @@ public class UserCharacter {
     }
 
     public void gainExp(int amount) {
+        if (amount <= 0) {
+            return;
+        }
         this.exp += amount;
         this.level = calculateLevel(this.exp);
         this.updatedAt = Instant.now();

@@ -217,6 +217,10 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
                         .setEnergy(result.afterStates().energy())
                         .setAffection(result.afterStates().affection())
                         .build())
+                .setBeforeGrowth(toProtoGrowth(result.beforeGrowth()))
+                .setAfterGrowth(toProtoGrowth(result.afterGrowth()))
+                .setExpGained(result.expGained())
+                .setLevelUp(result.levelUp())
                 .setCharacterMessage(result.characterMessage())
                 .build();
 

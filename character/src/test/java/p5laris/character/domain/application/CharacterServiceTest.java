@@ -176,6 +176,10 @@ class CharacterServiceTest {
         assertEquals(50, response.beforeStates().hunger());
         assertEquals(80, response.afterStates().hunger());
         assertEquals("먹는 중... 빛도 맛이 있구나.", response.characterMessage());
+        assertEquals(0, response.expGained());
+        assertFalse(response.levelUp());
+        assertNotNull(response.beforeGrowth());
+        assertNotNull(response.afterGrowth());
 
         // Verify no repository interactions for userCharacter
         verifyNoInteractions(userCharacterRepository);
@@ -232,6 +236,10 @@ class CharacterServiceTest {
             assertEquals("FEED", response.actionType());
             assertEquals(50, response.beforeStates().hunger());
             assertEquals(80, response.afterStates().hunger()); // +30 fullness recovery
+            assertEquals(5, response.expGained());
+            assertFalse(response.levelUp());
+            assertEquals(0, response.beforeGrowth().exp());
+            assertEquals(5, response.afterGrowth().exp());
         } catch (p5laris.character.domain.exception.CharacterException e) {
             System.out.println("DEBUG - CharacterException thrown with code: " + e.getErrorCode());
             throw e;
@@ -246,6 +254,78 @@ class CharacterServiceTest {
         InOrder inOrder = inOrder(itemStub, userCharacterRepository);
         inOrder.verify(itemStub).getUserItems(any(com.p5laris.proto.item.v1.GetUserItemsRequest.class));
         inOrder.verify(userCharacterRepository).findByIdForUpdate(1L);
+    }
+
+    @Test
+    @DisplayName("performCareAction - 같은 액션 하루 3회 이후에는 돌봄은 성공하지만 경험치는 지급하지 않음")
+    void performCareAction_dailyExpLimitPerAction() {
+        String key = "care-exp-limit-key";
+        Long itemId = 10L;
+
+        when(characterCareLogRepository.findByIdempotencyKey(key)).thenReturn(Optional.empty());
+        when(userCharacterRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(character));
+        when(characterCareLogRepository.findByCharacterIdAndActionTypeAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(
+                any(), any(), any(), any()
+        )).thenReturn(List.of(
+                careLogWithExp("limit-1", 5),
+                careLogWithExp("limit-2", 5),
+                careLogWithExp("limit-3", 5)
+        ));
+        when(characterCareLogRepository.save(any(CharacterCareLog.class))).thenAnswer(invocation -> {
+            CharacterCareLog log = invocation.getArgument(0);
+            org.springframework.test.util.ReflectionTestUtils.setField(log, "id", 123L);
+            return log;
+        });
+        mockOwnedCareItem(itemId, "FOOD");
+        when(itemStub.useItem(any(com.p5laris.proto.item.v1.UseItemRequest.class)))
+                .thenReturn(com.p5laris.proto.item.v1.UseItemResponse.newBuilder()
+                        .setUsageId(1L)
+                        .setItemId(itemId)
+                        .setQuantityUsed(1)
+                        .setRemainingQuantity(1)
+                        .build());
+
+        CareActionResponse response = characterService.performCareAction(1L, 1L, "FEED", itemId, key);
+
+        assertEquals(0, response.expGained());
+        assertFalse(response.levelUp());
+        assertEquals(0, response.beforeGrowth().exp());
+        assertEquals(0, response.afterGrowth().exp());
+        assertEquals(80, response.afterStates().hunger());
+    }
+
+    @Test
+    @DisplayName("performCareAction - 돌봄 경험치로 레벨 경계에 도달하면 levelUp 반환")
+    void performCareAction_levelUpByCareExp() {
+        String key = "care-level-up-key";
+        Long itemId = 10L;
+        org.springframework.test.util.ReflectionTestUtils.setField(character, "exp", 195);
+        org.springframework.test.util.ReflectionTestUtils.setField(character, "level", 1);
+
+        when(characterCareLogRepository.findByIdempotencyKey(key)).thenReturn(Optional.empty());
+        when(userCharacterRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(character));
+        when(characterCareLogRepository.save(any(CharacterCareLog.class))).thenAnswer(invocation -> {
+            CharacterCareLog log = invocation.getArgument(0);
+            org.springframework.test.util.ReflectionTestUtils.setField(log, "id", 123L);
+            return log;
+        });
+        mockOwnedCareItem(itemId, "FOOD");
+        when(itemStub.useItem(any(com.p5laris.proto.item.v1.UseItemRequest.class)))
+                .thenReturn(com.p5laris.proto.item.v1.UseItemResponse.newBuilder()
+                        .setUsageId(1L)
+                        .setItemId(itemId)
+                        .setQuantityUsed(1)
+                        .setRemainingQuantity(1)
+                        .build());
+
+        CareActionResponse response = characterService.performCareAction(1L, 1L, "FEED", itemId, key);
+
+        assertEquals(5, response.expGained());
+        assertTrue(response.levelUp());
+        assertEquals(1, response.beforeGrowth().level());
+        assertEquals(195, response.beforeGrowth().exp());
+        assertEquals(2, response.afterGrowth().level());
+        assertEquals(200, response.afterGrowth().exp());
     }
 
     @Test
@@ -487,6 +567,32 @@ class CharacterServiceTest {
         assertEquals("http://cdn/skin-hungry.png", response.currentAssetUrl());
         assertEquals("http://cdn/skin-hungry.png", response.assetUrls().get("hungry"));
         assertEquals("http://cdn/skin-idle.png", response.assetUrls().get("idle"));
+    }
+
+    private void mockOwnedCareItem(Long itemId, String effectType) {
+        com.p5laris.proto.item.v1.UserItem userItem = com.p5laris.proto.item.v1.UserItem.newBuilder()
+                .setItemId(itemId)
+                .setName("돌봄 아이템")
+                .setItemType("CONSUMABLE")
+                .setEffectType(effectType)
+                .setQuantity(5)
+                .build();
+        when(itemStub.getUserItems(any(com.p5laris.proto.item.v1.GetUserItemsRequest.class)))
+                .thenReturn(com.p5laris.proto.item.v1.GetUserItemsResponse.newBuilder()
+                        .addItems(userItem)
+                        .build());
+    }
+
+    private CharacterCareLog careLogWithExp(String idempotencyKey, int expGained) {
+        return CharacterCareLog.builder()
+                .userId(1L)
+                .characterId(1L)
+                .itemId(10L)
+                .actionType(ActionType.FEED)
+                .beforeStateJson("{\"fullness\":50,\"energy\":50,\"affection\":50}")
+                .afterStateJson("{\"fullness\":80,\"energy\":50,\"affection\":50,\"expGained\":" + expGained + "}")
+                .idempotencyKey(idempotencyKey)
+                .build();
     }
 
     private StatusRuntimeException statusException(String description) {
