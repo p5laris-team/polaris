@@ -8,6 +8,7 @@ import p5laris.ai.domain.application.generator.ExternalMissionTextGenerator;
 import p5laris.ai.domain.domain.enums.AiErrorType;
 import p5laris.ai.domain.domain.enums.AiProviderType;
 import p5laris.ai.domain.domain.policy.CharacterTonePolicy;
+import p5laris.ai.domain.infrastructure.config.AiCircuitBreakerProperties;
 import p5laris.ai.domain.exception.FallbackRequiredException;
 import p5laris.ai.domain.infrastructure.config.AiProviderProperties;
 
@@ -28,6 +29,7 @@ class DelegatingMissionTextGeneratorTest {
                 properties,
                 new RuleBasedMissionTextGenerator(new CharacterTonePolicy()),
                 rateLimiter,
+                new AiProviderCircuitBreaker(circuitBreakerProperties(false)),
                 List.of(externalGenerator)
         );
 
@@ -47,6 +49,7 @@ class DelegatingMissionTextGeneratorTest {
                 properties,
                 new RuleBasedMissionTextGenerator(new CharacterTonePolicy()),
                 rateLimiter,
+                new AiProviderCircuitBreaker(circuitBreakerProperties(false)),
                 List.of(externalGenerator)
         );
 
@@ -71,6 +74,7 @@ class DelegatingMissionTextGeneratorTest {
                 properties,
                 new RuleBasedMissionTextGenerator(new CharacterTonePolicy()),
                 rateLimiter,
+                new AiProviderCircuitBreaker(circuitBreakerProperties(false)),
                 List.of(externalGenerator)
         );
 
@@ -81,11 +85,52 @@ class DelegatingMissionTextGeneratorTest {
         assertThat(externalGenerator.called).isZero();
     }
 
+    @Test
+    void 외부_provider_실패가_반복되면_서킷을_열고_추가_외부호출을_막는다() {
+        AiProviderProperties properties = providerProperties(true, "gemini");
+        SpyRateLimiter rateLimiter = new SpyRateLimiter();
+        SpyExternalGenerator externalGenerator = new SpyExternalGenerator();
+        externalGenerator.exception = new FallbackRequiredException(
+                AiErrorType.PROVIDER_ERROR,
+                "Gemini 호출 실패"
+        );
+        DelegatingMissionTextGenerator generator = new DelegatingMissionTextGenerator(
+                properties,
+                new RuleBasedMissionTextGenerator(new CharacterTonePolicy()),
+                rateLimiter,
+                new AiProviderCircuitBreaker(circuitBreakerProperties(true)),
+                List.of(externalGenerator)
+        );
+
+        assertThatThrownBy(() -> generator.generate(validCommand("NOVA")))
+                .isInstanceOf(FallbackRequiredException.class);
+        assertThatThrownBy(() -> generator.generate(validCommand("NOVA")))
+                .isInstanceOf(FallbackRequiredException.class);
+
+        assertThatThrownBy(() -> generator.generate(validCommand("NOVA")))
+                .isInstanceOf(FallbackRequiredException.class)
+                .extracting("errorType")
+                .isEqualTo(AiErrorType.PROVIDER_ERROR);
+        assertThat(externalGenerator.called).isEqualTo(2);
+    }
+
     private AiProviderProperties providerProperties(boolean enabled, String type) {
         AiProviderProperties properties = new AiProviderProperties();
         properties.setEnabled(enabled);
         properties.setType(type);
         properties.setModel("gemini-2.5-flash");
+        return properties;
+    }
+
+    private AiCircuitBreakerProperties circuitBreakerProperties(boolean enabled) {
+        AiCircuitBreakerProperties properties = new AiCircuitBreakerProperties();
+        properties.setEnabled(enabled);
+        properties.setSlidingWindowSize(2);
+        properties.setMinimumNumberOfCalls(2);
+        properties.setFailureRateThreshold(50);
+        properties.setSlowCallDurationMs(1_000);
+        properties.setSlowCallRateThreshold(100);
+        properties.setWaitDurationOpenMs(60_000);
         return properties;
     }
 
@@ -129,6 +174,7 @@ class DelegatingMissionTextGeneratorTest {
 
     private static class SpyExternalGenerator implements ExternalMissionTextGenerator {
         private int called;
+        private FallbackRequiredException exception;
 
         @Override
         public AiProviderType providerType() {
@@ -138,6 +184,9 @@ class DelegatingMissionTextGeneratorTest {
         @Override
         public MissionTextCandidate generate(MissionTextGenerationCommand command) {
             called++;
+            if (exception != null) {
+                throw exception;
+            }
             return new MissionTextCandidate(
                     "gemini title",
                     "gemini description",
