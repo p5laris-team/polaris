@@ -6,10 +6,10 @@ spring:
     name: event-log
 
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/event_log}
+    url: ${DB_URL}
     driver-class-name: org.postgresql.Driver
-    username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:12345678}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
 
   jpa:
     hibernate:
@@ -26,7 +26,7 @@ flyway:
 
 grpc:
   server:
-    port: ${GRPC_SERVER_PORT:9099}
+    port: ${GRPC_SERVER_PORT}
     reflection-service-enabled: true
 
 management:
