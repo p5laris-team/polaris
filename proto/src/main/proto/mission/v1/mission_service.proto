@@ -2,19 +2,30 @@ syntax = "proto3";
 
 package p5laris.mission.v1;
 
+import "character/v1/character_service.proto";
+
 option java_multiple_files = true;
 option java_package = "com.p5laris.proto.mission.v1";
 option java_outer_classname = "MissionProto";
 
 service MissionService {
+  // 단순 헬스체크용 ping-pong 요청이다.
   rpc PingPong(PingPongRequest) returns (PingPongResponse);
+  // 유저의 현재 진행 중 미션을 조회한다.
   rpc GetCurrentMission(GetCurrentMissionRequest) returns (GetCurrentMissionResponse);
+  // 지정 날짜의 미션 히스토리와 일일 횟수 상태를 조회한다.
   rpc GetTodayMissions(GetTodayMissionsRequest) returns (GetTodayMissionsResponse);
+  // 미션 상세와 완료 답변 전문, 만족도 피드백을 조회한다.
   rpc GetMissionDetail(GetMissionDetailRequest) returns (GetMissionDetailResponse);
+  // 다음 미션을 생성하거나 제안한다.
   rpc CreateNextMission(CreateNextMissionRequest) returns (CreateNextMissionResponse);
+  // 현재 미션을 거절하고 다음 미션 요약을 반환한다.
   rpc RejectMission(RejectMissionRequest) returns (RejectMissionResponse);
+  // 미션 완료 질문 세션을 시작한다.
   rpc StartCompletionSession(StartCompletionSessionRequest) returns (StartCompletionSessionResponse);
+  // 완료 답변을 제출하고 보상/캐릭터 경험치 지급 상태를 반환한다.
   rpc SubmitCompletionAnswer(SubmitCompletionAnswerRequest) returns (SubmitCompletionAnswerResponse);
+  // 미션 거절 이유 또는 완료 만족도 피드백을 저장한다.
   rpc UpsertMissionFeedback(UpsertMissionFeedbackRequest) returns (UpsertMissionFeedbackResponse);
 }
 
@@ -45,11 +56,13 @@ message GetCurrentMissionResponse {
 
 message GetTodayMissionsRequest {
   int64 user_id = 1;
+  // 비우면 오늘 기준으로 조회한다. 형식: yyyy-MM-dd
   optional string mission_date = 2;
 }
 
 message GetTodayMissionsResponse {
   string mission_date = 1;
+  // 하루 제안 가능 횟수와 오늘 실제 제안/완료/거절 카운트다.
   int32 max_daily_offers = 2;
   int32 offered_count = 3;
   int32 completed_count = 4;
@@ -57,6 +70,7 @@ message GetTodayMissionsResponse {
   int32 remaining_offer_count = 6;
   optional int64 current_mission_id = 7;
   repeated TodayMission missions = 8;
+  // 보상 지급 횟수와 거절 가능 횟수는 서로 독립된 정책이다.
   int32 max_daily_reward_count = 9;
   int32 completed_reward_count = 10;
   int32 remaining_reward_count = 11;
@@ -87,6 +101,7 @@ message RejectMissionRequest {
   int64 user_id = 1;
   int64 character_id = 2;
   int64 mission_id = 3;
+  // reason_code/reason_text는 선택 입력이며, 개인화 참고 신호로만 사용한다.
   optional string reason_code = 4;
   optional string reason_text = 5;
 }
@@ -125,7 +140,10 @@ message SubmitCompletionAnswerResponse {
   MissionReward reward = 4;
   WalletSnapshot wallet = 5;
   string character_message = 6;
+  // 별조각 보상 상태다. PENDING이면 완료는 성공했고 보상 지급만 재처리 중이다.
   MissionRewardStatus reward_status = 7;
+  // 미션 완료로 지급되는 캐릭터 경험치 상태다.
+  MissionCharacterExp character_exp = 8;
 }
 
 message UpsertMissionFeedbackRequest {
@@ -194,6 +212,7 @@ message MissionDetail {
   CompletionAnswer answer = 15;
   string completion_character_response = 16;
   bool has_answer = 17;
+  // 이미 남긴 완료 만족도 피드백이 있으면 내려준다.
   MissionSatisfactionFeedback satisfaction_feedback = 18;
 }
 
@@ -230,12 +249,32 @@ message WalletSnapshot {
   int32 star_piece = 1;
 }
 
+message MissionCharacterExp {
+  // 정책상 지급 예정인 경험치다.
+  int32 exp_amount = 1;
+  // 실제 반영된 경험치다. PENDING/FAILED 상태에서는 0일 수 있다.
+  int32 exp_gained = 2;
+  bool level_up = 3;
+  // APPLIED면 즉시 반영, PENDING/PROCESSING이면 outbox 재처리 중이다.
+  MissionCharacterExpStatus status = 4;
+  p5laris.character.v1.CharacterGrowth before_growth = 5;
+  p5laris.character.v1.CharacterGrowth after_growth = 6;
+}
+
 enum MissionRewardStatus {
   MISSION_REWARD_STATUS_UNSPECIFIED = 0;
   MISSION_REWARD_STATUS_PAID = 1;
   MISSION_REWARD_STATUS_PENDING = 2;
   MISSION_REWARD_STATUS_PROCESSING = 3;
   MISSION_REWARD_STATUS_FAILED = 4;
+}
+
+enum MissionCharacterExpStatus {
+  MISSION_CHARACTER_EXP_STATUS_UNSPECIFIED = 0;
+  MISSION_CHARACTER_EXP_STATUS_APPLIED = 1;
+  MISSION_CHARACTER_EXP_STATUS_PENDING = 2;
+  MISSION_CHARACTER_EXP_STATUS_PROCESSING = 3;
+  MISSION_CHARACTER_EXP_STATUS_FAILED = 4;
 }
 
 enum MissionStatus {

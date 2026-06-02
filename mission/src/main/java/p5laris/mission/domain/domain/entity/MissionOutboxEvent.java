@@ -33,6 +33,7 @@ public class MissionOutboxEvent extends BaseEntity {
 
     public static final String AGGREGATE_TYPE_MISSION = "MISSION";
     public static final String EVENT_TYPE_MISSION_REWARD_REQUESTED = "MISSION_REWARD_REQUESTED";
+    public static final String EVENT_TYPE_MISSION_CHARACTER_EXP_REQUESTED = "MISSION_CHARACTER_EXP_REQUESTED";
 
     private static final int LAST_ERROR_MESSAGE_MAX_LENGTH = 500;
 
@@ -79,6 +80,24 @@ public class MissionOutboxEvent extends BaseEntity {
         event.aggregateType = AGGREGATE_TYPE_MISSION;
         event.aggregateId = mission.getId();
         event.eventType = EVENT_TYPE_MISSION_REWARD_REQUESTED;
+        event.payload = payload;
+        event.idempotencyKey = idempotencyKey;
+        event.status = MissionOutboxEventStatus.PENDING;
+        event.attemptCount = 0;
+        event.nextAttemptAt = nextAttemptAt;
+        return event;
+    }
+
+    public static MissionOutboxEvent characterExpRequested(
+            UserMission mission,
+            JsonNode payload,
+            String idempotencyKey,
+            LocalDateTime nextAttemptAt
+    ) {
+        MissionOutboxEvent event = new MissionOutboxEvent();
+        event.aggregateType = AGGREGATE_TYPE_MISSION;
+        event.aggregateId = mission.getId();
+        event.eventType = EVENT_TYPE_MISSION_CHARACTER_EXP_REQUESTED;
         event.payload = payload;
         event.idempotencyKey = idempotencyKey;
         event.status = MissionOutboxEventStatus.PENDING;
