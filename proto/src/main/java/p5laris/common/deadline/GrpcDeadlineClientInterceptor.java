@@ -15,6 +15,8 @@ public class GrpcDeadlineClientInterceptor implements ClientInterceptor {
 
     private final long defaultDeadlineMs;
 
+    private static final long EVENT_LOG_DEADLINE_MS = 1000L;
+
     public GrpcDeadlineClientInterceptor(long defaultDeadlineMs) {
         this.defaultDeadlineMs = defaultDeadlineMs;
     }
@@ -25,8 +27,17 @@ public class GrpcDeadlineClientInterceptor implements ClientInterceptor {
             CallOptions callOptions,
             Channel next
     ) {
-        if (callOptions.getDeadline() == null && defaultDeadlineMs > 0) {
-            callOptions = callOptions.withDeadlineAfter(defaultDeadlineMs, TimeUnit.MILLISECONDS);
+        if (callOptions.getDeadline() == null) {
+            long deadlineMs = defaultDeadlineMs;
+            if (method.getFullMethodName() != null) {
+                if (method.getFullMethodName().contains("EventLogService") ||
+                    method.getFullMethodName().contains("AiService")) {
+                    deadlineMs = EVENT_LOG_DEADLINE_MS;
+                }
+            }
+            if (deadlineMs > 0) {
+                callOptions = callOptions.withDeadlineAfter(deadlineMs, TimeUnit.MILLISECONDS);
+            }
         }
         return next.newCall(method, callOptions);
     }
