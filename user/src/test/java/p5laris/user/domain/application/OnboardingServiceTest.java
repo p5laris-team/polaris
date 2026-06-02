@@ -19,7 +19,9 @@ import static org.assertj.core.api.Assertions.assertThat;
         "grpc.client.mission.address=static://localhost:19093",
         "grpc.client.ai.address=static://localhost:19094",
         "grpc.client.event-log.address=static://localhost:19095",
-        "grpc.client.notification.address=static://localhost:19096"
+        "grpc.client.notification.address=static://localhost:19096",
+        "internal.grpc-auth.enabled=true",
+        "internal.grpc-auth.token=test-internal-grpc-token"
 })
 class OnboardingServiceTest {
 

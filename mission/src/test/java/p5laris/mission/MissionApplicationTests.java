@@ -46,7 +46,9 @@ import org.springframework.boot.test.context.SpringBootTest;
         "mission.reward-outbox.processing-timeout-seconds=60",
         "mission.reward-outbox.retry-initial-delay-seconds=60",
         "mission.reward-outbox.retry-max-delay-seconds=3600",
-        "mission.reward-wallet.deadline-ms=1000"
+        "mission.reward-wallet.deadline-ms=1000",
+        "internal.grpc-auth.enabled=true",
+        "internal.grpc-auth.token=test-internal-grpc-token"
 })
 class MissionApplicationTests {
 
