@@ -1,6 +1,8 @@
 package p5laris.character.domain.application;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.p5laris.proto.item.v1.GetUserItemsRequest;
 import com.p5laris.proto.item.v1.ItemServiceGrpc;
 import com.p5laris.proto.item.v1.UseItemRequest;
@@ -20,6 +22,7 @@ import p5laris.character.domain.domain.enums.ActionType;
 import p5laris.character.domain.domain.enums.CharacterMood;
 import p5laris.character.domain.domain.enums.StatGrade;
 import p5laris.character.domain.domain.enums.StatType;
+import p5laris.character.domain.domain.policy.CharacterCareGrowthPolicy;
 import p5laris.character.domain.domain.policy.CharacterGrowthPolicy;
 import p5laris.character.domain.domain.repository.CharacterAssetRepository;
 import p5laris.character.domain.domain.repository.CharacterCareLogRepository;
@@ -30,6 +33,9 @@ import p5laris.character.domain.exception.CharacterErrorCode;
 import p5laris.character.domain.exception.CharacterException;
 import p5laris.character.domain.infrastructure.config.CharacterItemGrpcProperties;
 
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -44,6 +50,7 @@ import p5laris.character.domain.application.event.CharacterEventLogEvent;
 public class CharacterService {
 
     private static final int CARE_AMOUNT = 30;
+    private static final ZoneId SERVICE_ZONE = ZoneId.of("Asia/Seoul");
 
     private final CharacterTypeRepository characterTypeRepository;
     private final CharacterAssetRepository characterAssetRepository;
@@ -248,17 +255,7 @@ public class CharacterService {
 
     private p5laris.character.domain.application.dto.CharacterGrowthResponse buildGrowth(UserCharacter userCharacter) {
         var growth = CharacterGrowthPolicy.calculate(userCharacter.getExp());
-        return p5laris.character.domain.application.dto.CharacterGrowthResponse.builder()
-                .level(growth.level())
-                .exp(growth.exp())
-                .currentLevelExp(growth.currentLevelExp())
-                .nextLevelExp(growth.nextLevelExp())
-                .expToNextLevel(growth.expToNextLevel())
-                .progressPercent(growth.progressPercent())
-                .growthStage(growth.growthStage().name())
-                .growthStageLabel(growth.growthStageLabel())
-                .maxLevel(growth.maxLevel())
-                .build();
+        return toGrowthResponse(growth);
     }
 
     private p5laris.character.domain.application.dto.CharacterStatusResponse.StateDetail buildStateDetail(
@@ -302,22 +299,30 @@ public class CharacterService {
                 .energy(character.getEnergy())
                 .affection(character.getAffection())
                 .build();
+        var beforeGrowth = buildGrowth(character);
+        int earnedCountToday = countTodayEarnedCareExp(characterId, actionType);
+        int expGained = CharacterCareGrowthPolicy.calculateExpGained(actionType, earnedCountToday);
 
         character.applyCare(actionType, CARE_AMOUNT);
+        if (expGained > 0) {
+            character.gainExp(expGained);
+        }
 
         var afterStates = p5laris.character.domain.application.dto.CareActionResponse.States.builder()
                 .hunger(character.getFullness())
                 .energy(character.getEnergy())
                 .affection(character.getAffection())
                 .build();
+        var afterGrowth = buildGrowth(character);
+        boolean levelUp = afterGrowth.level() > beforeGrowth.level();
 
         CharacterCareLog careLog = CharacterCareLog.builder()
                 .userId(userId)
                 .characterId(characterId)
                 .itemId(resolvedItemId)
                 .actionType(actionType)
-                .beforeStateJson(toStateJson(beforeStates))
-                .afterStateJson(toStateJson(afterStates))
+                .beforeStateJson(toStateJson(beforeStates, beforeGrowth))
+                .afterStateJson(toStateJson(afterStates, afterGrowth, expGained, levelUp))
                 .idempotencyKey(idempotencyKey)
                 .build();
         CharacterCareLog savedCareLog = characterCareLogRepository.save(careLog);
@@ -347,6 +352,10 @@ public class CharacterService {
                 .consumedQuantity(1)
                 .beforeStates(beforeStates)
                 .afterStates(afterStates)
+                .beforeGrowth(beforeGrowth)
+                .afterGrowth(afterGrowth)
+                .expGained(expGained)
+                .levelUp(levelUp)
                 .characterMessage(characterMessage(actionType))
                 .build();
     }
@@ -393,6 +402,10 @@ public class CharacterService {
         try {
             var beforeNode = objectMapper.readTree(log.getBeforeStateJson());
             var afterNode = objectMapper.readTree(log.getAfterStateJson());
+            var beforeGrowth = parseGrowth(beforeNode.get("growth"));
+            var afterGrowth = parseGrowth(afterNode.get("growth"));
+            int expGained = afterNode.path("expGained").asInt(0);
+            boolean levelUp = afterNode.path("levelUp").asBoolean(false);
 
             return p5laris.character.domain.application.dto.CareActionResponse.builder()
                     .careLogId(log.getId())
@@ -400,16 +413,12 @@ public class CharacterService {
                     .actionType(log.getActionType().name())
                     .consumedItemId(log.getItemId())
                     .consumedQuantity(log.getItemId() != null ? 1 : 0)
-                    .beforeStates(p5laris.character.domain.application.dto.CareActionResponse.States.builder()
-                            .hunger(beforeNode.get("fullness").asInt())
-                            .energy(beforeNode.get("energy").asInt())
-                            .affection(beforeNode.get("affection").asInt())
-                            .build())
-                    .afterStates(p5laris.character.domain.application.dto.CareActionResponse.States.builder()
-                            .hunger(afterNode.get("fullness").asInt())
-                            .energy(afterNode.get("energy").asInt())
-                            .affection(afterNode.get("affection").asInt())
-                            .build())
+                    .beforeStates(parseStates(beforeNode))
+                    .afterStates(parseStates(afterNode))
+                    .beforeGrowth(beforeGrowth)
+                    .afterGrowth(afterGrowth)
+                    .expGained(expGained)
+                    .levelUp(levelUp)
                     .characterMessage(characterMessage(log.getActionType()))
                     .build();
         } catch (Exception e) {
@@ -502,11 +511,126 @@ public class CharacterService {
         return e.getClass().getSimpleName();
     }
 
-    private String toStateJson(p5laris.character.domain.application.dto.CareActionResponse.States states) {
-        return String.format(
-                "{\"fullness\":%d,\"energy\":%d,\"affection\":%d}",
-                states.hunger(), states.energy(), states.affection()
-        );
+    private int countTodayEarnedCareExp(Long characterId, ActionType actionType) {
+        LocalDate today = LocalDate.now(SERVICE_ZONE);
+        Instant startAt = today.atStartOfDay(SERVICE_ZONE).toInstant();
+        Instant endAt = today.plusDays(1).atStartOfDay(SERVICE_ZONE).toInstant();
+
+        List<CharacterCareLog> todayLogs = characterCareLogRepository
+                .findByCharacterIdAndActionTypeAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(
+                        characterId,
+                        actionType,
+                        startAt,
+                        endAt
+                );
+        if (todayLogs == null || todayLogs.isEmpty()) {
+            return 0;
+        }
+
+        return (int) todayLogs.stream()
+                .filter(this::hasEarnedCareExp)
+                .count();
+    }
+
+    private boolean hasEarnedCareExp(CharacterCareLog careLog) {
+        try {
+            JsonNode afterNode = objectMapper.readTree(careLog.getAfterStateJson());
+            return afterNode.path("expGained").asInt(0) > 0;
+        } catch (Exception e) {
+            log.debug("돌봄 경험치 스냅샷을 읽지 못했습니다. careLogId={}", careLog.getId());
+            return false;
+        }
+    }
+
+    private String toStateJson(
+            p5laris.character.domain.application.dto.CareActionResponse.States states,
+            p5laris.character.domain.application.dto.CharacterGrowthResponse growth
+    ) {
+        return toStateJson(states, growth, null, null);
+    }
+
+    private String toStateJson(
+            p5laris.character.domain.application.dto.CareActionResponse.States states,
+            p5laris.character.domain.application.dto.CharacterGrowthResponse growth,
+            Integer expGained,
+            Boolean levelUp
+    ) {
+        try {
+            ObjectNode root = objectMapper.createObjectNode();
+            root.put("fullness", states.hunger());
+            root.put("energy", states.energy());
+            root.put("affection", states.affection());
+            root.set("growth", toGrowthNode(growth));
+            if (expGained != null) {
+                root.put("expGained", expGained);
+            }
+            if (levelUp != null) {
+                root.put("levelUp", levelUp);
+            }
+            return objectMapper.writeValueAsString(root);
+        } catch (Exception e) {
+            throw new IllegalStateException("돌봄 상태 스냅샷 직렬화에 실패했습니다.", e);
+        }
+    }
+
+    private ObjectNode toGrowthNode(p5laris.character.domain.application.dto.CharacterGrowthResponse growth) {
+        p5laris.character.domain.application.dto.CharacterGrowthResponse safeGrowth =
+                growth != null ? growth : toGrowthResponse(CharacterGrowthPolicy.calculate(0));
+        ObjectNode growthNode = objectMapper.createObjectNode();
+        growthNode.put("level", safeGrowth.level());
+        growthNode.put("exp", safeGrowth.exp());
+        growthNode.put("currentLevelExp", safeGrowth.currentLevelExp());
+        growthNode.put("nextLevelExp", safeGrowth.nextLevelExp());
+        growthNode.put("expToNextLevel", safeGrowth.expToNextLevel());
+        growthNode.put("progressPercent", safeGrowth.progressPercent());
+        growthNode.put("growthStage", safeGrowth.growthStage());
+        growthNode.put("growthStageLabel", safeGrowth.growthStageLabel());
+        growthNode.put("maxLevel", safeGrowth.maxLevel());
+        return growthNode;
+    }
+
+    private p5laris.character.domain.application.dto.CareActionResponse.States parseStates(JsonNode node) {
+        return p5laris.character.domain.application.dto.CareActionResponse.States.builder()
+                .hunger(node.path("fullness").asInt())
+                .energy(node.path("energy").asInt())
+                .affection(node.path("affection").asInt())
+                .build();
+    }
+
+    private p5laris.character.domain.application.dto.CharacterGrowthResponse parseGrowth(JsonNode growthNode) {
+        if (growthNode == null || growthNode.isMissingNode() || growthNode.isNull()) {
+            return toGrowthResponse(CharacterGrowthPolicy.calculate(0));
+        }
+
+        int exp = growthNode.path("exp").asInt(0);
+        var fallback = CharacterGrowthPolicy.calculate(exp);
+        return p5laris.character.domain.application.dto.CharacterGrowthResponse.builder()
+                .level(growthNode.path("level").asInt(fallback.level()))
+                .exp(exp)
+                .currentLevelExp(growthNode.path("currentLevelExp").asInt(fallback.currentLevelExp()))
+                .nextLevelExp(growthNode.path("nextLevelExp").asInt(fallback.nextLevelExp()))
+                .expToNextLevel(growthNode.path("expToNextLevel").asInt(fallback.expToNextLevel()))
+                .progressPercent(growthNode.path("progressPercent").asInt(fallback.progressPercent()))
+                .growthStage(growthNode.path("growthStage").asText(fallback.growthStage().name()))
+                .growthStageLabel(growthNode.path("growthStageLabel").asText(fallback.growthStageLabel()))
+                .maxLevel(growthNode.path("maxLevel").asBoolean(fallback.maxLevel()))
+                .build();
+    }
+
+    private p5laris.character.domain.application.dto.CharacterGrowthResponse toGrowthResponse(
+            CharacterGrowthPolicy.Growth growth
+    ) {
+        return p5laris.character.domain.application.dto.CharacterGrowthResponse.builder()
+                .level(growth.level())
+                .exp(growth.exp())
+                .currentLevelExp(growth.currentLevelExp())
+                .nextLevelExp(growth.nextLevelExp())
+                .expToNextLevel(growth.expToNextLevel())
+                .progressPercent(growth.progressPercent())
+                .growthStage(growth.growthStage().name())
+                .growthStageLabel(growth.growthStageLabel())
+                .maxLevel(growth.maxLevel())
+                .build();
     }
 
     private String characterMessage(ActionType actionType) {
