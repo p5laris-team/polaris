@@ -5,6 +5,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
 import org.springframework.scheduling.annotation.EnableAsync;
+import p5laris.ai.domain.infrastructure.config.AiCircuitBreakerProperties;
 import p5laris.ai.domain.infrastructure.config.AiEmbeddingProperties;
 import p5laris.ai.domain.infrastructure.config.AiProviderProperties;
 import p5laris.ai.domain.infrastructure.config.AiRateLimitProperties;
@@ -16,7 +17,12 @@ import p5laris.ai.domain.infrastructure.config.AiRateLimitProperties;
  */
 @EnableAsync
 @EnableJpaAuditing
-@EnableConfigurationProperties({AiProviderProperties.class, AiRateLimitProperties.class, AiEmbeddingProperties.class})
+@EnableConfigurationProperties({
+        AiProviderProperties.class,
+        AiRateLimitProperties.class,
+        AiEmbeddingProperties.class,
+        AiCircuitBreakerProperties.class
+})
 @SpringBootApplication
 public class AiApplication {
 
