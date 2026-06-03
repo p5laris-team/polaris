@@ -229,6 +229,21 @@ message CharacterStoryMemory {
   string memory_key = 1;
   string title = 2;
   string story_text = 3;
+  string fragment_type = 4;
+  int32 unlocked_level = 5;
+  string unlocked_at = 6;
+}
+
+message CharacterStoryUnlockHint {
+  int32 required_level = 1;
+  string hint_message = 2;
+}
+
+message CharacterStoryProgress {
+  int32 unlocked_memory_count = 1;
+  int32 total_memory_count = 2;
+  bool all_unlocked = 3;
+  CharacterStoryUnlockHint next_memory_hint = 4;
 }
 
 // 별친구 대화 prompt에 넣을 캐릭터 상태/성장/해금 기억 context를 조회한다.
@@ -247,6 +262,7 @@ message GetCharacterTalkContextResponse {
   CharacterStateDetail affection = 6;
   CharacterGrowth growth = 7;
   repeated CharacterStoryMemory memories = 8;
+  CharacterStoryProgress story_progress = 9;
 }
 
 // 캐릭터에 스킨 아이템을 장착한다.

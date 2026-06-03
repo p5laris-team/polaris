@@ -2,6 +2,7 @@ package p5laris.character.domain.domain.repository;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import p5laris.character.domain.domain.entity.CharacterStoryFragment;
+import p5laris.character.domain.domain.enums.CharacterStoryFragmentType;
 import p5laris.character.domain.domain.enums.CharacterStoryTriggerType;
 
 import java.util.List;
@@ -17,5 +18,15 @@ public interface CharacterStoryFragmentRepository extends JpaRepository<Characte
             List<String> characterTypeCodes,
             CharacterStoryTriggerType triggerType,
             int minLevel
+    );
+
+    long countByActiveTrueAndCharacterTypeCodeInAndFragmentTypeIn(
+            List<String> characterTypeCodes,
+            List<CharacterStoryFragmentType> fragmentTypes
+    );
+
+    List<CharacterStoryFragment> findByActiveTrueAndCharacterTypeCodeInAndFragmentTypeInOrderByMinLevelAscSortOrderAscIdAsc(
+            List<String> characterTypeCodes,
+            List<CharacterStoryFragmentType> fragmentTypes
     );
 }

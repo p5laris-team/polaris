@@ -19,7 +19,8 @@ public record CharacterTalkContextResponse(
         StateDetail energy,
         StateDetail affection,
         CharacterGrowthResponse growth,
-        List<Memory> memories
+        List<Memory> memories,
+        StoryProgress storyProgress
 ) {
 
     /**
@@ -42,7 +43,34 @@ public record CharacterTalkContextResponse(
     public record Memory(
             String memoryKey,
             String title,
-            String storyText
+            String storyText,
+            String fragmentType,
+            int unlockedLevel,
+            String unlockedAt
+    ) {
+    }
+
+    /**
+     * 프론트가 성장 서사 진행률과 다음 해금 힌트를 바로 표시할 수 있게 내려주는 요약 정보다.
+     *
+     * 아직 해금되지 않은 storyText는 내려주지 않아 스포일러를 막는다.
+     */
+    @Builder
+    public record StoryProgress(
+            int unlockedMemoryCount,
+            int totalMemoryCount,
+            boolean allUnlocked,
+            UnlockHint nextMemoryHint
+    ) {
+    }
+
+    /**
+     * 다음 기억 조각이 언제 열릴지 안내하는 최소 힌트다.
+     */
+    @Builder
+    public record UnlockHint(
+            int requiredLevel,
+            String hintMessage
     ) {
     }
 }

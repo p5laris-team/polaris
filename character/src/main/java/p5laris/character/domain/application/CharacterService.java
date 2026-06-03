@@ -499,16 +499,19 @@ public class CharacterService {
         }
 
         character.calculateTimeBasedStatDecrease();
+        String characterTypeCode = character.getCharacterType().getCode();
+        var growth = buildGrowth(character);
 
         return CharacterTalkContextResponse.builder()
                 .characterId(character.getId())
-                .characterTypeCode(character.getCharacterType().getCode())
+                .characterTypeCode(characterTypeCode)
                 .characterName(character.getName())
                 .hunger(buildTalkStateDetail(character.getFullness(), StatType.FULLNESS))
                 .energy(buildTalkStateDetail(character.getEnergy(), StatType.ENERGY))
                 .affection(buildTalkStateDetail(character.getAffection(), StatType.AFFECTION))
-                .growth(buildGrowth(character))
+                .growth(growth)
                 .memories(findRecentUnlockedMemories(userId, characterId, memoryLimit))
+                .storyProgress(buildStoryProgress(userId, characterId, characterTypeCode, growth.level()))
                 .build();
     }
 
@@ -625,14 +628,105 @@ public class CharacterService {
                 .forEach(fragment -> fragmentsById.put(fragment.getId(), fragment));
 
         return unlocks.stream()
-                .map(unlock -> fragmentsById.get(unlock.getStoryFragmentId()))
-                .filter(fragment -> fragment != null)
-                .map(fragment -> CharacterTalkContextResponse.Memory.builder()
-                        .memoryKey(fragment.getMemoryKey())
-                        .title(fragment.getTitle())
-                        .storyText(fragment.getStoryText())
-                        .build())
+                .map(unlock -> toTalkMemory(unlock, fragmentsById.get(unlock.getStoryFragmentId())))
+                .filter(memory -> memory != null)
                 .toList();
+    }
+
+    private CharacterTalkContextResponse.Memory toTalkMemory(
+            UserCharacterStoryUnlock unlock,
+            CharacterStoryFragment fragment
+    ) {
+        if (fragment == null) {
+            return null;
+        }
+
+        return CharacterTalkContextResponse.Memory.builder()
+                .memoryKey(fragment.getMemoryKey())
+                .title(fragment.getTitle())
+                .storyText(fragment.getStoryText())
+                .fragmentType(fragment.getFragmentType().name())
+                .unlockedLevel(unlock.getUnlockedLevel())
+                .unlockedAt(toIsoInstant(unlock.getUnlockedAt()))
+                .build();
+    }
+
+    private CharacterTalkContextResponse.StoryProgress buildStoryProgress(
+            Long userId,
+            Long characterId,
+            String characterTypeCode,
+            int currentLevel
+    ) {
+        List<String> characterTypeCodes = storyCharacterTypeCodes(characterTypeCode);
+        List<CharacterStoryFragmentType> unlockableTypes = unlockableStoryTypes();
+        int totalCount = Math.toIntExact(characterStoryFragmentRepository
+                .countByActiveTrueAndCharacterTypeCodeInAndFragmentTypeIn(characterTypeCodes, unlockableTypes));
+        int unlockedCount = Math.min(
+                Math.toIntExact(userCharacterStoryUnlockRepository.countByUserIdAndUserCharacterId(userId, characterId)),
+                totalCount
+        );
+
+        return CharacterTalkContextResponse.StoryProgress.builder()
+                .unlockedMemoryCount(unlockedCount)
+                .totalMemoryCount(totalCount)
+                .allUnlocked(totalCount > 0 && unlockedCount >= totalCount)
+                .nextMemoryHint(findNextMemoryHint(userId, characterId, characterTypeCodes, unlockableTypes, currentLevel))
+                .build();
+    }
+
+    private CharacterTalkContextResponse.UnlockHint findNextMemoryHint(
+            Long userId,
+            Long characterId,
+            List<String> characterTypeCodes,
+            List<CharacterStoryFragmentType> unlockableTypes,
+            int currentLevel
+    ) {
+        List<CharacterStoryFragment> candidates = characterStoryFragmentRepository
+                .findByActiveTrueAndCharacterTypeCodeInAndFragmentTypeInOrderByMinLevelAscSortOrderAscIdAsc(
+                        characterTypeCodes,
+                        unlockableTypes
+                )
+                .stream()
+                .filter(fragment -> fragment.forCharacter(characterTypeCodes.get(0)))
+                .toList();
+        if (candidates.isEmpty()) {
+            return null;
+        }
+
+        Set<Long> unlockedFragmentIds = findUnlockedFragmentIds(userId, characterId, candidates);
+        CharacterStoryFragment next = candidates.stream()
+                .filter(fragment -> fragment.getId() != null)
+                .filter(fragment -> !unlockedFragmentIds.contains(fragment.getId()))
+                .findFirst()
+                .orElse(null);
+        if (next == null) {
+            return null;
+        }
+
+        int requiredLevel = Math.max(currentLevel, next.getMinLevel());
+        return CharacterTalkContextResponse.UnlockHint.builder()
+                .requiredLevel(requiredLevel)
+                .hintMessage(nextMemoryHintMessage(currentLevel, next.getMinLevel()))
+                .build();
+    }
+
+    private String nextMemoryHintMessage(int currentLevel, int requiredLevel) {
+        if (requiredLevel <= currentLevel) {
+            return "별친구와 한 번 더 상호작용하면 새로운 기억이 열릴 수 있어요.";
+        }
+        return "다음 기억은 Lv." + requiredLevel + "에서 열려요.";
+    }
+
+    private List<String> storyCharacterTypeCodes(String characterTypeCode) {
+        return List.of(characterTypeCode, CharacterStoryFragment.COMMON_CHARACTER_TYPE_CODE);
+    }
+
+    private List<CharacterStoryFragmentType> unlockableStoryTypes() {
+        return List.of(CharacterStoryFragmentType.LORE, CharacterStoryFragmentType.EASTER_EGG);
+    }
+
+    private String toIsoInstant(Instant value) {
+        return value != null ? value.toString() : "";
     }
 
     private CharacterTalkContextResponse.StateDetail buildTalkStateDetail(int value, StatType statType) {
