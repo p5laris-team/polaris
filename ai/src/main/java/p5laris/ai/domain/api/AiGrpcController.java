@@ -3,6 +3,7 @@ package p5laris.ai.domain.api;
 import com.p5laris.proto.ai.v1.AiErrorType;
 import com.p5laris.proto.ai.v1.AiGenerationStatus;
 import com.p5laris.proto.ai.v1.AiServiceGrpc;
+import com.p5laris.proto.ai.v1.CharacterTalkStreamEventType;
 import com.p5laris.proto.ai.v1.GenerateMissionTextsRequest;
 import com.p5laris.proto.ai.v1.GenerateMissionTextsResponse;
 import com.p5laris.proto.ai.v1.GenerateTextEmbeddingRequest;
@@ -10,13 +11,18 @@ import com.p5laris.proto.ai.v1.GenerateTextEmbeddingResponse;
 import com.p5laris.proto.ai.v1.HealthStatus;
 import com.p5laris.proto.ai.v1.PingPongRequest;
 import com.p5laris.proto.ai.v1.PingPongResponse;
+import com.p5laris.proto.ai.v1.StreamCharacterTalkRequest;
+import com.p5laris.proto.ai.v1.StreamCharacterTalkResponse;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.server.service.GrpcService;
+import p5laris.ai.domain.application.AiCharacterTalkService;
 import p5laris.ai.domain.application.AiMissionTextService;
 import p5laris.ai.domain.application.AiTextEmbeddingService;
+import p5laris.ai.domain.application.dto.CharacterTalkGenerationCommand;
+import p5laris.ai.domain.application.generator.CharacterTalkStreamEmitter;
 import p5laris.ai.domain.application.dto.MissionTextGenerationCommand;
 import p5laris.ai.domain.application.dto.MissionTextGenerationResult;
 import p5laris.ai.domain.application.dto.TextEmbeddingCommand;
@@ -39,6 +45,7 @@ public class AiGrpcController extends AiServiceGrpc.AiServiceImplBase {
 
     private final AiMissionTextService aiMissionTextService;
     private final AiTextEmbeddingService aiTextEmbeddingService;
+    private final AiCharacterTalkService aiCharacterTalkService;
 
     // AI gRPC 서버가 살아 있는지 확인하는 단순 헬스체크 메서드다.
     @Override
@@ -88,6 +95,26 @@ public class AiGrpcController extends AiServiceGrpc.AiServiceImplBase {
         }
     }
 
+    // 별친구 대화 응답을 provider streaming으로 생성해 chunk 단위로 내려준다.
+    @Override
+    public void streamCharacterTalk(
+            StreamCharacterTalkRequest request,
+            StreamObserver<StreamCharacterTalkResponse> responseObserver
+    ) {
+        try {
+            aiCharacterTalkService.streamCharacterTalk(toCommand(request), new GrpcCharacterTalkStreamEmitter(
+                    request.getRequestId(),
+                    responseObserver
+            ));
+            responseObserver.onCompleted();
+        } catch (AiException e) {
+            responseObserver.onError(toStatus(e).withDescription(safeDescription(e)).asRuntimeException());
+        } catch (Exception e) {
+            log.error("AI gRPC 처리 중 알 수 없는 예외가 발생했습니다. operation={}", "streamCharacterTalk", e);
+            responseObserver.onError(Status.INTERNAL.withDescription(INTERNAL_ERROR_DESCRIPTION).asRuntimeException());
+        }
+    }
+
     // proto request는 내부 계층에 직접 넘기지 않고 command로 변환한다.
     private MissionTextGenerationCommand toCommand(GenerateMissionTextsRequest request) {
         return new MissionTextGenerationCommand(
@@ -114,6 +141,19 @@ public class AiGrpcController extends AiServiceGrpc.AiServiceImplBase {
                 request.getText(),
                 request.getModel(),
                 request.getDimension(),
+                request.getRequestId()
+        );
+    }
+
+    private CharacterTalkGenerationCommand toCommand(StreamCharacterTalkRequest request) {
+        return new CharacterTalkGenerationCommand(
+                request.getUserId(),
+                request.getCharacterId(),
+                request.getCharacterType(),
+                request.getCharacterName(),
+                request.getUserMessage(),
+                request.getInteractionType(),
+                request.getCharacterContextJson(),
                 request.getRequestId()
         );
     }
@@ -185,5 +225,52 @@ public class AiGrpcController extends AiServiceGrpc.AiServiceImplBase {
 
     private String safeDescription(AiException e) {
         return e.getErrorCode().name();
+    }
+
+    private class GrpcCharacterTalkStreamEmitter implements CharacterTalkStreamEmitter {
+
+        private final String requestId;
+        private final StreamObserver<StreamCharacterTalkResponse> responseObserver;
+        private boolean emittedDelta;
+
+        private GrpcCharacterTalkStreamEmitter(
+                String requestId,
+                StreamObserver<StreamCharacterTalkResponse> responseObserver
+        ) {
+            this.requestId = requestId;
+            this.responseObserver = responseObserver;
+        }
+
+        @Override
+        public void emitDelta(String text) {
+            if (text == null || text.isBlank()) {
+                return;
+            }
+            responseObserver.onNext(StreamCharacterTalkResponse.newBuilder()
+                    .setEventType(CharacterTalkStreamEventType.CHARACTER_TALK_STREAM_EVENT_TYPE_DELTA)
+                    .setText(text)
+                    .setRequestId(requestId)
+                    .build());
+            emittedDelta = true;
+        }
+
+        @Override
+        public void complete(boolean fallbackUsed, p5laris.ai.domain.domain.enums.AiErrorType errorType) {
+            StreamCharacterTalkResponse.Builder builder = StreamCharacterTalkResponse.newBuilder()
+                    .setEventType(CharacterTalkStreamEventType.CHARACTER_TALK_STREAM_EVENT_TYPE_DONE)
+                    .setFallbackUsed(fallbackUsed)
+                    .setRequestId(requestId);
+
+            if (errorType != null) {
+                builder.setErrorType(toProtoErrorType(errorType));
+            }
+
+            responseObserver.onNext(builder.build());
+        }
+
+        @Override
+        public boolean hasEmittedDelta() {
+            return emittedDelta;
+        }
     }
 }

@@ -1,23 +1,54 @@
 package p5laris.gateway.domain.character.infrastructure.grpc;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.p5laris.proto.ai.v1.AiErrorType;
+import com.p5laris.proto.ai.v1.AiServiceGrpc;
+import com.p5laris.proto.ai.v1.CharacterTalkStreamEventType;
+import com.p5laris.proto.ai.v1.StreamCharacterTalkRequest;
+import com.p5laris.proto.ai.v1.StreamCharacterTalkResponse;
 import com.p5laris.proto.character.v1.*;
 import com.p5laris.proto.item.v1.UserItem;
+import io.grpc.Status;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.client.inject.GrpcClient;
 import org.springframework.stereotype.Service;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import p5laris.gateway.domain.character.api.dto.CharacterTalkStreamRequest;
 import p5laris.gateway.domain.character.api.dto.CharacterTypesResponse;
+import p5laris.gateway.domain.character.infrastructure.config.CharacterTalkAiProperties;
+import p5laris.gateway.domain.character.infrastructure.config.CharacterTalkContextProperties;
+import p5laris.gateway.domain.character.infrastructure.config.CharacterTalkSseProperties;
 import p5laris.gateway.domain.item.infrastructure.grpc.ItemGatewayService;
 
+import java.io.IOException;
+import java.time.Instant;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class CharacterGatewayService {
 
     @GrpcClient("character")
     private CharacterServiceGrpc.CharacterServiceBlockingStub characterStub;
 
+    @GrpcClient("ai")
+    private AiServiceGrpc.AiServiceBlockingStub aiStub;
+
     private final ItemGatewayService itemGatewayService;
+    private final ObjectMapper objectMapper;
+    private final CharacterTalkAiProperties characterTalkAiProperties;
+    private final CharacterTalkContextProperties characterTalkContextProperties;
+    private final CharacterTalkSseProperties characterTalkSseProperties;
 
     public CharacterTypesResponse getCharacterTypes() {
         GetCharacterTypesResponse response = characterStub.getCharacterTypes(
@@ -245,6 +276,218 @@ public class CharacterGatewayService {
                 .alreadyUnlocked(response.getAlreadyUnlocked())
                 .memory(memory)
                 .build();
+    }
+
+    public SseEmitter streamCharacterTalk(Long characterId, Long userId, CharacterTalkStreamRequest request) {
+        String requestId = UUID.randomUUID().toString();
+        GetCharacterTalkContextResponse context = characterStub.getCharacterTalkContext(
+                GetCharacterTalkContextRequest.newBuilder()
+                        .setUserId(userId)
+                        .setCharacterId(characterId)
+                        .setMemoryLimit(characterTalkContextProperties.normalizedMemoryLimit())
+                        .build()
+        );
+
+        SseEmitter emitter = new SseEmitter(characterTalkSseProperties.normalizedTimeoutMs());
+        CompletableFuture.runAsync(() -> streamTalkResponse(emitter, userId, request, requestId, context));
+        return emitter;
+    }
+
+    private void streamTalkResponse(
+            SseEmitter emitter,
+            Long userId,
+            CharacterTalkStreamRequest request,
+            String requestId,
+            GetCharacterTalkContextResponse context
+    ) {
+        TalkStreamState streamState = new TalkStreamState();
+        try {
+            sendEvent(emitter, "meta", buildTalkMeta(requestId, context));
+            Iterator<StreamCharacterTalkResponse> responses = streamCharacterTalk(userId, request, requestId, context);
+            while (responses.hasNext()) {
+                forwardAiTalkEvent(emitter, responses.next(), streamState);
+            }
+            if (!streamState.doneSent) {
+                sendEvent(emitter, "done", buildTalkDone(requestId, false, AiErrorType.AI_ERROR_TYPE_UNSPECIFIED));
+            }
+            emitter.complete();
+        } catch (Exception e) {
+            Status status = Status.fromThrowable(e);
+            log.warn("별친구 대화 SSE 처리 중 fallback을 사용합니다. requestId={}, characterId={}, grpcStatus={}, 예외클래스={}",
+                    requestId, context.getCharacterId(), status.getCode(), e.getClass().getSimpleName());
+            try {
+                if (!streamState.deltaSent) {
+                    sendEvent(emitter, "delta", Map.of("text", fallbackTalk(context.getCharacterTypeCode())));
+                }
+                sendEvent(emitter, "done", buildTalkDone(
+                        requestId,
+                        true,
+                        AiErrorType.AI_ERROR_TYPE_PROVIDER_ERROR
+                ));
+                emitter.complete();
+            } catch (Exception fallbackException) {
+                log.error("별친구 대화 SSE fallback 전송도 실패했습니다. requestId={}, characterId={}",
+                        requestId, context.getCharacterId(), fallbackException);
+                emitter.completeWithError(fallbackException);
+            }
+        }
+    }
+
+    private Iterator<StreamCharacterTalkResponse> streamCharacterTalk(
+            Long userId,
+            CharacterTalkStreamRequest request,
+            String requestId,
+            GetCharacterTalkContextResponse context
+    ) {
+        return aiStub.withDeadlineAfter(characterTalkAiProperties.normalizedDeadlineMs(), TimeUnit.MILLISECONDS)
+                .streamCharacterTalk(
+                StreamCharacterTalkRequest.newBuilder()
+                        .setUserId(userId)
+                        .setCharacterId(context.getCharacterId())
+                        .setCharacterType(context.getCharacterTypeCode())
+                        .setCharacterName(context.getCharacterName())
+                        .setUserMessage(request != null && request.message() != null ? request.message() : "")
+                        .setInteractionType(request != null && request.interactionType() != null
+                                ? request.interactionType()
+                                : "TAP")
+                        .setCharacterContextJson(toCharacterContextJson(context))
+                        .setRequestId(requestId)
+                        .build()
+                );
+    }
+
+    private void forwardAiTalkEvent(
+            SseEmitter emitter,
+            StreamCharacterTalkResponse response,
+            TalkStreamState streamState
+    ) throws IOException {
+        CharacterTalkStreamEventType eventType = response.getEventType();
+        if (eventType == CharacterTalkStreamEventType.CHARACTER_TALK_STREAM_EVENT_TYPE_DELTA) {
+            if (!response.getText().isBlank()) {
+                sendEvent(emitter, "delta", Map.of("text", response.getText()));
+                streamState.deltaSent = true;
+            }
+            return;
+        }
+
+        if (eventType == CharacterTalkStreamEventType.CHARACTER_TALK_STREAM_EVENT_TYPE_DONE) {
+            sendEvent(emitter, "done", buildTalkDone(
+                    response.getRequestId(),
+                    response.getFallbackUsed(),
+                    response.getErrorType()
+            ));
+            streamState.doneSent = true;
+            return;
+        }
+
+        if (eventType == CharacterTalkStreamEventType.CHARACTER_TALK_STREAM_EVENT_TYPE_ERROR) {
+            sendEvent(emitter, "done", buildTalkDone(
+                    response.getRequestId(),
+                    true,
+                    response.getErrorType()
+            ));
+            streamState.doneSent = true;
+        }
+    }
+
+    private Map<String, Object> buildTalkMeta(String requestId, GetCharacterTalkContextResponse context) {
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("requestId", requestId);
+        meta.put("characterId", context.getCharacterId());
+        meta.put("characterTypeCode", context.getCharacterTypeCode());
+        meta.put("level", context.getGrowth().getLevel());
+        meta.put("sentAt", Instant.now().toString());
+        return meta;
+    }
+
+    private Map<String, Object> buildTalkDone(String requestId, boolean fallbackUsed, AiErrorType errorType) {
+        Map<String, Object> done = new LinkedHashMap<>();
+        done.put("requestId", requestId);
+        done.put("fallbackUsed", fallbackUsed);
+        if (errorType != null && errorType != AiErrorType.AI_ERROR_TYPE_UNSPECIFIED) {
+            done.put("errorType", errorType.name());
+        }
+        return done;
+    }
+
+    private void sendEvent(SseEmitter emitter, String eventName, Object data) throws IOException {
+        emitter.send(SseEmitter.event()
+                .name(eventName)
+                .data(objectMapper.writeValueAsString(data)));
+    }
+
+    private String toCharacterContextJson(GetCharacterTalkContextResponse context) {
+        try {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("characterId", context.getCharacterId());
+            body.put("characterTypeCode", context.getCharacterTypeCode());
+            body.put("characterName", context.getCharacterName());
+            body.put("states", Map.of(
+                    "hunger", toStateContext(context.getHunger()),
+                    "energy", toStateContext(context.getEnergy()),
+                    "affection", toStateContext(context.getAffection())
+            ));
+            body.put("growth", toGrowthContext(context.getGrowth()));
+            body.put("memories", context.getMemoriesList().stream()
+                    .map(this::toMemoryContext)
+                    .toList());
+            return objectMapper.writeValueAsString(body);
+        } catch (JsonProcessingException e) {
+            log.warn("별친구 대화 context JSON 변환 실패. characterId={}, 예외클래스={}",
+                    context.getCharacterId(), e.getClass().getSimpleName());
+            return "{}";
+        }
+    }
+
+    private Map<String, Object> toStateContext(CharacterStateDetail state) {
+        return Map.of(
+                "value", state.getValue(),
+                "label", state.getLabel(),
+                "grade", state.getGrade()
+        );
+    }
+
+    private Map<String, Object> toGrowthContext(CharacterGrowth growth) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("level", growth.getLevel());
+        body.put("exp", growth.getExp());
+        body.put("currentLevelExp", growth.getCurrentLevelExp());
+        body.put("nextLevelExp", growth.getNextLevelExp());
+        body.put("expToNextLevel", growth.getExpToNextLevel());
+        body.put("progressPercent", growth.getProgressPercent());
+        body.put("growthStage", growth.getGrowthStage());
+        body.put("growthStageLabel", growth.getGrowthStageLabel());
+        body.put("maxLevel", growth.getMaxLevel());
+        return body;
+    }
+
+    private Map<String, Object> toMemoryContext(CharacterStoryMemory memory) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("memoryKey", memory.getMemoryKey());
+        body.put("title", memory.getTitle());
+        body.put("storyText", memory.getStoryText());
+        return body;
+    }
+
+    private String fallbackTalk(String characterTypeCode) {
+        return switch (normalizeCharacterType(characterTypeCode)) {
+            case "MUMU" -> "무... 무무. (해석: 무무가 지금은 잠깐 천천히 숨을 고르자고 하는 것 같아요.)";
+            case "NOVA" -> "지금은 대답이 조금 늦어졌어. 그래도 작은 숨 하나부터 다시 좌표를 잡아보자.";
+            case "JJORY" -> "통신이 잠깐 삐끗함. 그래도 작전은 유지됨. 잠깐 숨 고르고 다시 가보자.";
+            default -> "별친구가 지금 곁에서 천천히 들어주고 있어요. 아주 작게 숨부터 골라도 괜찮아요.";
+        };
+    }
+
+    private String normalizeCharacterType(String characterTypeCode) {
+        if (characterTypeCode == null || characterTypeCode.isBlank()) {
+            return "";
+        }
+        return characterTypeCode.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private static class TalkStreamState {
+        private boolean deltaSent;
+        private boolean doneSent;
     }
 
     public p5laris.gateway.domain.character.api.dto.EquipSkinResponse equipSkin(

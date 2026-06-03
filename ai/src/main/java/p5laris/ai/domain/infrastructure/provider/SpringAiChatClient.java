@@ -2,11 +2,13 @@ package p5laris.ai.domain.infrastructure.provider;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 import p5laris.ai.domain.application.generator.AiChatClient;
 import p5laris.ai.domain.domain.enums.AiErrorType;
 import p5laris.ai.domain.exception.FallbackRequiredException;
+import reactor.core.publisher.Flux;
 
 /**
  * Spring AI ChatClient를 감싸는 adapter다.
@@ -22,6 +24,37 @@ public class SpringAiChatClient implements AiChatClient {
 
     @Override
     public String call(String systemPrompt, String userPrompt) {
+        return requireBuilder().build()
+                .prompt()
+                .system(systemPrompt)
+                .user(userPrompt)
+                .call()
+                .content();
+    }
+
+    @Override
+    public Flux<String> stream(String systemPrompt, String userPrompt) {
+        return requireBuilder().build()
+                .prompt()
+                .system(systemPrompt)
+                .user(userPrompt)
+                .stream()
+                .content();
+    }
+
+    @Override
+    public Flux<String> streamPlainText(String systemPrompt, String userPrompt) {
+        return requireBuilder().build()
+                .prompt()
+                .system(systemPrompt)
+                .user(userPrompt)
+                .options(GoogleGenAiChatOptions.builder()
+                        .responseMimeType("text/plain"))
+                .stream()
+                .content();
+    }
+
+    private ChatClient.Builder requireBuilder() {
         ChatClient.Builder builder = chatClientBuilderProvider.getIfAvailable();
         if (builder == null) {
             throw new FallbackRequiredException(
@@ -29,12 +62,6 @@ public class SpringAiChatClient implements AiChatClient {
                     "Spring AI ChatClient가 구성되지 않았습니다."
             );
         }
-
-        return builder.build()
-                .prompt()
-                .system(systemPrompt)
-                .user(userPrompt)
-                .call()
-                .content();
+        return builder;
     }
 }
