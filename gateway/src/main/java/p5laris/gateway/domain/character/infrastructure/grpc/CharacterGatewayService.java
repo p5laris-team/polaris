@@ -210,6 +210,43 @@ public class CharacterGatewayService {
                 .build();
     }
 
+    public p5laris.gateway.domain.character.api.dto.CharacterInteractionResponse interactWithCharacter(
+            Long characterId,
+            Long userId,
+            p5laris.gateway.domain.character.api.dto.CharacterInteractionRequest request) {
+        InteractWithCharacterResponse response = characterStub.interactWithCharacter(
+                InteractWithCharacterRequest.newBuilder()
+                        .setCharacterId(characterId)
+                        .setUserId(userId)
+                        .setInteractionType(request != null && request.interactionType() != null
+                                ? request.interactionType()
+                                : "TAP")
+                        .build()
+        );
+
+        p5laris.gateway.domain.character.api.dto.CharacterInteractionResponse.Memory memory = null;
+        if (response.hasMemory()) {
+            memory = p5laris.gateway.domain.character.api.dto.CharacterInteractionResponse.Memory.builder()
+                    .memoryKey(response.getMemory().getMemoryKey())
+                    .title(response.getMemory().getTitle())
+                    .storyText(response.getMemory().getStoryText())
+                    .build();
+        }
+
+        return p5laris.gateway.domain.character.api.dto.CharacterInteractionResponse.builder()
+                .characterId(response.getCharacterId())
+                .characterTypeCode(response.getCharacterTypeCode())
+                .level(response.getLevel())
+                .fragmentType(response.getFragmentType())
+                .triggerType(response.getTriggerType())
+                .message(response.getMessage())
+                .interpretation(response.getInterpretation())
+                .memoryUnlocked(response.getMemoryUnlocked())
+                .alreadyUnlocked(response.getAlreadyUnlocked())
+                .memory(memory)
+                .build();
+    }
+
     public p5laris.gateway.domain.character.api.dto.EquipSkinResponse equipSkin(
             Long characterId,
             Long userId,

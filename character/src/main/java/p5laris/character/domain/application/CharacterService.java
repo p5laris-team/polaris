@@ -14,15 +14,20 @@ import net.devh.boot.grpc.client.inject.GrpcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import p5laris.character.domain.application.dto.CharacterAssetResponse;
+import p5laris.character.domain.application.dto.CharacterInteractionResponse;
 import p5laris.character.domain.application.dto.CharacterTypeResponse;
 import p5laris.character.domain.application.dto.GrantCharacterExpResponse;
 import p5laris.character.domain.domain.entity.CharacterCareLog;
 import p5laris.character.domain.domain.entity.CharacterExpLog;
+import p5laris.character.domain.domain.entity.CharacterStoryFragment;
 import p5laris.character.domain.domain.entity.CharacterType;
+import p5laris.character.domain.domain.entity.UserCharacterStoryUnlock;
 import p5laris.character.domain.domain.entity.UserCharacter;
 import p5laris.character.domain.domain.enums.ActionType;
 import p5laris.character.domain.domain.enums.CharacterExpSourceType;
 import p5laris.character.domain.domain.enums.CharacterMood;
+import p5laris.character.domain.domain.enums.CharacterStoryFragmentType;
+import p5laris.character.domain.domain.enums.CharacterStoryTriggerType;
 import p5laris.character.domain.domain.enums.StatGrade;
 import p5laris.character.domain.domain.enums.StatType;
 import p5laris.character.domain.domain.policy.CharacterCareGrowthPolicy;
@@ -30,8 +35,10 @@ import p5laris.character.domain.domain.policy.CharacterGrowthPolicy;
 import p5laris.character.domain.domain.repository.CharacterAssetRepository;
 import p5laris.character.domain.domain.repository.CharacterCareLogRepository;
 import p5laris.character.domain.domain.repository.CharacterExpLogRepository;
+import p5laris.character.domain.domain.repository.CharacterStoryFragmentRepository;
 import p5laris.character.domain.domain.repository.CharacterTypeRepository;
 
+import p5laris.character.domain.domain.repository.UserCharacterStoryUnlockRepository;
 import p5laris.character.domain.domain.repository.UserCharacterRepository;
 import p5laris.character.domain.exception.CharacterErrorCode;
 import p5laris.character.domain.exception.CharacterException;
@@ -40,9 +47,12 @@ import p5laris.character.domain.infrastructure.config.CharacterItemGrpcPropertie
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import org.springframework.context.ApplicationEventPublisher;
@@ -61,6 +71,8 @@ public class CharacterService {
     private final UserCharacterRepository userCharacterRepository;
     private final CharacterCareLogRepository characterCareLogRepository;
     private final CharacterExpLogRepository characterExpLogRepository;
+    private final CharacterStoryFragmentRepository characterStoryFragmentRepository;
+    private final UserCharacterStoryUnlockRepository userCharacterStoryUnlockRepository;
     private final S3StorageService s3StorageService;
     private final ObjectMapper objectMapper;
     private final ApplicationEventPublisher eventPublisher;
@@ -436,6 +448,46 @@ public class CharacterService {
     }
 
     @Transactional
+    public CharacterInteractionResponse interactWithCharacter(
+            Long characterId,
+            Long userId,
+            String interactionType
+    ) {
+        CharacterStoryTriggerType triggerType = CharacterStoryTriggerType.fromInteractionType(interactionType);
+        UserCharacter character = userCharacterRepository.findByIdForUpdate(characterId)
+                .orElseThrow(() -> new CharacterException(CharacterErrorCode.CHARACTER_NOT_FOUND));
+        if (!character.getUserId().equals(userId)) {
+            throw new CharacterException(CharacterErrorCode.NOT_CHARACTER_OWNER);
+        }
+
+        int level = CharacterGrowthPolicy.calculate(character.getExp()).level();
+        String characterTypeCode = character.getCharacterType().getCode();
+        List<CharacterStoryFragment> candidates = findStoryCandidates(characterTypeCode, triggerType, level);
+        if (candidates.isEmpty() && triggerType != CharacterStoryTriggerType.TAP) {
+            candidates = findStoryCandidates(characterTypeCode, CharacterStoryTriggerType.TAP, level);
+        }
+
+        Set<Long> unlockedFragmentIds = findUnlockedFragmentIds(userId, characterId, candidates);
+        CharacterStoryFragment selected = findNewUnlockableFragment(candidates, unlockedFragmentIds);
+        if (selected != null) {
+            saveStoryUnlock(userId, characterId, level, selected);
+            return toInteractionResponse(character, level, selected, true, false);
+        }
+
+        selected = findCommonFragment(candidates);
+        if (selected != null) {
+            return toInteractionResponse(character, level, selected, false, false);
+        }
+
+        selected = findAlreadyUnlockedFragment(candidates, unlockedFragmentIds);
+        if (selected != null) {
+            return toInteractionResponse(character, level, selected, false, true);
+        }
+
+        return fallbackInteractionResponse(character, level, triggerType);
+    }
+
+    @Transactional
     public p5laris.character.domain.application.dto.EquipSkinResponse equipSkin(
             Long characterId, Long userId, Long itemId) {
 
@@ -499,6 +551,164 @@ public class CharacterService {
         } catch (Exception e) {
             throw new RuntimeException("저장된 돌봄 로그 상태를 파싱하지 못했습니다.", e);
         }
+    }
+
+    private List<CharacterStoryFragment> findStoryCandidates(
+            String characterTypeCode,
+            CharacterStoryTriggerType triggerType,
+            int level
+    ) {
+        List<String> characterTypeCodes = List.of(characterTypeCode, CharacterStoryFragment.COMMON_CHARACTER_TYPE_CODE);
+        return characterStoryFragmentRepository
+                .findByActiveTrueAndCharacterTypeCodeInAndTriggerTypeAndMinLevelLessThanEqualOrderBySortOrderAscIdAsc(
+                        characterTypeCodes,
+                        triggerType,
+                        level
+                )
+                .stream()
+                .filter(fragment -> fragment.forCharacter(characterTypeCode))
+                .filter(fragment -> fragment.forCurrentLevel(level))
+                .sorted(storyFragmentPriority(characterTypeCode))
+                .toList();
+    }
+
+    private Comparator<CharacterStoryFragment> storyFragmentPriority(String characterTypeCode) {
+        return Comparator
+                .comparingInt((CharacterStoryFragment fragment) ->
+                        characterTypeCode.equals(fragment.getCharacterTypeCode()) ? 0 : 1)
+                .thenComparingInt(CharacterStoryFragment::getMinLevel)
+                .thenComparingInt(CharacterStoryFragment::getSortOrder)
+                .thenComparing(fragment -> fragment.getId() != null ? fragment.getId() : Long.MAX_VALUE);
+    }
+
+    private Set<Long> findUnlockedFragmentIds(
+            Long userId,
+            Long characterId,
+            List<CharacterStoryFragment> candidates
+    ) {
+        List<Long> unlockableFragmentIds = candidates.stream()
+                .filter(CharacterStoryFragment::unlockable)
+                .map(CharacterStoryFragment::getId)
+                .filter(id -> id != null && id > 0)
+                .toList();
+        if (unlockableFragmentIds.isEmpty()) {
+            return Set.of();
+        }
+
+        List<UserCharacterStoryUnlock> unlocks = userCharacterStoryUnlockRepository
+                .findByUserIdAndUserCharacterIdAndStoryFragmentIdIn(userId, characterId, unlockableFragmentIds);
+        Set<Long> unlockedIds = new HashSet<>();
+        unlocks.forEach(unlock -> unlockedIds.add(unlock.getStoryFragmentId()));
+        return unlockedIds;
+    }
+
+    private CharacterStoryFragment findNewUnlockableFragment(
+            List<CharacterStoryFragment> candidates,
+            Set<Long> unlockedFragmentIds
+    ) {
+        return candidates.stream()
+                .filter(CharacterStoryFragment::unlockable)
+                .filter(fragment -> fragment.getId() != null)
+                .filter(fragment -> !unlockedFragmentIds.contains(fragment.getId()))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private CharacterStoryFragment findCommonFragment(List<CharacterStoryFragment> candidates) {
+        return candidates.stream()
+                .filter(fragment -> fragment.getFragmentType() == CharacterStoryFragmentType.COMMON)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private CharacterStoryFragment findAlreadyUnlockedFragment(
+            List<CharacterStoryFragment> candidates,
+            Set<Long> unlockedFragmentIds
+    ) {
+        return candidates.stream()
+                .filter(CharacterStoryFragment::unlockable)
+                .filter(fragment -> fragment.getId() != null)
+                .filter(fragment -> unlockedFragmentIds.contains(fragment.getId()))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private void saveStoryUnlock(
+            Long userId,
+            Long characterId,
+            int level,
+            CharacterStoryFragment fragment
+    ) {
+        userCharacterStoryUnlockRepository.save(UserCharacterStoryUnlock.builder()
+                .userId(userId)
+                .userCharacterId(characterId)
+                .storyFragmentId(fragment.getId())
+                .memoryKey(fragment.getMemoryKey())
+                .unlockedLevel(level)
+                .build());
+    }
+
+    private CharacterInteractionResponse toInteractionResponse(
+            UserCharacter character,
+            int level,
+            CharacterStoryFragment fragment,
+            boolean memoryUnlocked,
+            boolean alreadyUnlocked
+    ) {
+        CharacterInteractionResponse.Memory memory = null;
+        if (fragment.unlockable()) {
+            memory = CharacterInteractionResponse.Memory.builder()
+                    .memoryKey(fragment.getMemoryKey())
+                    .title(fragment.getTitle())
+                    .storyText(fragment.getStoryText())
+                    .build();
+        }
+
+        return CharacterInteractionResponse.builder()
+                .characterId(character.getId())
+                .characterTypeCode(character.getCharacterType().getCode())
+                .level(level)
+                .fragmentType(fragment.getFragmentType().name())
+                .triggerType(fragment.getTriggerType().name())
+                .message(fragment.getMessage())
+                .interpretation(fragment.getInterpretation())
+                .memoryUnlocked(memoryUnlocked)
+                .alreadyUnlocked(alreadyUnlocked)
+                .memory(memory)
+                .build();
+    }
+
+    private CharacterInteractionResponse fallbackInteractionResponse(
+            UserCharacter character,
+            int level,
+            CharacterStoryTriggerType triggerType
+    ) {
+        String characterTypeCode = character.getCharacterType().getCode();
+        String message = switch (characterTypeCode) {
+            case "MUMU" -> "무... 무무.";
+            case "NOVA" -> "작은 빛도 천천히 남겨둘게.";
+            case "JJORY" -> "흠흠, 지금도 기록 중임!";
+            default -> "오늘의 작은 기록을 별친구가 지켜보고 있어요.";
+        };
+        String interpretation = switch (characterTypeCode) {
+            case "MUMU" -> "무무가 아직 꺼내지 못한 기억을 조용히 품고 있는 것 같아요.";
+            case "NOVA" -> "노바가 오늘의 작은 빛을 서두르지 않고 바라보는 것 같아요.";
+            case "JJORY" -> "쪼리가 지금의 작은 움직임도 원정 기록에 남기려는 것 같아요.";
+            default -> "별친구가 오늘의 작은 기록을 곁에서 지켜주는 것 같아요.";
+        };
+
+        return CharacterInteractionResponse.builder()
+                .characterId(character.getId())
+                .characterTypeCode(characterTypeCode)
+                .level(level)
+                .fragmentType(CharacterStoryFragmentType.COMMON.name())
+                .triggerType(triggerType.name())
+                .message(message)
+                .interpretation(interpretation)
+                .memoryUnlocked(false)
+                .alreadyUnlocked(false)
+                .memory(null)
+                .build();
     }
 
     private ActionType parseActionType(String actionTypeStr) {
