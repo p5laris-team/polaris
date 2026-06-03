@@ -1,7 +1,7 @@
 # Polaris REST API 명세서
 
-> 기준일: 2026-06-01
-> 기준 문서: Polaris v0.8 PRD, 최신 ERD, `polaris` 백엔드 gateway/proto 코드 대조
+> 기준일: 2026-06-04
+> 기준 문서: Polaris v1.0 PRD, 최신 ERD, `polaris` 백엔드 gateway/proto 코드 대조
 
 --- 
 
@@ -109,14 +109,16 @@ Base Pattern: /api/{domain}/v1/{resource}
 
 ### 0.6 현재 구현 기준
 
-아래 표는 2026-06-01 기준 `polaris` 백엔드가 제공하는 API 계약을 요약한다. 각 상세 섹션은 이 기준에 맞춰 요청/응답 예시를 작성한다.
+아래 표는 2026-06-04 기준 `polaris` 백엔드가 제공하는 API 계약을 요약한다. 각 상세 섹션은 이 기준에 맞춰 요청/응답 예시를 작성한다.
 
 | 구분 | 현재 API 기준 | 응답/처리 규칙 |
 |---|---|---|
 | 홈 통합 조회 | `GET /api/home/v1/home` | 홈 화면은 user, wallet, character, currentMission, notifications 요약을 이 API로 조회한다. |
 | 날씨 권역 | `GET /api/user/v1/weather-regions`, `GET/PUT /api/user/v1/users/me/weather-region` | 사용자가 직접 선택한 권역을 날씨 기반 미션 context에 사용한다. 미선택 상태이면 mission 서비스의 기본 권역을 사용한다. |
-| 현재 캐릭터 | `GET /api/character/v1/characters/me` | `states`, `currentAssetUrl`, `assetUrls`, `equippedSkin`을 함께 반환한다. `currentAssetUrl`은 서버가 현재 상태 기준으로 고른 표시용 URL이고, `assetUrls`는 상태별 전환/프리로드용 맵이다. |
+| 현재 캐릭터 | `GET /api/character/v1/characters/me` | `states`, `growth`, `currentAssetUrl`, `assetUrls`, `equippedSkin`을 함께 반환한다. `currentAssetUrl`은 서버가 현재 상태 기준으로 고른 표시용 URL이고, `assetUrls`는 상태별 전환/프리로드용 맵이다. |
 | 스킨 장착/해제 | `PUT /api/character/v1/characters/{characterId}/equipped-skin` | `itemId`가 숫자이면 장착, 생략/null/0이면 기본 외형으로 해제한다. 응답에서 `equippedSkin`이 null이면 기본 외형 상태다. |
+| 캐릭터 성장/서사 | `GET /api/character/v1/characters/{characterId}/status`, `POST /api/character/v1/characters/{characterId}/interactions` | 상태 조회는 성장 상태를 포함하고, 상호작용은 캐릭터 기억 조각 해금 여부를 반환한다. |
+| 별친구 대화 | `POST /api/character/v1/characters/{characterId}/talk/stream` | SSE로 `meta`, `delta`, `done` 이벤트를 반환한다. AI provider 실패 시 캐릭터별 fallback 문장으로 종료한다. |
 | 지갑 거래내역 | `GET /api/wallet/v1/wallets/me/transactions` | cursor 기반 최신순 목록이며 `occurredAt`은 거래 생성 시각이다. |
 | 상점/보관함 아이템 | `GET /api/item/v1/items`, `GET /api/item/v1/user-items` | 응답에 `characterTypeId`, `effectType`, `imageUrl`이 포함된다. 캐릭터별 스킨 필터와 소모품 UI 매핑은 해당 필드를 기준으로 한다. |
 | 아이템 구매 | `POST /api/item/v1/item-purchases` | body의 `idempotencyKey`를 구매 재시도 멱등키로 사용한다. |
@@ -148,6 +150,8 @@ Base Pattern: /api/{domain}/v1/{resource}
 | GET    | `/api/character/v1/characters/{characterId}/status`             | 캐릭터 상태 조회     | path | status | 🔐 |
 | POST   | `⚠️ /api/character/v1/characters/{characterId}/care-logs`       | 돌봄 액션 수행      | path + body | care result | 🔐 |
 | PUT    | `⚠️ /api/character/v1/characters/{characterId}/equipped-skin`   | 캐릭터 스킨 장착/해제 | path + body | equipped skin | 🔐 |
+| POST   | `/api/character/v1/characters/{characterId}/interactions`       | 캐릭터 터치/상태 기반 상호작용 및 기억 조각 해금 | path + body | interaction result | 🔐 |
+| POST   | `/api/character/v1/characters/{characterId}/talk/stream`        | 별친구 대화 SSE 스트리밍 | path + body | SSE stream | 🔐 |
 | GET    | `💾 /api/onboarding/v1/questions`                               | 온보딩 질문 목록 조회  | none | questions | 🔐 |
 | GET    | `/api/onboarding/v1/profiles/me`                                | 내 온보딩 프로필 조회  | none | profile | 🔐 |
 | PUT    | `/api/onboarding/v1/profiles/me`                                | 내 온보딩 프로필 저장/완료 | body | profile | 🔐 |
@@ -471,7 +475,7 @@ Refresh Token으로 Access Token을 재발급한다.
 ### 4.1 GET `💾 /api/character/v1/character-types` 🔐
 
 **설명**  
-선택 가능한 캐릭터 타입 목록을 조회한다. MVP 캐릭터는 노바, 무무, 쪼리 3종이다.
+선택 가능한 캐릭터 타입 목록을 조회한다. 현재 캐릭터는 노바, 무무, 쪼리 3종이다.
 
 **Request**
 
@@ -536,7 +540,7 @@ Refresh Token으로 Access Token을 재발급한다.
 ### 4.3 POST `/api/character/v1/characters` 🔐
 
 **설명**  
-사용자의 활성 캐릭터를 생성한다. MVP에서는 사용자당 활성 캐릭터 1개를 기준으로 한다.
+사용자의 활성 캐릭터를 생성한다. 현재는 사용자당 활성 캐릭터 1개를 기준으로 한다.
 
 **Request**
 
@@ -599,6 +603,17 @@ Refresh Token으로 Access Token을 재발급한다.
     "energy": 55,
     "affection": 35
   },
+  "growth": {
+    "level": 2,
+    "exp": 240,
+    "currentLevelExp": 200,
+    "nextLevelExp": 600,
+    "expToNextLevel": 360,
+    "progressPercent": 10,
+    "growthStage": "GROWING",
+    "growthStageLabel": "자라는 중",
+    "maxLevel": false
+  },
   "equippedSkin": {
     "itemId": 3,
     "name": "말랑 별빛 스킨"
@@ -657,6 +672,17 @@ Refresh Token으로 Access Token을 재발급한다.
     "hunger": { "value": 80, "label": "든든함", "grade": "GOOD" },
     "energy": { "value": 55, "label": "졸림", "grade": "NORMAL" },
     "affection": { "value": 35, "label": "쓸쓸함", "grade": "BAD" }
+  },
+  "growth": {
+    "level": 2,
+    "exp": 240,
+    "currentLevelExp": 200,
+    "nextLevelExp": 600,
+    "expToNextLevel": 360,
+    "progressPercent": 10,
+    "growthStage": "GROWING",
+    "growthStageLabel": "자라는 중",
+    "maxLevel": false
   }
 }
 ```
@@ -666,7 +692,7 @@ Refresh Token으로 Access Token을 재발급한다.
 ### 4.7 POST `⚠️ /api/character/v1/characters/{characterId}/care-logs` 🔐
 
 **설명**  
-밥 주기, 재우기, 놀아주기 같은 돌봄 액션을 수행한다. MVP 클라이언트는 돌봄 액션에 맞는 소모품 `itemId`를 전달하며, 백엔드는 `user_items.quantity`를 1개 차감한다.
+밥 주기, 재우기, 놀아주기 같은 돌봄 액션을 수행한다. 현재 클라이언트는 돌봄 액션에 맞는 소모품 `itemId`를 전달하며, 백엔드는 `user_items.quantity`를 1개 차감한다.
 중복 요청 및 재시도를 방지하기 위해 반드시 `Idempotency-Key` 헤더를 함께 전송해야 합니다.
 
 | actionType | 필요한 effectType | 예시 소모품 |
@@ -711,6 +737,30 @@ Refresh Token으로 Access Token을 재발급한다.
     "energy": 55,
     "affection": 35
   },
+  "beforeGrowth": {
+    "level": 1,
+    "exp": 195,
+    "currentLevelExp": 0,
+    "nextLevelExp": 200,
+    "expToNextLevel": 5,
+    "progressPercent": 97,
+    "growthStage": "BABY",
+    "growthStageLabel": "새싹",
+    "maxLevel": false
+  },
+  "afterGrowth": {
+    "level": 2,
+    "exp": 200,
+    "currentLevelExp": 200,
+    "nextLevelExp": 600,
+    "expToNextLevel": 400,
+    "progressPercent": 0,
+    "growthStage": "GROWING",
+    "growthStageLabel": "자라는 중",
+    "maxLevel": false
+  },
+  "expGained": 5,
+  "levelUp": true,
   "characterMessage": "먹는 중… 빛도 맛이 있구나."
 }
 ```
@@ -768,6 +818,122 @@ Refresh Token으로 Access Token을 재발급한다.
   "updatedAt": "2026-05-15T18:45:00+09:00"
 }
 ```
+
+---
+
+### 4.9 POST `/api/character/v1/characters/{characterId}/interactions` 🔐
+
+**설명**
+캐릭터를 터치하거나 상태/시간대 기반 상호작용을 요청한다. 응답은 화면에 바로 표시할 캐릭터 대사와 기억 조각 해금 여부를 포함한다.
+
+`interactionType`을 비우면 서버는 `TAP`으로 처리한다.
+
+| interactionType | 설명 |
+|---|---|
+| `TAP` | 기본 터치 |
+| `LEVEL_UP` | 레벨업 반응 |
+| `LOW_HUNGER` | 포만감 BAD 상태 반응 |
+| `LOW_ENERGY` | 기운 BAD 상태 반응 |
+| `LOW_AFFECTION` | 애정 BAD 상태 반응 |
+| `NIGHT` | 밤 시간대 반응 |
+| `MIDNIGHT` | 자정 이후 반응 |
+
+**Request**
+
+```json
+{
+  "interactionType": "TAP"
+}
+```
+
+**Response**
+
+```json
+{
+  "characterId": 10,
+  "characterTypeCode": "MUMU",
+  "level": 2,
+  "fragmentType": "LORE",
+  "triggerType": "TAP",
+  "message": "무... 무무.",
+  "interpretation": "무무가 잎맥 속 오래된 기록을 조금씩 되찾는 것 같아요.",
+  "memoryUnlocked": true,
+  "alreadyUnlocked": false,
+  "memory": {
+    "memoryKey": "mumu_lv2_lore_001",
+    "title": "잎맥의 문장",
+    "storyText": "무무의 잎맥이 조금 더 선명해졌어요..."
+  }
+}
+```
+
+`fragmentType=COMMON`이거나 새로 해금된 기억 조각이 없으면 `memory`는 `null`일 수 있다.
+
+---
+
+### 4.10 POST `/api/character/v1/characters/{characterId}/talk/stream` 🔐
+
+**설명**
+별친구에게 말을 걸고 SSE(Server-Sent Events)로 응답을 스트리밍한다. gateway는 character 모듈에서 캐릭터 상태/성장/해금 기억 context를 조회하고, ai 모듈의 `StreamCharacterTalk` gRPC를 호출한다.
+
+대화 원문은 DB에 저장하지 않는다.
+
+**Request**
+
+```json
+{
+  "message": "나 오늘 너무 힘들었어",
+  "interactionType": "TAP"
+}
+```
+
+**SSE Events**
+
+`meta`
+
+```json
+{
+  "requestId": "e0694194-17a6-4a19-bbb8-eac5b1655e2e",
+  "characterId": 10,
+  "characterTypeCode": "MUMU",
+  "level": 2,
+  "sentAt": "2026-06-04T01:20:00Z"
+}
+```
+
+`delta`
+
+```json
+{
+  "text": "무... 무무. "
+}
+```
+
+`done`
+
+```json
+{
+  "requestId": "e0694194-17a6-4a19-bbb8-eac5b1655e2e",
+  "fallbackUsed": false
+}
+```
+
+fallback이 사용된 경우:
+
+```json
+{
+  "requestId": "e0694194-17a6-4a19-bbb8-eac5b1655e2e",
+  "fallbackUsed": true,
+  "errorType": "AI_ERROR_TYPE_PROVIDER_ERROR"
+}
+```
+
+**처리 규칙**
+
+- `delta` 이벤트는 여러 번 올 수 있으며, 프론트는 순서대로 이어 붙여 최종 문장을 만든다.
+- AI provider 오류, timeout, 출력 검증 실패가 발생하면 gateway 또는 ai 모듈에서 캐릭터별 fallback 문장을 내려준다.
+- 무무 응답은 무무 말투와 해석을 함께 포함한다.
+- gateway의 SSE 연결 timeout은 `GATEWAY_CHARACTER_TALK_SSE_TIMEOUT_MS`, AI gRPC deadline은 `GATEWAY_CHARACTER_TALK_AI_DEADLINE_MS`, prompt에 넣는 기억 조각 수는 `GATEWAY_CHARACTER_TALK_MEMORY_LIMIT`로 조절한다.
 
 ---
 
@@ -884,7 +1050,7 @@ Refresh Token으로 Access Token을 재발급한다.
 
 미션 조회와 상태 변경의 소유권 기준은 `characterId`가 아니라 로그인한 `userId`다. `characterId`는 "어떤 캐릭터가 이 미션을 제안했는지"를 남기는 기록용 값으로 사용한다.
 
-MVP 정책:
+현재 정책:
 
 ```text
 한 유저는 하루에 OFFERED/ANSWERING 상태 미션을 동시에 1개만 가진다.
@@ -1394,6 +1560,58 @@ mission 모듈은 `user_memories`를 먼저 저장하고, embedding이 필요한
 
 ---
 
+### 6.9 내부 gRPC `AiService.StreamCharacterTalk`
+
+**설명**
+별친구 대화 응답을 provider streaming으로 생성한다. gateway는 REST SSE 계약을 유지하고, ai 모듈은 gRPC server streaming으로 `DELTA`, `DONE`, `ERROR` 이벤트를 반환한다.
+
+AI는 Spring AI Tool Calling으로 필요한 백엔드 context를 조회한다. Tool 호출 실패는 대화 전체 실패가 아니라 해당 context를 사용할 수 없는 상태로 prompt에 반영한다.
+
+현재 Tool 범위:
+
+| Tool | 용도 |
+|---|---|
+| 캐릭터 상태/성장/기억 조회 | 캐릭터 상태, 성장 레벨, 최근 해금 기억 조각을 확인한다. |
+| 오늘 미션 조회 | 오늘 현재 미션과 미션 진행 상태를 확인한다. |
+| 최근 루틴 요약 조회 | 최근 미션, 답변, 만족도/거절 피드백 흐름을 확인한다. |
+| 시간대/날씨 context 조회 | 현재 시간대, 사용자 날씨 권역, 날씨 기반 미션 정책을 확인한다. |
+
+**gRPC Request**
+
+```json
+{
+  "userId": 1,
+  "characterId": 10,
+  "characterType": "MUMU",
+  "characterName": "무무",
+  "userMessage": "나 오늘 너무 힘들었어",
+  "interactionType": "TAP",
+  "characterContextJson": "{\"growth\":{\"level\":2},\"memories\":[...]}",
+  "requestId": "CHARACTER_TALK:..."
+}
+```
+
+**gRPC Stream Response**
+
+```json
+{ "eventType": "CHARACTER_TALK_STREAM_EVENT_TYPE_DELTA", "text": "무... 무무.", "requestId": "CHARACTER_TALK:..." }
+{ "eventType": "CHARACTER_TALK_STREAM_EVENT_TYPE_DELTA", "text": " (해석: 무무가", "requestId": "CHARACTER_TALK:..." }
+{ "eventType": "CHARACTER_TALK_STREAM_EVENT_TYPE_DONE", "fallbackUsed": false, "requestId": "CHARACTER_TALK:..." }
+```
+
+오류 또는 검증 실패 시:
+
+```json
+{
+  "eventType": "CHARACTER_TALK_STREAM_EVENT_TYPE_ERROR",
+  "fallbackUsed": true,
+  "errorType": "AI_ERROR_TYPE_PROVIDER_ERROR",
+  "requestId": "CHARACTER_TALK:..."
+}
+```
+
+---
+
 ## 7. 별조각 지갑
 
 ### 7.1 GET `/api/wallet/v1/wallets/me` 🔐
@@ -1690,7 +1908,7 @@ mission 모듈은 `user_memories`를 먼저 저장하고, embedding이 필요한
 ### 9.4 POST `⚠️ /api/share/v1/share-events` 🔐
 
 **설명**  
-사용자가 공유 버튼을 눌렀다는 이벤트를 저장한다. 실제 외부 SNS 게시 여부는 MVP에서 검증하지 않고, 하루 1회 공유 시도 보상 대상 여부를 `share_logs`에 기록한다.
+사용자가 공유 버튼을 눌렀다는 이벤트를 저장한다. 실제 외부 SNS 게시 여부는 현재 검증하지 않고, 하루 1회 공유 시도 보상 대상 여부를 `share_logs`에 기록한다.
 오늘 첫 보상 대상이면 character 모듈은 `share_logs`와 `character_outbox_events`를 같은 짧은 트랜잭션에 저장한다. outbox 이벤트는 `aggregate_type='SHARE_LOG'`, `aggregate_id=shareLogId`, `event_type='SHARE_REWARD_REQUESTED'`, `payload jsonb={"userId":..., "rewardStarPiece":10}` 형식이다. 커밋 후 `ShareRewardDispatcher`가 user wallet gRPC `EarnStarPiece`를 즉시 호출한다. 성공 시 `wallet.starPiece`는 적립 후 지갑 잔액이며, 이미 오늘 보상을 받은 요청은 기존 보상 로그와 현재 지갑 잔액 기준으로 replay 응답을 반환한다. 즉시 지급 실패 시 API는 `SHARE_REWARD_FAILED`로 실패하고, 남은 outbox row는 스케줄러가 재처리한다.
 
 **Request**
@@ -1772,7 +1990,7 @@ mission 모듈은 `user_memories`를 먼저 저장하고, embedding이 필요한
 ### 9.7 POST `/api/share/v1/share-clicks` Public
 
 **설명**
-공개 공유 링크 클릭을 기록한다. MVP 구현은 클릭 정보를 로그로 남기고 `recorded=true`를 반환한다.
+공개 공유 링크 클릭을 기록한다. 현재 구현은 클릭 정보를 로그로 남기고 `recorded=true`를 반환한다.
 
 **Request**
 
@@ -2106,6 +2324,27 @@ mission, character 등 내부 서비스가 알림 저장과 FCM 푸시 발송을
 | `energy` | 높을수록 기운 있음 | 말짱함 / 졸림 / 피곤함 |
 | `affection` | 높을수록 가까움 | 가까움 / 조용함 / 쓸쓸함 |
 
+### 12.2.1 캐릭터 성장 / 서사 / 대화
+
+| 구분 | 값 | 의미 |
+|---|---|---|
+| `growthStage` | `BABY` | Lv.1, 새싹 단계 |
+| `growthStage` | `GROWING` | Lv.2, 성장 단계 |
+| `growthStage` | `MATURE` | Lv.3, 성숙 단계 |
+| `fragmentType` | `COMMON` | 해금 이력 없이도 보여줄 수 있는 기본 반응 |
+| `fragmentType` | `LORE` | 캐릭터 세계관과 과거가 담긴 기억 조각 |
+| `fragmentType` | `EASTER_EGG` | 특정 조건에서 열리는 숨은 반응 |
+| `triggerType` | `TAP` | 캐릭터 터치/말 걸기 상호작용 |
+| `triggerType` | `LEVEL_UP` | 레벨업 직후 반응 |
+| `triggerType` | `LOW_HUNGER` | 포만감이 낮을 때 |
+| `triggerType` | `LOW_ENERGY` | 에너지가 낮을 때 |
+| `triggerType` | `LOW_AFFECTION` | 애정도가 낮을 때 |
+| `triggerType` | `NIGHT` | 밤 시간대 반응 |
+| `triggerType` | `MIDNIGHT` | 자정 이후 새벽 반응 |
+| SSE event | `meta` | 스트림 시작 메타데이터 |
+| SSE event | `delta` | 이어 붙일 응답 조각 |
+| SSE event | `done` | 스트림 종료 메타데이터 |
+
 ### 12.3 아이템
 
 | 필드 | 값 |
@@ -2122,7 +2361,7 @@ mission, character 등 내부 서비스가 알림 저장과 FCM 푸시 발송을
 | `ITEM_PURCHASE` | 아이템 구매 |
 | `ATTENDANCE_REWARD` | 출석 보상 |
 | `SHARE_REWARD` | 공유 시도 보상 |
-| `CARE_ACTION` | 별조각 직접 차감형 돌봄 정책 도입 시 사용. MVP 돌봄은 소모품 수량 차감 기준 |
+| `CARE_ACTION` | 별조각 직접 차감형 돌봄 정책 도입 시 사용. 현재 돌봄은 소모품 수량 차감 기준 |
 
 ### 12.5 AI 문구 생성 상태
 
