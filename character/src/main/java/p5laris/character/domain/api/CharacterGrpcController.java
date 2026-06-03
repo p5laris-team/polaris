@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import net.devh.boot.grpc.server.service.GrpcService;
 import p5laris.character.domain.application.CharacterService;
 import p5laris.character.domain.application.ShareService;
+import p5laris.character.domain.application.dto.CharacterTalkContextResponse;
 
 @GrpcService
 @RequiredArgsConstructor
@@ -316,12 +317,40 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
                                 .setMemoryKey(memory.memoryKey())
                                 .setTitle(memory.title())
                                 .setStoryText(memory.storyText())
+                                .setFragmentType(memory.fragmentType())
+                                .setUnlockedLevel(memory.unlockedLevel())
+                                .setUnlockedAt(memory.unlockedAt())
                                 .build())
                         .toList())
+                .setStoryProgress(toProtoStoryProgress(result.storyProgress()))
                 .build();
 
         responseObserver.onNext(response);
         responseObserver.onCompleted();
+    }
+
+    private CharacterStoryProgress toProtoStoryProgress(CharacterTalkContextResponse.StoryProgress progress) {
+        if (progress == null) {
+            return CharacterStoryProgress.newBuilder().build();
+        }
+
+        CharacterStoryProgress.Builder builder = CharacterStoryProgress.newBuilder()
+                .setUnlockedMemoryCount(progress.unlockedMemoryCount())
+                .setTotalMemoryCount(progress.totalMemoryCount())
+                .setAllUnlocked(progress.allUnlocked());
+
+        if (progress.nextMemoryHint() != null) {
+            builder.setNextMemoryHint(toProtoUnlockHint(progress.nextMemoryHint()));
+        }
+
+        return builder.build();
+    }
+
+    private CharacterStoryUnlockHint toProtoUnlockHint(CharacterTalkContextResponse.UnlockHint hint) {
+        return CharacterStoryUnlockHint.newBuilder()
+                .setRequiredLevel(hint.requiredLevel())
+                .setHintMessage(hint.hintMessage())
+                .build();
     }
 
     /**

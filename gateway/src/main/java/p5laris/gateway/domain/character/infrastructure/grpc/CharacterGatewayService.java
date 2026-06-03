@@ -20,6 +20,9 @@ import p5laris.gateway.domain.character.api.dto.CharacterTypesResponse;
 import p5laris.gateway.domain.character.infrastructure.config.CharacterTalkAiProperties;
 import p5laris.gateway.domain.character.infrastructure.config.CharacterTalkContextProperties;
 import p5laris.gateway.domain.character.infrastructure.config.CharacterTalkSseProperties;
+import p5laris.gateway.domain.character.infrastructure.limit.CharacterTalkLimitResult;
+import p5laris.gateway.domain.character.infrastructure.limit.CharacterTalkLimitStatus;
+import p5laris.gateway.domain.character.infrastructure.limit.RedisCharacterTalkDailyLimiter;
 import p5laris.gateway.domain.item.infrastructure.grpc.ItemGatewayService;
 
 import java.io.IOException;
@@ -49,6 +52,7 @@ public class CharacterGatewayService {
     private final CharacterTalkAiProperties characterTalkAiProperties;
     private final CharacterTalkContextProperties characterTalkContextProperties;
     private final CharacterTalkSseProperties characterTalkSseProperties;
+    private final RedisCharacterTalkDailyLimiter characterTalkDailyLimiter;
 
     public CharacterTypesResponse getCharacterTypes() {
         GetCharacterTypesResponse response = characterStub.getCharacterTypes(
@@ -301,14 +305,33 @@ public class CharacterGatewayService {
             GetCharacterTalkContextResponse context
     ) {
         TalkStreamState streamState = new TalkStreamState();
+        CharacterTalkLimitResult limitResult = null;
         try {
-            sendEvent(emitter, "meta", buildTalkMeta(requestId, context));
+            limitResult = characterTalkDailyLimiter.acquire(userId);
+            sendEvent(emitter, "meta", buildTalkMeta(requestId, context, limitResult));
+            if (!limitResult.available()) {
+                sendEvent(emitter, "delta", Map.of("text", limitFallbackTalk(
+                        context.getCharacterTypeCode(),
+                        limitResult.talkStatus()
+                )));
+                streamState.deltaSent = true;
+                sendEvent(emitter, "done", buildTalkDone(requestId, true, null, limitResult));
+                streamState.doneSent = true;
+                emitter.complete();
+                return;
+            }
+
             Iterator<StreamCharacterTalkResponse> responses = streamCharacterTalk(userId, request, requestId, context);
             while (responses.hasNext()) {
-                forwardAiTalkEvent(emitter, responses.next(), streamState);
+                forwardAiTalkEvent(emitter, responses.next(), streamState, limitResult);
             }
             if (!streamState.doneSent) {
-                sendEvent(emitter, "done", buildTalkDone(requestId, false, AiErrorType.AI_ERROR_TYPE_UNSPECIFIED));
+                sendEvent(emitter, "done", buildTalkDone(
+                        requestId,
+                        false,
+                        AiErrorType.AI_ERROR_TYPE_UNSPECIFIED,
+                        limitResult
+                ));
             }
             emitter.complete();
         } catch (Exception e) {
@@ -322,7 +345,8 @@ public class CharacterGatewayService {
                 sendEvent(emitter, "done", buildTalkDone(
                         requestId,
                         true,
-                        AiErrorType.AI_ERROR_TYPE_PROVIDER_ERROR
+                        AiErrorType.AI_ERROR_TYPE_PROVIDER_ERROR,
+                        limitResult
                 ));
                 emitter.complete();
             } catch (Exception fallbackException) {
@@ -359,7 +383,8 @@ public class CharacterGatewayService {
     private void forwardAiTalkEvent(
             SseEmitter emitter,
             StreamCharacterTalkResponse response,
-            TalkStreamState streamState
+            TalkStreamState streamState,
+            CharacterTalkLimitResult limitResult
     ) throws IOException {
         CharacterTalkStreamEventType eventType = response.getEventType();
         if (eventType == CharacterTalkStreamEventType.CHARACTER_TALK_STREAM_EVENT_TYPE_DELTA) {
@@ -374,7 +399,8 @@ public class CharacterGatewayService {
             sendEvent(emitter, "done", buildTalkDone(
                     response.getRequestId(),
                     response.getFallbackUsed(),
-                    response.getErrorType()
+                    response.getErrorType(),
+                    limitResult
             ));
             streamState.doneSent = true;
             return;
@@ -384,30 +410,57 @@ public class CharacterGatewayService {
             sendEvent(emitter, "done", buildTalkDone(
                     response.getRequestId(),
                     true,
-                    response.getErrorType()
+                    response.getErrorType(),
+                    limitResult
             ));
             streamState.doneSent = true;
         }
     }
 
-    private Map<String, Object> buildTalkMeta(String requestId, GetCharacterTalkContextResponse context) {
+    private Map<String, Object> buildTalkMeta(
+            String requestId,
+            GetCharacterTalkContextResponse context,
+            CharacterTalkLimitResult limitResult
+    ) {
         Map<String, Object> meta = new LinkedHashMap<>();
         meta.put("requestId", requestId);
         meta.put("characterId", context.getCharacterId());
         meta.put("characterTypeCode", context.getCharacterTypeCode());
         meta.put("level", context.getGrowth().getLevel());
+        meta.put("growth", toGrowthContext(context.getGrowth()));
+        meta.put("story", toStoryProgressContext(context));
+        meta.putAll(toTalkLimitContext(limitResult));
         meta.put("sentAt", Instant.now().toString());
         return meta;
     }
 
-    private Map<String, Object> buildTalkDone(String requestId, boolean fallbackUsed, AiErrorType errorType) {
+    private Map<String, Object> buildTalkDone(
+            String requestId,
+            boolean fallbackUsed,
+            AiErrorType errorType,
+            CharacterTalkLimitResult limitResult
+    ) {
         Map<String, Object> done = new LinkedHashMap<>();
         done.put("requestId", requestId);
         done.put("fallbackUsed", fallbackUsed);
+        done.putAll(toTalkLimitContext(limitResult));
         if (errorType != null && errorType != AiErrorType.AI_ERROR_TYPE_UNSPECIFIED) {
             done.put("errorType", errorType.name());
         }
         return done;
+    }
+
+    private Map<String, Object> toTalkLimitContext(CharacterTalkLimitResult limitResult) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        CharacterTalkLimitStatus talkStatus = limitResult != null
+                ? limitResult.talkStatus()
+                : CharacterTalkLimitStatus.AVAILABLE;
+        body.put("talkStatus", talkStatus.name());
+        body.put("dailyLimit", limitResult != null ? limitResult.dailyLimit() : 0);
+        body.put("remainingCount", limitResult != null ? limitResult.remainingCount() : null);
+        body.put("limitExceeded", limitResult != null && limitResult.limitExceeded());
+        body.put("resetAt", limitResult != null ? limitResult.resetAt() : "");
+        return body;
     }
 
     private void sendEvent(SseEmitter emitter, String eventName, Object data) throws IOException {
@@ -428,6 +481,7 @@ public class CharacterGatewayService {
                     "affection", toStateContext(context.getAffection())
             ));
             body.put("growth", toGrowthContext(context.getGrowth()));
+            body.put("story", toStoryProgressContext(context));
             body.put("memories", context.getMemoriesList().stream()
                     .map(this::toMemoryContext)
                     .toList());
@@ -461,11 +515,39 @@ public class CharacterGatewayService {
         return body;
     }
 
+    private Map<String, Object> toStoryProgressContext(GetCharacterTalkContextResponse context) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        if (!context.hasStoryProgress()) {
+            body.put("unlockedMemoryCount", 0);
+            body.put("totalMemoryCount", 0);
+            body.put("allUnlocked", false);
+            body.put("nextMemoryHint", null);
+            return body;
+        }
+
+        CharacterStoryProgress progress = context.getStoryProgress();
+        body.put("unlockedMemoryCount", progress.getUnlockedMemoryCount());
+        body.put("totalMemoryCount", progress.getTotalMemoryCount());
+        body.put("allUnlocked", progress.getAllUnlocked());
+        if (progress.hasNextMemoryHint() && !progress.getNextMemoryHint().getHintMessage().isBlank()) {
+            body.put("nextMemoryHint", Map.of(
+                    "requiredLevel", progress.getNextMemoryHint().getRequiredLevel(),
+                    "hintMessage", progress.getNextMemoryHint().getHintMessage()
+            ));
+        } else {
+            body.put("nextMemoryHint", null);
+        }
+        return body;
+    }
+
     private Map<String, Object> toMemoryContext(CharacterStoryMemory memory) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("memoryKey", memory.getMemoryKey());
         body.put("title", memory.getTitle());
         body.put("storyText", memory.getStoryText());
+        body.put("fragmentType", memory.getFragmentType());
+        body.put("unlockedLevel", memory.getUnlockedLevel());
+        body.put("unlockedAt", memory.getUnlockedAt());
         return body;
     }
 
@@ -475,6 +557,24 @@ public class CharacterGatewayService {
             case "NOVA" -> "지금은 대답이 조금 늦어졌어. 그래도 작은 숨 하나부터 다시 좌표를 잡아보자.";
             case "JJORY" -> "통신이 잠깐 삐끗함. 그래도 작전은 유지됨. 잠깐 숨 고르고 다시 가보자.";
             default -> "별친구가 지금 곁에서 천천히 들어주고 있어요. 아주 작게 숨부터 골라도 괜찮아요.";
+        };
+    }
+
+    private String limitFallbackTalk(String characterTypeCode, CharacterTalkLimitStatus talkStatus) {
+        if (talkStatus == CharacterTalkLimitStatus.LIMIT_EXCEEDED) {
+            return switch (normalizeCharacterType(characterTypeCode)) {
+                case "MUMU" -> "무... 무무. (해석: 무무가 오늘의 별빛 대화는 여기까지 아껴두고, 내일 다시 이야기하자고 하는 것 같아요.)";
+                case "NOVA" -> "오늘의 교신은 여기까지야. 내일 다시 별의 좌표를 이어가자.";
+                case "JJORY" -> "오늘 작전 회의는 여기까지! 내일 다시 지도 펴고 얘기하자.";
+                default -> "오늘 별친구와 나눌 수 있는 대화는 여기까지예요. 내일 다시 이야기해요.";
+            };
+        }
+
+        return switch (normalizeCharacterType(characterTypeCode)) {
+            case "MUMU" -> "무... 무무. (해석: 무무가 별빛 연결이 잠깐 흐려졌지만, 조금 뒤에 다시 이야기하자고 하는 것 같아요.)";
+            case "NOVA" -> "별빛 회선이 잠깐 흔들리고 있어. 조금 뒤에 다시 말을 걸어줘.";
+            case "JJORY" -> "작전 통신이 잠깐 삐끗했음! 조금 있다가 다시 연결해보자.";
+            default -> "별친구와의 연결이 잠깐 흔들리고 있어요. 조금 뒤에 다시 이야기해요.";
         };
     }
 

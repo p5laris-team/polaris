@@ -30,4 +30,6 @@ public interface UserCharacterStoryUnlockRepository extends JpaRepository<UserCh
             Long userCharacterId,
             Pageable pageable
     );
+
+    long countByUserIdAndUserCharacterId(Long userId, Long userCharacterId);
 }
