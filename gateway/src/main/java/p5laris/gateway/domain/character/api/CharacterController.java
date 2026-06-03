@@ -92,6 +92,18 @@ public class CharacterController {
     }
 
     /**
+     * 캐릭터 터치/상태 트리거에 맞는 대사와 기억 조각을 조회한다.
+     * POST /api/character/v1/characters/{characterId}/interactions
+     */
+    @org.springframework.web.bind.annotation.PostMapping("/v1/characters/{characterId}/interactions")
+    public ApiResponse<p5laris.gateway.domain.character.api.dto.CharacterInteractionResponse> interactWithCharacter(
+            @org.springframework.web.bind.annotation.PathVariable Long characterId,
+            @p5laris.gateway.global.auth.LoginUserId Long userId,
+            @org.springframework.web.bind.annotation.RequestBody p5laris.gateway.domain.character.api.dto.CharacterInteractionRequest request) {
+        return ApiResponse.success(characterGatewayService.interactWithCharacter(characterId, userId, request));
+    }
+
+    /**
      * Equip skin on character (API spec 4.8).
      * PUT /api/character/v1/characters/{characterId}/equipped-skin
      */

@@ -16,6 +16,7 @@ service CharacterService {
   rpc GetCharacterStatus(GetCharacterStatusRequest) returns (GetCharacterStatusResponse);
   rpc PerformCareAction(PerformCareActionRequest) returns (PerformCareActionResponse);
   rpc GrantCharacterExp(GrantCharacterExpRequest) returns (GrantCharacterExpResponse);
+  rpc InteractWithCharacter(InteractWithCharacterRequest) returns (InteractWithCharacterResponse);
   rpc EquipSkin(EquipSkinRequest) returns (EquipSkinResponse);
   rpc CreateShareCard(CreateShareCardRequest) returns (CreateShareCardResponse);
   rpc GetShareCard(GetShareCardRequest) returns (GetShareCardResponse);
@@ -201,6 +202,32 @@ message GrantCharacterExpResponse {
   CharacterGrowth after_growth = 4;
   bool level_up = 5;
   bool already_processed = 6;
+}
+
+// 캐릭터 터치/상태 트리거에 맞는 대사와 기억 조각을 조회한다.
+message InteractWithCharacterRequest {
+  int64 user_id = 1;
+  int64 character_id = 2;
+  string interaction_type = 3; // TAP | LEVEL_UP | LOW_HUNGER | LOW_ENERGY | LOW_AFFECTION | NIGHT | MIDNIGHT
+}
+
+message InteractWithCharacterResponse {
+  int64 character_id = 1;
+  string character_type_code = 2;
+  int32 level = 3;
+  string fragment_type = 4;
+  string trigger_type = 5;
+  string message = 6;
+  string interpretation = 7;
+  bool memory_unlocked = 8;
+  bool already_unlocked = 9;
+  CharacterStoryMemory memory = 10;
+}
+
+message CharacterStoryMemory {
+  string memory_key = 1;
+  string title = 2;
+  string story_text = 3;
 }
 
 // 캐릭터에 스킨 아이템을 장착한다.

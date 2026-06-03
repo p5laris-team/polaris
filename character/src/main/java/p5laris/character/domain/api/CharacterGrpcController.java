@@ -257,6 +257,41 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
     }
 
     /**
+     * 캐릭터 터치/상태 트리거에 맞는 대사와 기억 조각을 조회한다.
+     */
+    @Override
+    public void interactWithCharacter(InteractWithCharacterRequest request,
+                                      StreamObserver<InteractWithCharacterResponse> responseObserver) {
+        var result = characterService.interactWithCharacter(
+                request.getCharacterId(),
+                request.getUserId(),
+                request.getInteractionType()
+        );
+
+        InteractWithCharacterResponse.Builder response = InteractWithCharacterResponse.newBuilder()
+                .setCharacterId(result.characterId())
+                .setCharacterTypeCode(result.characterTypeCode())
+                .setLevel(result.level())
+                .setFragmentType(result.fragmentType())
+                .setTriggerType(result.triggerType())
+                .setMessage(result.message())
+                .setInterpretation(result.interpretation())
+                .setMemoryUnlocked(result.memoryUnlocked())
+                .setAlreadyUnlocked(result.alreadyUnlocked());
+
+        if (result.memory() != null) {
+            response.setMemory(CharacterStoryMemory.newBuilder()
+                    .setMemoryKey(result.memory().memoryKey())
+                    .setTitle(result.memory().title())
+                    .setStoryText(result.memory().storyText())
+                    .build());
+        }
+
+        responseObserver.onNext(response.build());
+        responseObserver.onCompleted();
+    }
+
+    /**
      * 캐릭터 스킨을 장착하거나 해제한다. (API 명세 4.8)
      */
     @Override

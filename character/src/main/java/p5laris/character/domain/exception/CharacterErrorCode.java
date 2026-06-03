@@ -22,7 +22,8 @@ public enum CharacterErrorCode {
     ITEM_SERVICE_CALL_FAILED("CH015", "아이템 서비스 호출에 실패했습니다."),
     SHARE_REWARD_FAILED("CH016", "공유 보상 지급에 실패했습니다."),
     INVALID_IDEMPOTENCY_KEY("CH017", "멱등키가 유효하지 않습니다."),
-    INVALID_EXP_GRANT_REQUEST("CH018", "캐릭터 경험치 지급 요청이 유효하지 않습니다.");
+    INVALID_EXP_GRANT_REQUEST("CH018", "캐릭터 경험치 지급 요청이 유효하지 않습니다."),
+    INVALID_INTERACTION_TYPE("CH019", "캐릭터 상호작용 타입이 유효하지 않습니다.");
 
     private final String code;
     private final String message;
