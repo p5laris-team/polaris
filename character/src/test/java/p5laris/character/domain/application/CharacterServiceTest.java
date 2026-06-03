@@ -339,6 +339,23 @@ class CharacterServiceTest {
         )).thenReturn(List.of(secondUnlock, firstUnlock));
         when(characterStoryFragmentRepository.findAllById(List.of(12L, 11L)))
                 .thenReturn(List.of(first, second));
+        when(characterStoryFragmentRepository.countByActiveTrueAndCharacterTypeCodeInAndFragmentTypeIn(
+                anyList(),
+                anyList()
+        )).thenReturn(2L);
+        when(userCharacterStoryUnlockRepository.countByUserIdAndUserCharacterId(1L, 1L))
+                .thenReturn(2L);
+        when(characterStoryFragmentRepository
+                .findByActiveTrueAndCharacterTypeCodeInAndFragmentTypeInOrderByMinLevelAscSortOrderAscIdAsc(
+                        anyList(),
+                        anyList()
+                ))
+                .thenReturn(List.of(first, second));
+        when(userCharacterStoryUnlockRepository.findByUserIdAndUserCharacterIdAndStoryFragmentIdIn(
+                eq(1L),
+                eq(1L),
+                anyCollection()
+        )).thenReturn(List.of(firstUnlock, secondUnlock));
 
         var response = characterService.getCharacterTalkContext(1L, 1L, 5);
 
@@ -349,7 +366,13 @@ class CharacterServiceTest {
         assertNotNull(response.growth());
         assertEquals(2, response.memories().size());
         assertEquals("nova_lv1_easter_001", response.memories().get(0).memoryKey());
+        assertEquals("EASTER_EGG", response.memories().get(0).fragmentType());
+        assertEquals(1, response.memories().get(0).unlockedLevel());
         assertEquals("nova_lv1_lore_001", response.memories().get(1).memoryKey());
+        assertEquals(2, response.storyProgress().unlockedMemoryCount());
+        assertEquals(2, response.storyProgress().totalMemoryCount());
+        assertTrue(response.storyProgress().allUnlocked());
+        assertNull(response.storyProgress().nextMemoryHint());
         verify(characterStoryFragmentRepository).findAllById(List.of(12L, 11L));
     }
 
