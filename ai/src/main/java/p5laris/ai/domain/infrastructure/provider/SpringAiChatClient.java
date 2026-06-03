@@ -2,6 +2,7 @@ package p5laris.ai.domain.infrastructure.provider;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.ChatClient.ChatClientRequestSpec;
 import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
@@ -52,6 +53,22 @@ public class SpringAiChatClient implements AiChatClient {
                         .responseMimeType("text/plain"))
                 .stream()
                 .content();
+    }
+
+    @Override
+    public Flux<String> streamPlainTextWithTools(String systemPrompt, String userPrompt, Object... tools) {
+        ChatClientRequestSpec requestSpec = requireBuilder().build()
+                .prompt()
+                .system(systemPrompt)
+                .user(userPrompt)
+                .options(GoogleGenAiChatOptions.builder()
+                        .responseMimeType("text/plain"));
+
+        if (tools != null && tools.length > 0) {
+            requestSpec.tools(tools);
+        }
+
+        return requestSpec.stream().content();
     }
 
     private ChatClient.Builder requireBuilder() {
