@@ -6,6 +6,8 @@ import com.p5laris.proto.mission.v1.GetCurrentMissionRequest;
 import com.p5laris.proto.mission.v1.GetCurrentMissionResponse;
 import com.p5laris.proto.mission.v1.GetMissionDetailRequest;
 import com.p5laris.proto.mission.v1.GetMissionDetailResponse;
+import com.p5laris.proto.mission.v1.GetMissionTalkContextRequest;
+import com.p5laris.proto.mission.v1.GetMissionTalkContextResponse;
 import com.p5laris.proto.mission.v1.GetTodayMissionsRequest;
 import com.p5laris.proto.mission.v1.GetTodayMissionsResponse;
 import com.p5laris.proto.mission.v1.HealthStatus;
@@ -26,6 +28,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.server.service.GrpcService;
 import p5laris.mission.domain.application.MissionService;
+import p5laris.mission.domain.application.MissionTalkContextService;
 import p5laris.mission.domain.domain.enums.MissionFeedbackReaction;
 import p5laris.mission.domain.domain.enums.MissionFeedbackType;
 import p5laris.mission.domain.exception.MissionErrorCode;
@@ -41,6 +44,7 @@ public class MissionGrpcController extends MissionServiceGrpc.MissionServiceImpl
     private static final String INTERNAL_ERROR_DESCRIPTION = "미션 서비스 처리 중 오류가 발생했습니다.";
 
     private final MissionService missionService;
+    private final MissionTalkContextService missionTalkContextService;
 
     // mission gRPC 서버가 살아 있는지 확인하는 단순 헬스체크 메서드다.
     @Override
@@ -116,6 +120,26 @@ public class MissionGrpcController extends MissionServiceGrpc.MissionServiceImpl
             responseObserver.onError(toStatus(e).withDescription(safeDescription(e)).asRuntimeException());
         } catch (Exception e) {
             responseObserver.onError(internalError("미션 상세 조회", e));
+        }
+    }
+
+    // 별친구 대화 Tool Calling에서 사용할 미션/루틴/환경 context 조회 gRPC 엔드포인트다.
+    @Override
+    public void getMissionTalkContext(
+            GetMissionTalkContextRequest request,
+            StreamObserver<GetMissionTalkContextResponse> responseObserver
+    ) {
+        try {
+            GetMissionTalkContextResponse response = missionTalkContextService.getMissionTalkContext(
+                    request.getUserId()
+            );
+
+            responseObserver.onNext(response);
+            responseObserver.onCompleted();
+        } catch (MissionException e) {
+            responseObserver.onError(toStatus(e).withDescription(safeDescription(e)).asRuntimeException());
+        } catch (Exception e) {
+            responseObserver.onError(internalError("별친구 대화 미션 context 조회", e));
         }
     }
 
