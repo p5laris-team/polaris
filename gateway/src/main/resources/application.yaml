@@ -75,6 +75,11 @@ gateway:
       memory-limit: ${GATEWAY_CHARACTER_TALK_MEMORY_LIMIT:${AI_CHARACTER_TALK_MEMORY_LIMIT:5}}
     sse:
       timeout-ms: ${GATEWAY_CHARACTER_TALK_SSE_TIMEOUT_MS:30000}
+    daily-limit:
+      enabled: ${GATEWAY_CHARACTER_TALK_DAILY_LIMIT_ENABLED:true}
+      backend: ${GATEWAY_CHARACTER_TALK_DAILY_LIMIT_BACKEND:redis}
+      daily-limit: ${GATEWAY_CHARACTER_TALK_DAILY_LIMIT:20}
+      fail-closed: ${GATEWAY_CHARACTER_TALK_DAILY_LIMIT_FAIL_CLOSED:true}
 
 ad:
   banner:
