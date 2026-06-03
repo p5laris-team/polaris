@@ -17,6 +17,8 @@ service MissionService {
   rpc GetTodayMissions(GetTodayMissionsRequest) returns (GetTodayMissionsResponse);
   // 미션 상세와 완료 답변 전문, 만족도 피드백을 조회한다.
   rpc GetMissionDetail(GetMissionDetailRequest) returns (GetMissionDetailResponse);
+  // 별친구 대화 Tool Calling에서 사용할 미션/루틴/환경 context를 조회한다.
+  rpc GetMissionTalkContext(GetMissionTalkContextRequest) returns (GetMissionTalkContextResponse);
   // 다음 미션을 생성하거나 제안한다.
   rpc CreateNextMission(CreateNextMissionRequest) returns (CreateNextMissionResponse);
   // 현재 미션을 거절하고 다음 미션 요약을 반환한다.
@@ -85,6 +87,19 @@ message GetMissionDetailRequest {
 
 message GetMissionDetailResponse {
   MissionDetail mission = 1;
+}
+
+message GetMissionTalkContextRequest {
+  int64 user_id = 1;
+}
+
+message GetMissionTalkContextResponse {
+  // 오늘 제안/완료/거절된 미션 요약 JSON이다.
+  string today_mission_context_json = 1;
+  // 최근 미션, 완료 답변 미리보기, 피드백, 개인화 메모리 요약 JSON이다.
+  string recent_routine_context_json = 2;
+  // 시간대, 위치, 날씨 정책과 날씨 snapshot 요약 JSON이다.
+  string environment_context_json = 3;
 }
 
 message CreateNextMissionRequest {

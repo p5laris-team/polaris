@@ -117,6 +117,7 @@ ai:
   character-talk:
     max-user-message-length: ${AI_CHARACTER_TALK_MAX_USER_MESSAGE_LENGTH:300}
     max-reply-length: ${AI_CHARACTER_TALK_MAX_REPLY_LENGTH:350}
+    tool-deadline-ms: ${AI_CHARACTER_TALK_TOOL_DEADLINE_MS:2500}
 
 management:
   endpoints:

@@ -18,4 +18,8 @@ public interface AiChatClient {
     default Flux<String> streamPlainText(String systemPrompt, String userPrompt) {
         return stream(systemPrompt, userPrompt);
     }
+
+    default Flux<String> streamPlainTextWithTools(String systemPrompt, String userPrompt, Object... tools) {
+        return streamPlainText(systemPrompt, userPrompt);
+    }
 }
