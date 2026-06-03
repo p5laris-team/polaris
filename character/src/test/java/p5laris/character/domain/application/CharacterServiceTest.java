@@ -14,13 +14,19 @@ import org.springframework.context.ApplicationEventPublisher;
 import p5laris.character.domain.application.dto.CareActionResponse;
 import p5laris.character.domain.domain.entity.CharacterCareLog;
 import p5laris.character.domain.domain.entity.CharacterExpLog;
+import p5laris.character.domain.domain.entity.CharacterStoryFragment;
 import p5laris.character.domain.domain.entity.UserCharacter;
+import p5laris.character.domain.domain.entity.UserCharacterStoryUnlock;
 import p5laris.character.domain.domain.enums.ActionType;
 import p5laris.character.domain.domain.enums.CharacterExpSourceType;
+import p5laris.character.domain.domain.enums.CharacterStoryFragmentType;
+import p5laris.character.domain.domain.enums.CharacterStoryTriggerType;
 import p5laris.character.domain.domain.repository.CharacterAssetRepository;
 import p5laris.character.domain.domain.repository.CharacterCareLogRepository;
 import p5laris.character.domain.domain.repository.CharacterExpLogRepository;
+import p5laris.character.domain.domain.repository.CharacterStoryFragmentRepository;
 import p5laris.character.domain.domain.repository.CharacterTypeRepository;
+import p5laris.character.domain.domain.repository.UserCharacterStoryUnlockRepository;
 import p5laris.character.domain.domain.repository.UserCharacterRepository;
 import p5laris.character.domain.exception.CharacterErrorCode;
 import p5laris.character.domain.exception.CharacterException;
@@ -56,6 +62,12 @@ class CharacterServiceTest {
 
     @Mock
     private CharacterExpLogRepository characterExpLogRepository;
+
+    @Mock
+    private CharacterStoryFragmentRepository characterStoryFragmentRepository;
+
+    @Mock
+    private UserCharacterStoryUnlockRepository userCharacterStoryUnlockRepository;
 
     @Mock
     private S3StorageService s3StorageService;
@@ -101,6 +113,153 @@ class CharacterServiceTest {
                 .affection(50)
                 .active(true)
                 .build();
+        org.springframework.test.util.ReflectionTestUtils.setField(character, "id", 1L);
+    }
+
+    @Test
+    @DisplayName("캐릭터 상호작용 - 처음 보는 LORE 조각이면 해금 저장 후 반환")
+    void interactWithCharacter_newLore_unlocksMemory() {
+        CharacterStoryFragment common = storyFragment(
+                10L,
+                "NOVA",
+                1,
+                CharacterStoryFragmentType.COMMON,
+                CharacterStoryTriggerType.TAP,
+                "nova_lv1_common_001"
+        );
+        CharacterStoryFragment lore = storyFragment(
+                11L,
+                "NOVA",
+                1,
+                CharacterStoryFragmentType.LORE,
+                CharacterStoryTriggerType.TAP,
+                "nova_lv1_lore_001"
+        );
+
+        when(userCharacterRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(character));
+        when(characterStoryFragmentRepository
+                .findByActiveTrueAndCharacterTypeCodeInAndTriggerTypeAndMinLevelLessThanEqualOrderBySortOrderAscIdAsc(
+                        anyList(),
+                        eq(CharacterStoryTriggerType.TAP),
+                        eq(1)
+                ))
+                .thenReturn(List.of(common, lore));
+        when(userCharacterStoryUnlockRepository.findByUserIdAndUserCharacterIdAndStoryFragmentIdIn(
+                eq(1L),
+                eq(1L),
+                anyCollection()
+        )).thenReturn(List.of());
+
+        var response = characterService.interactWithCharacter(1L, 1L, "TAP");
+
+        assertEquals("LORE", response.fragmentType());
+        assertEquals("NOVA", response.characterTypeCode());
+        assertTrue(response.memoryUnlocked());
+        assertFalse(response.alreadyUnlocked());
+        assertNotNull(response.memory());
+        assertEquals("nova_lv1_lore_001", response.memory().memoryKey());
+        verify(userCharacterStoryUnlockRepository).save(any(UserCharacterStoryUnlock.class));
+    }
+
+    @Test
+    @DisplayName("캐릭터 상호작용 - COMMON 조각은 대사로 반환하지만 해금 저장하지 않음")
+    void interactWithCharacter_commonFragment_doesNotSaveUnlock() {
+        CharacterStoryFragment common = storyFragment(
+                10L,
+                "NOVA",
+                1,
+                CharacterStoryFragmentType.COMMON,
+                CharacterStoryTriggerType.TAP,
+                "nova_lv1_common_001"
+        );
+
+        when(userCharacterRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(character));
+        when(characterStoryFragmentRepository
+                .findByActiveTrueAndCharacterTypeCodeInAndTriggerTypeAndMinLevelLessThanEqualOrderBySortOrderAscIdAsc(
+                        anyList(),
+                        eq(CharacterStoryTriggerType.TAP),
+                        eq(1)
+                ))
+                .thenReturn(List.of(common));
+
+        var response = characterService.interactWithCharacter(1L, 1L, "TAP");
+
+        assertEquals("COMMON", response.fragmentType());
+        assertFalse(response.memoryUnlocked());
+        assertFalse(response.alreadyUnlocked());
+        assertNull(response.memory());
+        verifyNoInteractions(userCharacterStoryUnlockRepository);
+    }
+
+    @Test
+    @DisplayName("캐릭터 상호작용 - 이미 해금한 LORE 조각은 중복 저장하지 않음")
+    void interactWithCharacter_alreadyUnlockedLore_reusesMemory() {
+        CharacterStoryFragment lore = storyFragment(
+                11L,
+                "NOVA",
+                1,
+                CharacterStoryFragmentType.LORE,
+                CharacterStoryTriggerType.TAP,
+                "nova_lv1_lore_001"
+        );
+        UserCharacterStoryUnlock unlock = UserCharacterStoryUnlock.builder()
+                .userId(1L)
+                .userCharacterId(1L)
+                .storyFragmentId(11L)
+                .memoryKey("nova_lv1_lore_001")
+                .unlockedLevel(1)
+                .build();
+
+        when(userCharacterRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(character));
+        when(characterStoryFragmentRepository
+                .findByActiveTrueAndCharacterTypeCodeInAndTriggerTypeAndMinLevelLessThanEqualOrderBySortOrderAscIdAsc(
+                        anyList(),
+                        eq(CharacterStoryTriggerType.TAP),
+                        eq(1)
+                ))
+                .thenReturn(List.of(lore));
+        when(userCharacterStoryUnlockRepository.findByUserIdAndUserCharacterIdAndStoryFragmentIdIn(
+                eq(1L),
+                eq(1L),
+                anyCollection()
+        )).thenReturn(List.of(unlock));
+
+        var response = characterService.interactWithCharacter(1L, 1L, "TAP");
+
+        assertEquals("LORE", response.fragmentType());
+        assertFalse(response.memoryUnlocked());
+        assertTrue(response.alreadyUnlocked());
+        assertNotNull(response.memory());
+        verify(userCharacterStoryUnlockRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("캐릭터 상호작용 - 현재 레벨보다 높은 조각은 방어적으로 제외")
+    void interactWithCharacter_higherLevelFragment_returnsFallback() {
+        CharacterStoryFragment highLevelLore = storyFragment(
+                20L,
+                "NOVA",
+                2,
+                CharacterStoryFragmentType.LORE,
+                CharacterStoryTriggerType.TAP,
+                "nova_lv2_lore_001"
+        );
+
+        when(userCharacterRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(character));
+        when(characterStoryFragmentRepository
+                .findByActiveTrueAndCharacterTypeCodeInAndTriggerTypeAndMinLevelLessThanEqualOrderBySortOrderAscIdAsc(
+                        anyList(),
+                        eq(CharacterStoryTriggerType.TAP),
+                        eq(1)
+                ))
+                .thenReturn(List.of(highLevelLore));
+
+        var response = characterService.interactWithCharacter(1L, 1L, "TAP");
+
+        assertEquals("COMMON", response.fragmentType());
+        assertEquals("TAP", response.triggerType());
+        assertNull(response.memory());
+        verifyNoInteractions(userCharacterStoryUnlockRepository);
     }
 
     @Test
@@ -657,6 +816,31 @@ class CharacterServiceTest {
                 .afterStateJson("{\"fullness\":80,\"energy\":50,\"affection\":50,\"expGained\":" + expGained + "}")
                 .idempotencyKey(idempotencyKey)
                 .build();
+    }
+
+    private CharacterStoryFragment storyFragment(
+            Long id,
+            String characterTypeCode,
+            int minLevel,
+            CharacterStoryFragmentType fragmentType,
+            CharacterStoryTriggerType triggerType,
+            String memoryKey
+    ) {
+        CharacterStoryFragment fragment = CharacterStoryFragment.builder()
+                .memoryKey(memoryKey)
+                .characterTypeCode(characterTypeCode)
+                .minLevel(minLevel)
+                .fragmentType(fragmentType)
+                .triggerType(triggerType)
+                .title("기억 조각")
+                .message("작은 빛도 남겨둘게.")
+                .interpretation("별친구가 오늘의 작은 기록을 지켜주는 것 같아요.")
+                .storyText("오늘의 작은 기록은 별친구의 기억 조각 안에 조용히 남았습니다.")
+                .sortOrder(1)
+                .active(true)
+                .build();
+        org.springframework.test.util.ReflectionTestUtils.setField(fragment, "id", id);
+        return fragment;
     }
 
     private StatusRuntimeException statusException(String description) {
