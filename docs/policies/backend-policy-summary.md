@@ -1,6 +1,6 @@
 # 백엔드 개발자용 정책 정리
 
-> 기준일: 2026-06-01
+> 기준일: 2026-06-04
 > 이 문서는 현재 `polaris` 백엔드 구현 기준으로 작성한다. 상세 API 계약은 `docs/sa-docs/01-API-spec.md`, 실제 테이블 구조는 `docs/sa-docs/02_ERD_Data_Model.md`를 따른다.
 
 ---
@@ -73,7 +73,61 @@
 
 ---
 
-## 5. 온보딩 설문 정책
+## 5. 캐릭터 성장 / 서사 / 대화 정책
+
+### 성장 단계
+
+| 레벨 | 누적 경험치 | 성장 단계 |
+| --- | ---: | --- |
+| Lv.1 | 0~199 | BABY |
+| Lv.2 | 200~599 | GROWING |
+| Lv.3 | 600 이상 | MATURE |
+
+- 현재 최대 레벨은 3이다.
+- 성장 계산은 `CharacterGrowthPolicy`를 기준으로 한다.
+- 성장 응답은 `level`, `exp`, `currentLevelExp`, `nextLevelExp`, `expToNextLevel`, `progressPercent`, `growthStage`, `growthStageLabel`, `maxLevel`을 포함한다.
+- 레벨별 신규 외형 진화는 하지 않고, 성장 단계와 기억 조각 해금으로 성장감을 만든다.
+
+### 경험치 지급
+
+| 출처 | 기준 | 경험치 |
+| --- | --- | ---: |
+| 돌봄 FEED | 하루 3회까지 | +5 |
+| 돌봄 SLEEP | 하루 3회까지 | +5 |
+| 돌봄 PLAY | 하루 3회까지 | +5 |
+| 미션 EASY 완료 | 완료 답변 저장 후 | +10 |
+| 미션 NORMAL 완료 | 완료 답변 저장 후 | +15 |
+| 미션 CHALLENGE 완료 | 완료 답변 저장 후 | +30 |
+
+- 돌봄 자체는 하루 3회 이후에도 가능하지만, 같은 액션의 4번째 이후 `expGained`는 0이다.
+- 하루 돌봄 경험치 최대치는 45다.
+- 아이템 사용 실패 시 돌봄 상태 변경과 경험치 지급은 함께 실패한다.
+- 미션 완료 경험치 지급 실패는 미션 완료 실패가 아니며, `mission_outbox_events` 재처리 대상이다.
+- `character_exp_logs`는 `idempotency_key`와 `(source_type, source_id)`로 중복 경험치 지급을 막는다.
+
+### 서사 해금
+
+- 캐릭터 서사는 `character_story_fragments`를 기준으로 한다.
+- 조각 유형은 `COMMON`, `LORE`, `EASTER_EGG`다.
+- 트리거는 `TAP`, `LEVEL_UP`, `LOW_HUNGER`, `LOW_ENERGY`, `LOW_AFFECTION`, `NIGHT`, `MIDNIGHT`다.
+- `LORE`, `EASTER_EGG` 조각이 해금되면 `user_character_story_unlocks`에 기록한다.
+- 이미 해금된 조각은 다시 해금하지 않는다.
+- 상호작용 응답의 `memoryUnlocked`, `alreadyUnlocked`, `memory`를 기준으로 프론트가 해금 UI를 결정한다.
+
+### 별친구 대화
+
+- 별친구 대화는 `POST /api/character/v1/characters/{characterId}/talk/stream` SSE로 제공한다.
+- gateway는 character 모듈에서 캐릭터 상태, 성장 상태, 최근 해금 기억을 조회한 뒤 ai 모듈의 `StreamCharacterTalk` gRPC를 호출한다.
+- ai 모듈은 provider streaming 응답을 `DELTA`/`DONE`/`ERROR` 이벤트로 반환한다.
+- AI는 Spring AI Tool Calling으로 캐릭터 상태, 오늘 미션, 최근 루틴, 시간대/날씨 context를 조회한다.
+- Tool 호출 실패는 대화 전체 실패로 보지 않고, 해당 context를 사용할 수 없는 상태로 처리한다.
+- provider 오류, timeout, 출력 검증 실패는 캐릭터별 fallback 문장으로 응답한다.
+- 대화 원문은 저장하지 않는다.
+- gateway SSE timeout, AI gRPC deadline, prompt에 넣는 기억 조각 수는 환경변수로 조절한다.
+
+---
+
+## 6. 온보딩 설문 정책
 
 - 온보딩 응답은 `onboarding_profiles`에 저장한다.
 - 설문 결과는 미션 후보 생성, RAG 검색 context, AI 문구 생성 context로 사용한다.
@@ -83,7 +137,7 @@
 
 ---
 
-## 6. 미션 제공 정책
+## 7. 미션 제공 정책
 
 - 미션은 사용자에게 한 번에 하나의 현재 미션으로 제공한다.
 - 오늘 제안된 미션은 `user_missions.stack_order`로 stack을 관리한다.
@@ -112,7 +166,7 @@
 
 ---
 
-## 7. 미션 상태 / 완료 정책
+## 8. 미션 상태 / 완료 정책
 
 | 상태 | 의미 |
 | --- | --- |
@@ -136,7 +190,7 @@
 
 ---
 
-## 8. 별조각 정책
+## 9. 별조각 정책
 
 ### 획득처
 
@@ -157,11 +211,11 @@
 
 - 별조각 증감은 반드시 `star_piece_transactions`에 기록한다.
 - 아이템 구매 실패 시 별조각은 차감하지 않는다.
-- 결제 또는 현금 구매를 통한 별조각 지급은 MVP 범위에 없다.
+- 결제 또는 현금 구매를 통한 별조각 지급은 현재 운영 범위에 없다.
 
 ---
 
-## 9. 아이템 정책
+## 10. 아이템 정책
 
 | 구분 | 정책 |
 | --- | --- |
@@ -181,7 +235,7 @@
 
 ---
 
-## 10. 공유 카드 / 공유 보상 정책
+## 11. 공유 카드 / 공유 보상 정책
 
 ### 공유 카드 생성
 
@@ -198,7 +252,7 @@
 - 공유 보상 요청은 `character_outbox_events`에 `event_type='SHARE_REWARD_REQUESTED'`, `payload jsonb` 형식으로 저장한다.
 - 공유 보상은 사용자별 하루 1회만 `reward_paid=true`가 될 수 있다.
 - wallet 적립은 character 트랜잭션 커밋 후 즉시 시도한다. 즉시 지급 실패 시 API는 빠르게 실패하고, outbox 스케줄러가 `next_attempt_at`, `attempt_count` 기준으로 재처리한다.
-- 실제 외부 SNS 게시 여부는 MVP에서 검증하지 않는다.
+- 실제 외부 SNS 게시 여부는 현재 검증하지 않는다.
 
 ### 공유 유입
 
@@ -207,7 +261,7 @@
 
 ---
 
-## 11. 알림 정책
+## 12. 알림 정책
 
 ### 앱 내부 알림
 
@@ -236,7 +290,7 @@
 
 ---
 
-## 12. 이벤트 로그 정책
+## 13. 이벤트 로그 정책
 
 - 운영 분석과 디버깅용 이벤트는 `event_logs`에 저장한다.
 - `event_id`는 멱등 처리를 위한 UUID다.
@@ -244,14 +298,4 @@
 - 이벤트 상세 속성은 `properties_json`, 발생 환경은 `context_json`에 저장한다.
 - 실제 발생 시각은 `occurred_at`, DB 저장 시각은 `created_at`으로 분리한다.
 
----
 
-## 13. MVP 제외 / 이후 확장
-
-- 별조각 현금 구매
-- 결제 테이블 및 PG 연동
-- 업적 보상 지급
-- 광고 API 및 광고 보상
-- `mission_interactions` 분석 테이블
-- 공유 클릭 전용 DB 테이블
-- 이메일/비밀번호 로그인

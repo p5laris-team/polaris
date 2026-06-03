@@ -1,6 +1,6 @@
 # 02_ERD_Data_Model
 
-> 기준일: 2026-06-01
+> 기준일: 2026-06-04
 > 이 문서는 현재 backend migration 기준으로 정리한다. API 응답에서 URL로 조립되는 값이 있더라도 DB에는 식별자, asset key, object key를 우선 저장한다.
 
 ---
@@ -35,7 +35,7 @@ index(created_at)
 ### 비고
 
 ```
-MVP에서는 사용자 프로필 상세값을 users에 모두 넣지 않는다.
+현재는 사용자 프로필 상세값을 users에 모두 넣지 않는다.
 온보딩 설문 기반 개인화 데이터는 onboarding_profiles에서 관리한다.
 별조각 잔액은 wallets에서 관리한다.
 ```
@@ -46,7 +46,7 @@ MVP에서는 사용자 프로필 상세값을 users에 모두 넣지 않는다.
 
 캐릭터가 선택지형 설문으로 수집한 초기 개인화 데이터를 저장한다.
 
-MVP에서는 질문 마스터 테이블을 만들지 않고, 정해진 설문 결과를 하나의 프로필 테이블에 저장한다. 질문지를 동적으로 운영하는 기능은 MVP 범위가 아니므로 `survey_questions` 같은 테이블은 만들지 않는다.
+현재는 질문 마스터 테이블을 만들지 않고, 정해진 설문 결과를 하나의 프로필 테이블에 저장한다. 질문지를 동적으로 운영하는 기능은 현재 운영 범위가 아니므로 `survey_questions` 같은 테이블은 만들지 않는다.
 
 | 컬럼 | 타입 | 설명 |
 | --- | --- | --- |
@@ -123,7 +123,7 @@ index(completed)
 
 ## 1.3 `character_types`
 
-MVP에서 제공하는 캐릭터 3종의 기본 정보를 저장한다.
+현재 제공하는 캐릭터 3종의 기본 정보를 저장한다.
 
 캐릭터는 담당 기능이 다른 존재가 아니라, 성격·말투·정서가 다른 애착형 페르소나다.
 
@@ -142,7 +142,7 @@ MVP에서 제공하는 캐릭터 3종의 기본 정보를 저장한다.
 | created_at | timestamp | 생성일 |
 | updated_at | timestamp | 수정일 |
 
-### MVP seed
+### 현재 seed
 
 | code | name | summary |
 | --- | --- | --- |
@@ -193,7 +193,7 @@ index(item_id, character_type_id)
 
 사용자가 생성한 캐릭터를 저장한다.
 
-MVP에서는 사용자가 활성 캐릭터 1개를 키우는 구조로 시작한다.
+현재는 사용자가 활성 캐릭터 1개를 키우는 구조로 시작한다.
 
 | 컬럼 | 타입          | 설명                     |
 | --- |-------------|------------------------|
@@ -258,7 +258,7 @@ partial unique(user_id) where active = true
 | idempotency_key | varchar unique | 돌봄 액션 중복 처리 방지 키 |
 | created_at | timestamp       | 생성일 |
 
-### MVP 돌봄 액션
+### 현재 돌봄 액션
 
 | action_type | 설명 |
 | --- | --- |
@@ -276,7 +276,99 @@ index(character_id, created_at)
 
 ---
 
-## 1.5.1 `share_cards`
+## 1.5.1 `character_exp_logs`
+
+캐릭터 경험치 지급 이력을 저장한다. 돌봄, 미션 완료, 재처리 요청이 같은 출처로 여러 번 들어와도 중복 경험치를 지급하지 않기 위한 멱등성 저장소다.
+
+| 컬럼 | 타입 | 설명 |
+| --- | --- | --- |
+| id | bigint PK | 경험치 로그 ID |
+| user_id | bigint | 사용자 ID |
+| character_id | bigint | 사용자 캐릭터 ID |
+| source_type | varchar(50) | 경험치 출처. 예: `CARE`, `MISSION_COMPLETION` |
+| source_id | bigint | 출처 도메인의 ID |
+| idempotency_key | varchar(120) unique | 경험치 지급 멱등키 |
+| exp_amount | int | 지급 경험치 |
+| before_exp | int | 지급 전 누적 경험치 |
+| after_exp | int | 지급 후 누적 경험치 |
+| before_level | int | 지급 전 레벨 |
+| after_level | int | 지급 후 레벨 |
+| created_at | timestamp | 생성일 |
+
+### 제약 / 인덱스
+
+```
+unique(idempotency_key)
+unique(source_type, source_id)
+check(exp_amount > 0)
+check(before_exp >= 0)
+check(after_exp >= 0)
+check(before_level >= 1)
+check(after_level >= 1)
+index(character_id, created_at)
+index(user_id, created_at)
+```
+
+---
+
+## 1.5.2 `character_story_fragments`
+
+캐릭터 상호작용과 별친구 대화 context에 사용할 서사 조각 seed를 저장한다.
+
+| 컬럼 | 타입 | 설명 |
+| --- | --- | --- |
+| id | bigint PK | 서사 조각 ID |
+| memory_key | varchar(120) unique | 프론트/해금 기록에서 사용하는 기억 조각 key |
+| character_type_code | varchar(30) | `MUMU`, `NOVA`, `JJORY`, `COMMON` |
+| min_level | int | 노출 가능한 최소 캐릭터 레벨 |
+| fragment_type | varchar(30) | `COMMON`, `LORE`, `EASTER_EGG` |
+| trigger_type | varchar(30) | `TAP`, `LEVEL_UP`, `LOW_HUNGER`, `LOW_ENERGY`, `LOW_AFFECTION`, `NIGHT`, `MIDNIGHT` |
+| title | varchar(80) | 기억 조각 제목 |
+| message | varchar(255) | 캐릭터 원문 대사 |
+| interpretation | varchar(500) | 화면 표시용 해석/보조 문장 |
+| story_text | text | 기억 조각 본문 |
+| sort_order | int | 정렬 순서 |
+| active | boolean | 사용 여부 |
+| created_at | timestamp | 생성일 |
+| updated_at | timestamp | 수정일 |
+
+### 제약 / 인덱스
+
+```
+unique(memory_key)
+check(character_type_code in ('MUMU', 'NOVA', 'JJORY', 'COMMON'))
+check(fragment_type in ('COMMON', 'LORE', 'EASTER_EGG'))
+check(trigger_type in ('TAP', 'LEVEL_UP', 'LOW_HUNGER', 'LOW_ENERGY', 'LOW_AFFECTION', 'NIGHT', 'MIDNIGHT'))
+index(character_type_code, trigger_type, min_level, active)
+```
+
+---
+
+## 1.5.3 `user_character_story_unlocks`
+
+사용자 캐릭터별로 해금된 LORE/EASTER_EGG 기억 조각을 저장한다.
+
+| 컬럼 | 타입 | 설명 |
+| --- | --- | --- |
+| id | bigint PK | 해금 ID |
+| user_id | bigint | 사용자 ID |
+| user_character_id | bigint FK | 사용자 캐릭터 ID |
+| story_fragment_id | bigint FK | 해금된 `character_story_fragments.id` |
+| memory_key | varchar(120) | 해금된 기억 조각 key |
+| unlocked_level | int | 해금 당시 캐릭터 레벨 |
+| unlocked_at | timestamp | 해금 시각 |
+| created_at | timestamp | 생성일 |
+
+### 제약 / 인덱스
+
+```
+unique(user_id, user_character_id, story_fragment_id)
+index(user_id, user_character_id, unlocked_at)
+```
+
+---
+
+## 1.5.4 `share_cards`
 
 내 캐릭터 공유 카드의 발급 이력을 저장한다.
 
@@ -314,7 +406,7 @@ HAVING COUNT(*) > 1;
 
 ---
 
-## 1.5.2 `share_logs`
+## 1.5.5 `share_logs`
 
 사용자의 공유 시도 이벤트 및 일일 1회 보상 수령 여부를 관리한다.
 
@@ -349,7 +441,7 @@ partial unique(user_id, share_date) where reward_paid = true
 
 ---
 
-## 1.5.3 `character_outbox_events`
+## 1.5.6 `character_outbox_events`
 
 character 모듈에서 외부 모듈 호출 또는 향후 Kafka 발행이 필요한 이벤트를 저장하는 공용 outbox 테이블이다.
 현재 공유 보상 지급 요청은 `SHARE_REWARD_REQUESTED` 이벤트로 저장하고, user wallet gRPC 지급 실패 시 스케줄러가 재처리한다.
@@ -413,9 +505,9 @@ check(star_piece >= 0)
 ### 비고
 
 ```
-별조각은 MVP에서 무료 재화다.
+별조각은 현재 무료 재화다.
 별조각은 미션 완료, 출석, 업적, SNS 공유 보상으로 획득한다.
-별조각 구매 기능은 MVP에서 구현하지 않는다.
+별조각 구매 기능은 현재 구현하지 않는다.
 Mock 구매, Mock 지급, 테스트용 결제 버튼도 만들지 않는다.
 ```
 
@@ -448,7 +540,7 @@ Mock 구매, Mock 지급, 테스트용 결제 버튼도 만들지 않는다.
 | MISSION_REWARD | 미션 완료 보상 |
 | ITEM_PURCHASE | 아이템 구매 |
 | ATTENDANCE | 출석 보상 |
-| ACHIEVEMENT | 업적 보상 (MVP 이후) |
+| ACHIEVEMENT | 업적 보상 (후속 확장) |
 | SHARE_REWARD | SNS 공유 시도 보상 |
 | CARE_ACTION | 캐릭터 돌봄 액션 별조각 사용 |
 
@@ -475,7 +567,7 @@ index(ref_type, ref_id)
 ### 비고
 
 ```
-MOCK_PURCHASE, PAYMENT_CHARGE, CASH_PURCHASE 같은 reason은 MVP enum에 넣지 않는다.
+MOCK_PURCHASE, PAYMENT_CHARGE, CASH_PURCHASE 같은 reason은 현재 enum에 넣지 않는다.
 결제 기능이 실제로 필요한 시점에 별도 migration과 정책 검토 후 추가한다.
 ```
 
@@ -508,7 +600,7 @@ AI가 사용할 수 없는 응답을 반환하거나 외부 provider가 실패�
 index(active, category, difficulty)
 ```
 
-### MVP seed 예시
+### 현재 seed 예시
 
 | category | base_title | reward_star_piece |
 | --- | --- | --- |
@@ -840,7 +932,7 @@ index(user_id, status)
 
 ---
 
-## 1.13 `mission_interactions` → MVP 이후
+## 1.13 `mission_interactions` → 후속 확장
 
 미션 조회, 거절, 완료 등 사용자 반응 데이터를 저장한다.
 
@@ -855,7 +947,7 @@ index(user_id, status)
 | metadata_json | jsonb nullable | 날씨, 시간대, 캐릭터 상태 등 추가 context |
 | created_at | timestamp | 생성일 |
 
-현재 migration에는 포함하지 않았다. 조회/거절/완료 이벤트를 별도 분석 테이블로 쌓아야 할 때 MVP 이후 확장한다.
+현재 migration에는 포함하지 않았다. 조회/거절/완료 이벤트를 별도 분석 테이블로 쌓아야 할 때 후속 확장한다.
 
 ### 제약 / 인덱스
 
@@ -981,7 +1073,7 @@ character 모듈이 돌봄 액션(FEED / SLEEP / PLAY) 수행 시 item 모듈의
 | user_id | bigint | 사용자 ID |
 | user_item_id | bigint FK | 사용된 보유 아이템 ID (`user_items.id` 참조) |
 | item_id | bigint FK | 사용된 아이템 ID (`items.id` 참조, 편의 컬럼) |
-| quantity | int | 사용 수량 (MVP = 1) |
+| quantity | int | 사용 수량 (현재 = 1) |
 | ref_type | varchar(50) | 사용 컨텍스트 (예: `CARE_ACTION`) |
 | ref_id | bigint | 컨텍스트 PK (예: `character_care_logs.id`) |
 | idempotency_key | varchar(100) unique nullable | 중복 사용 방지 멱등키 |
@@ -1043,7 +1135,7 @@ index(user_item_id)
 ---
 
 
-## 1.17 `achievements`  → MVP 이후
+## 1.17 `achievements`  → 후속 확장
 
 업적 마스터를 저장한다.
 
@@ -1070,7 +1162,7 @@ index(active, achievement_type)
 
 ---
 
-## 1.18 `user_achievements` → MVP 이후
+## 1.18 `user_achievements` → 후속 확장
 
 사용자별 업적 진행도를 저장한다.
 
@@ -1100,7 +1192,7 @@ index(user_id, reward_claimed)
 
 ```
 reset_cycle이 NONE이면 period_key는 'NONE' 또는 null 정책 중 하나로 통일한다.
-MVP에서는 'NONE' 문자열을 추천한다.
+현재는 'NONE' 문자열을 추천한다.
 ```
 
 ---
