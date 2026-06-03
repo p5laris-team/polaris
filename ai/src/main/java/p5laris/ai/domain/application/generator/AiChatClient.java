@@ -1,5 +1,7 @@
 package p5laris.ai.domain.application.generator;
 
+import reactor.core.publisher.Flux;
+
 /**
  * Spring AI ChatClient를 직접 application service에 노출하지 않기 위한 작은 포트다.
  *
@@ -8,4 +10,12 @@ package p5laris.ai.domain.application.generator;
 public interface AiChatClient {
 
     String call(String systemPrompt, String userPrompt);
+
+    default Flux<String> stream(String systemPrompt, String userPrompt) {
+        return Flux.just(call(systemPrompt, userPrompt));
+    }
+
+    default Flux<String> streamPlainText(String systemPrompt, String userPrompt) {
+        return stream(systemPrompt, userPrompt);
+    }
 }

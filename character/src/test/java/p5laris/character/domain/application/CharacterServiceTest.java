@@ -11,6 +11,7 @@ import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Pageable;
 import p5laris.character.domain.application.dto.CareActionResponse;
 import p5laris.character.domain.domain.entity.CharacterCareLog;
 import p5laris.character.domain.domain.entity.CharacterExpLog;
@@ -294,6 +295,62 @@ class CharacterServiceTest {
         assertEquals(200, response.growth().exp());
         assertEquals("GROWING", response.growth().growthStage());
         assertEquals(0, response.growth().progressPercent());
+    }
+
+    @Test
+    @DisplayName("별친구 대화 context 조회 - 상태, 성장, 최근 해금 기억을 반환")
+    void getCharacterTalkContext_returnsStatesGrowthAndRecentMemories() {
+        CharacterStoryFragment first = storyFragment(
+                11L,
+                "NOVA",
+                1,
+                CharacterStoryFragmentType.LORE,
+                CharacterStoryTriggerType.TAP,
+                "nova_lv1_lore_001"
+        );
+        CharacterStoryFragment second = storyFragment(
+                12L,
+                "NOVA",
+                1,
+                CharacterStoryFragmentType.EASTER_EGG,
+                CharacterStoryTriggerType.TAP,
+                "nova_lv1_easter_001"
+        );
+        UserCharacterStoryUnlock firstUnlock = UserCharacterStoryUnlock.builder()
+                .userId(1L)
+                .userCharacterId(1L)
+                .storyFragmentId(11L)
+                .memoryKey("nova_lv1_lore_001")
+                .unlockedLevel(1)
+                .build();
+        UserCharacterStoryUnlock secondUnlock = UserCharacterStoryUnlock.builder()
+                .userId(1L)
+                .userCharacterId(1L)
+                .storyFragmentId(12L)
+                .memoryKey("nova_lv1_easter_001")
+                .unlockedLevel(1)
+                .build();
+
+        when(userCharacterRepository.findById(1L)).thenReturn(Optional.of(character));
+        when(userCharacterStoryUnlockRepository.findByUserIdAndUserCharacterIdOrderByUnlockedAtDesc(
+                eq(1L),
+                eq(1L),
+                any(Pageable.class)
+        )).thenReturn(List.of(secondUnlock, firstUnlock));
+        when(characterStoryFragmentRepository.findAllById(List.of(12L, 11L)))
+                .thenReturn(List.of(first, second));
+
+        var response = characterService.getCharacterTalkContext(1L, 1L, 5);
+
+        assertEquals(1L, response.characterId());
+        assertEquals("NOVA", response.characterTypeCode());
+        assertEquals("Nova", response.characterName());
+        assertEquals(50, response.hunger().value());
+        assertNotNull(response.growth());
+        assertEquals(2, response.memories().size());
+        assertEquals("nova_lv1_easter_001", response.memories().get(0).memoryKey());
+        assertEquals("nova_lv1_lore_001", response.memories().get(1).memoryKey());
+        verify(characterStoryFragmentRepository).findAllById(List.of(12L, 11L));
     }
 
     @Test

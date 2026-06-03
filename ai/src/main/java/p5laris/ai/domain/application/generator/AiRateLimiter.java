@@ -11,5 +11,9 @@ import p5laris.ai.domain.domain.enums.AiProviderType;
  */
 public interface AiRateLimiter {
 
-    void checkAllowed(MissionTextGenerationCommand command, AiProviderType providerType, String model);
+    void checkAllowed(Long userId, AiProviderType providerType, String model);
+
+    default void checkAllowed(MissionTextGenerationCommand command, AiProviderType providerType, String model) {
+        checkAllowed(command.userId(), providerType, model);
+    }
 }

@@ -11,10 +11,12 @@ import io.grpc.StatusRuntimeException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.client.inject.GrpcClient;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import p5laris.character.domain.application.dto.CharacterAssetResponse;
 import p5laris.character.domain.application.dto.CharacterInteractionResponse;
+import p5laris.character.domain.application.dto.CharacterTalkContextResponse;
 import p5laris.character.domain.application.dto.CharacterTypeResponse;
 import p5laris.character.domain.application.dto.GrantCharacterExpResponse;
 import p5laris.character.domain.domain.entity.CharacterCareLog;
@@ -488,6 +490,29 @@ public class CharacterService {
     }
 
     @Transactional
+    public CharacterTalkContextResponse getCharacterTalkContext(Long characterId, Long userId, int memoryLimit) {
+        UserCharacter character = userCharacterRepository.findById(characterId)
+                .orElseThrow(() -> new CharacterException(CharacterErrorCode.CHARACTER_NOT_FOUND));
+
+        if (!character.getUserId().equals(userId)) {
+            throw new CharacterException(CharacterErrorCode.NOT_CHARACTER_OWNER);
+        }
+
+        character.calculateTimeBasedStatDecrease();
+
+        return CharacterTalkContextResponse.builder()
+                .characterId(character.getId())
+                .characterTypeCode(character.getCharacterType().getCode())
+                .characterName(character.getName())
+                .hunger(buildTalkStateDetail(character.getFullness(), StatType.FULLNESS))
+                .energy(buildTalkStateDetail(character.getEnergy(), StatType.ENERGY))
+                .affection(buildTalkStateDetail(character.getAffection(), StatType.AFFECTION))
+                .growth(buildGrowth(character))
+                .memories(findRecentUnlockedMemories(userId, characterId, memoryLimit))
+                .build();
+    }
+
+    @Transactional
     public p5laris.character.domain.application.dto.EquipSkinResponse equipSkin(
             Long characterId, Long userId, Long itemId) {
 
@@ -570,6 +595,53 @@ public class CharacterService {
                 .filter(fragment -> fragment.forCurrentLevel(level))
                 .sorted(storyFragmentPriority(characterTypeCode))
                 .toList();
+    }
+
+    private List<CharacterTalkContextResponse.Memory> findRecentUnlockedMemories(
+            Long userId,
+            Long characterId,
+            int requestedLimit
+    ) {
+        int limit = Math.max(0, Math.min(requestedLimit, 10));
+        if (limit == 0) {
+            return List.of();
+        }
+
+        List<UserCharacterStoryUnlock> unlocks = userCharacterStoryUnlockRepository
+                .findByUserIdAndUserCharacterIdOrderByUnlockedAtDesc(
+                        userId,
+                        characterId,
+                        PageRequest.of(0, limit)
+                );
+        if (unlocks.isEmpty()) {
+            return List.of();
+        }
+
+        List<Long> fragmentIds = unlocks.stream()
+                .map(UserCharacterStoryUnlock::getStoryFragmentId)
+                .toList();
+        Map<Long, CharacterStoryFragment> fragmentsById = new LinkedHashMap<>();
+        characterStoryFragmentRepository.findAllById(fragmentIds)
+                .forEach(fragment -> fragmentsById.put(fragment.getId(), fragment));
+
+        return unlocks.stream()
+                .map(unlock -> fragmentsById.get(unlock.getStoryFragmentId()))
+                .filter(fragment -> fragment != null)
+                .map(fragment -> CharacterTalkContextResponse.Memory.builder()
+                        .memoryKey(fragment.getMemoryKey())
+                        .title(fragment.getTitle())
+                        .storyText(fragment.getStoryText())
+                        .build())
+                .toList();
+    }
+
+    private CharacterTalkContextResponse.StateDetail buildTalkStateDetail(int value, StatType statType) {
+        var detail = buildStateDetail(value, statType);
+        return CharacterTalkContextResponse.StateDetail.builder()
+                .value(detail.value())
+                .label(detail.label())
+                .grade(detail.grade())
+                .build();
     }
 
     private Comparator<CharacterStoryFragment> storyFragmentPriority(String characterTypeCode) {

@@ -114,6 +114,9 @@ ai:
     slow-call-duration-ms: ${AI_CIRCUIT_BREAKER_SLOW_CALL_DURATION_MS}
     slow-call-rate-threshold: ${AI_CIRCUIT_BREAKER_SLOW_CALL_RATE_THRESHOLD}
     wait-duration-open-ms: ${AI_CIRCUIT_BREAKER_WAIT_DURATION_OPEN_MS}
+  character-talk:
+    max-user-message-length: ${AI_CHARACTER_TALK_MAX_USER_MESSAGE_LENGTH:300}
+    max-reply-length: ${AI_CHARACTER_TALK_MAX_REPLY_LENGTH:350}
 
 management:
   endpoints:

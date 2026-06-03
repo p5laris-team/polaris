@@ -1,6 +1,7 @@
 package p5laris.gateway.domain.character.api;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -101,6 +102,21 @@ public class CharacterController {
             @p5laris.gateway.global.auth.LoginUserId Long userId,
             @org.springframework.web.bind.annotation.RequestBody p5laris.gateway.domain.character.api.dto.CharacterInteractionRequest request) {
         return ApiResponse.success(characterGatewayService.interactWithCharacter(characterId, userId, request));
+    }
+
+    /**
+     * 별친구에게 말을 걸고 SSE로 답변을 조금씩 내려준다.
+     * POST /api/character/v1/characters/{characterId}/talk/stream
+     */
+    @org.springframework.web.bind.annotation.PostMapping(
+            value = "/v1/characters/{characterId}/talk/stream",
+            produces = MediaType.TEXT_EVENT_STREAM_VALUE
+    )
+    public org.springframework.web.servlet.mvc.method.annotation.SseEmitter streamCharacterTalk(
+            @org.springframework.web.bind.annotation.PathVariable Long characterId,
+            @p5laris.gateway.global.auth.LoginUserId Long userId,
+            @org.springframework.web.bind.annotation.RequestBody p5laris.gateway.domain.character.api.dto.CharacterTalkStreamRequest request) {
+        return characterGatewayService.streamCharacterTalk(characterId, userId, request);
     }
 
     /**

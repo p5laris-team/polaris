@@ -160,7 +160,7 @@ class DelegatingMissionTextGeneratorTest {
 
         @Override
         public void checkAllowed(
-                MissionTextGenerationCommand command,
+                Long userId,
                 AiProviderType providerType,
                 String model
         ) {
