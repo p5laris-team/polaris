@@ -292,6 +292,39 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
     }
 
     /**
+     * 별친구 대화 prompt에 넣을 캐릭터 context를 조회한다.
+     */
+    @Override
+    public void getCharacterTalkContext(GetCharacterTalkContextRequest request,
+                                        StreamObserver<GetCharacterTalkContextResponse> responseObserver) {
+        var result = characterService.getCharacterTalkContext(
+                request.getCharacterId(),
+                request.getUserId(),
+                request.getMemoryLimit()
+        );
+
+        GetCharacterTalkContextResponse response = GetCharacterTalkContextResponse.newBuilder()
+                .setCharacterId(result.characterId())
+                .setCharacterTypeCode(result.characterTypeCode())
+                .setCharacterName(result.characterName())
+                .setHunger(toProtoStateDetail(result.hunger()))
+                .setEnergy(toProtoStateDetail(result.energy()))
+                .setAffection(toProtoStateDetail(result.affection()))
+                .setGrowth(toProtoGrowth(result.growth()))
+                .addAllMemories(result.memories().stream()
+                        .map(memory -> CharacterStoryMemory.newBuilder()
+                                .setMemoryKey(memory.memoryKey())
+                                .setTitle(memory.title())
+                                .setStoryText(memory.storyText())
+                                .build())
+                        .toList())
+                .build();
+
+        responseObserver.onNext(response);
+        responseObserver.onCompleted();
+    }
+
+    /**
      * 캐릭터 스킨을 장착하거나 해제한다. (API 명세 4.8)
      */
     @Override
@@ -418,6 +451,20 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
                 .setMaxLevel(growth.maxLevel())
                 .build();
     }
+
+    private CharacterStateDetail toProtoStateDetail(
+            p5laris.character.domain.application.dto.CharacterTalkContextResponse.StateDetail stateDetail
+    ) {
+        if (stateDetail == null) {
+            return CharacterStateDetail.getDefaultInstance();
+        }
+        return CharacterStateDetail.newBuilder()
+                .setValue(stateDetail.value())
+                .setLabel(stateDetail.label())
+                .setGrade(stateDetail.grade())
+                .build();
+    }
+
     @Override
     public void getSharePresignedUrl(com.p5laris.proto.character.v1.GetSharePresignedUrlRequest request,
                                      io.grpc.stub.StreamObserver<com.p5laris.proto.character.v1.GetSharePresignedUrlResponse> responseObserver) {
