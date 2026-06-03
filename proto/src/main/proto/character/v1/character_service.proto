@@ -17,6 +17,7 @@ service CharacterService {
   rpc PerformCareAction(PerformCareActionRequest) returns (PerformCareActionResponse);
   rpc GrantCharacterExp(GrantCharacterExpRequest) returns (GrantCharacterExpResponse);
   rpc InteractWithCharacter(InteractWithCharacterRequest) returns (InteractWithCharacterResponse);
+  rpc GetCharacterTalkContext(GetCharacterTalkContextRequest) returns (GetCharacterTalkContextResponse);
   rpc EquipSkin(EquipSkinRequest) returns (EquipSkinResponse);
   rpc CreateShareCard(CreateShareCardRequest) returns (CreateShareCardResponse);
   rpc GetShareCard(GetShareCardRequest) returns (GetShareCardResponse);
@@ -228,6 +229,24 @@ message CharacterStoryMemory {
   string memory_key = 1;
   string title = 2;
   string story_text = 3;
+}
+
+// 별친구 대화 prompt에 넣을 캐릭터 상태/성장/해금 기억 context를 조회한다.
+message GetCharacterTalkContextRequest {
+  int64 user_id = 1;
+  int64 character_id = 2;
+  int32 memory_limit = 3;
+}
+
+message GetCharacterTalkContextResponse {
+  int64 character_id = 1;
+  string character_type_code = 2;
+  string character_name = 3;
+  CharacterStateDetail hunger = 4;
+  CharacterStateDetail energy = 5;
+  CharacterStateDetail affection = 6;
+  CharacterGrowth growth = 7;
+  repeated CharacterStoryMemory memories = 8;
 }
 
 // 캐릭터에 스킨 아이템을 장착한다.
