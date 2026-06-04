@@ -988,6 +988,155 @@ index(status, created_at)
 
 ---
 
+## 1.14.1 `character_talk_sessions`
+
+별친구 대화 세션을 저장한다. 세션은 멀티턴 대화 맥락, 실제 토큰 누적량, 장기 기억 변환 여부의 기준 단위다.
+
+| 컬럼 | 타입 | 설명 |
+| --- | --- | --- |
+| id | bigint PK | 내부 세션 ID |
+| session_id | varchar(80) unique | 클라이언트와 주고받는 대화 세션 ID |
+| user_id | bigint | 사용자 ID |
+| character_id | bigint | 사용자 캐릭터 ID |
+| character_type | varchar(30) | 캐릭터 타입 코드 |
+| status | varchar(30) | ACTIVE / EXPIRED / MEMORY_READY |
+| started_at | timestamp | 세션 시작 시각 |
+| last_message_at | timestamp | 마지막 메시지 시각 |
+| expires_at | timestamp | 활성 세션 만료 시각 |
+| message_count | int | 세션 내 저장 메시지 수 |
+| total_actual_prompt_tokens | int nullable | provider가 반환한 실제 prompt token 누적값 |
+| total_actual_completion_tokens | int nullable | provider가 반환한 실제 completion token 누적값 |
+| total_actual_tokens | int nullable | provider가 반환한 실제 total token 누적값 |
+| summary_created_at | timestamp nullable | 세션 요약 memory 생성 시각 |
+| created_at | timestamp | 생성일 |
+| updated_at | timestamp | 수정일 |
+
+### 제약 / 인덱스
+
+```
+unique(session_id)
+check(status in ('ACTIVE', 'EXPIRED', 'MEMORY_READY'))
+check(message_count >= 0)
+check(total_actual_prompt_tokens >= 0)
+check(total_actual_completion_tokens >= 0)
+check(total_actual_tokens >= 0)
+index(user_id, character_id, expires_at desc)
+index(status, expires_at, id)
+```
+
+### 정책
+
+```
+세션은 사용자 + 캐릭터 단위로 격리한다.
+session_id가 유효한 ACTIVE 세션이면 같은 맥락을 이어간다.
+세션 TTL은 마지막 메시지 기준 30분이다.
+provider가 실제 usage metadata를 내려준 경우에만 actual token 컬럼을 누적한다.
+추정 token 값은 저장하지 않는다.
+```
+
+---
+
+## 1.14.2 `character_talk_messages`
+
+별친구 대화 세션 안의 사용자/assistant 메시지를 저장한다. 최근 N턴 prompt window를 만들기 위한 단기 원문 저장소다.
+
+| 컬럼 | 타입 | 설명 |
+| --- | --- | --- |
+| id | bigint PK | 메시지 ID |
+| session_id | bigint FK | `character_talk_sessions.id` |
+| user_id | bigint | 사용자 ID |
+| character_id | bigint | 사용자 캐릭터 ID |
+| role | varchar(20) | USER / ASSISTANT |
+| content | text | 메시지 원문 |
+| sequence | int | 세션 내 메시지 순번 |
+| request_id | varchar(120) | 요청 추적 ID |
+| fallback_used | boolean | assistant 응답이 fallback인지 여부 |
+| created_at | timestamp | 생성일 |
+
+### 제약 / 인덱스
+
+```
+foreign key(session_id) references character_talk_sessions(id) on delete cascade
+unique(session_id, sequence)
+check(role in ('USER', 'ASSISTANT'))
+check(sequence > 0)
+index(session_id, sequence)
+index(created_at)
+```
+
+### 정책
+
+```
+prompt에는 최근 6턴만 사용한다.
+원문 메시지는 장기 보관하지 않고 24시간 보관 후 cleanup 대상이 된다.
+장기 기억은 원문 전체가 아니라 요약 memory로만 남긴다.
+```
+
+---
+
+## 1.14.3 `character_talk_memories`
+
+만료된 별친구 대화 세션을 요약하고 embedding으로 저장한다. 사용자가 이전 대화를 물어볼 때 유사 기억 검색 context로 사용한다.
+
+| 컬럼 | 타입 | 설명 |
+| --- | --- | --- |
+| id | bigint PK | 기억 ID |
+| user_id | bigint | 사용자 ID |
+| character_id | bigint | 사용자 캐릭터 ID |
+| source_session_id | bigint FK | 요약 원본 세션 ID |
+| memory_type | varchar(30) | SESSION_SUMMARY |
+| summary | text | 세션 요약문 |
+| embedding_model | varchar(80) | embedding 모델명 |
+| embedding_dimension | int | embedding 차원. 현재 768 |
+| embedding | vector(768) nullable | 요약문의 embedding vector |
+| last_used_at | timestamp nullable | 마지막 검색 사용 시각 |
+| created_at | timestamp | 생성일 |
+| updated_at | timestamp | 수정일 |
+
+### 제약 / 인덱스
+
+```
+foreign key(source_session_id) references character_talk_sessions(id) on delete cascade
+unique(source_session_id, memory_type)
+check(memory_type in ('SESSION_SUMMARY'))
+check(embedding_dimension = 768)
+index(user_id, character_id, created_at desc)
+```
+
+### 정책
+
+```
+embedding model은 gemini-embedding-001이다.
+vector dimension은 768로 고정한다.
+새 대화에서는 사용자 메시지와 유사한 memory를 최대 3개 검색한다.
+검색 결과가 없으면 memory context 없이 대화를 이어간다.
+```
+
+---
+
+## 1.14.4 `daily_character_talk_metrics_view`
+
+별친구 대화 세션의 일별 사용량을 조회하는 view다. 대화 세션별 토큰 누적량을 바탕으로 윈도우 크기와 비용 정책을 점검한다.
+
+| 컬럼 | 타입 | 설명 |
+| --- | --- | --- |
+| metric_date | date | 기준일 |
+| session_count | bigint | 생성된 세션 수 |
+| message_count | bigint | 저장된 메시지 수 |
+| avg_actual_tokens | numeric nullable | 실제 total token 평균 |
+| max_actual_tokens | int nullable | 실제 total token 최대값 |
+| avg_actual_prompt_tokens | numeric nullable | 실제 prompt token 평균 |
+| avg_actual_completion_tokens | numeric nullable | 실제 completion token 평균 |
+
+### 정책
+
+```
+provider가 실제 usage metadata를 내려주지 않은 세션은 token 평균 계산에서 제외될 수 있다.
+운영 대시보드는 이 view 또는 동등한 집계 쿼리를 기준으로 일별 대화량과 token 사용량을 확인한다.
+```
+
+---
+
 ## 1.15 `items`
 
 상점에서 구매 가능한 아이템 마스터다.

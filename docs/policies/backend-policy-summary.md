@@ -118,12 +118,18 @@
 
 - 별친구 대화는 `POST /api/character/v1/characters/{characterId}/talk/stream` SSE로 제공한다.
 - gateway는 character 모듈에서 캐릭터 상태, 성장 상태, 최근 해금 기억을 조회한 뒤 ai 모듈의 `StreamCharacterTalk` gRPC를 호출한다.
-- ai 모듈은 provider streaming 응답을 `DELTA`/`DONE`/`ERROR` 이벤트로 반환한다.
+- ai 모듈은 provider streaming 응답을 `META`/`DELTA`/`DONE`/`ERROR` 이벤트로 반환한다.
 - AI는 Spring AI Tool Calling으로 캐릭터 상태, 오늘 미션, 최근 루틴, 시간대/날씨 context를 조회한다.
 - Tool 호출 실패는 대화 전체 실패로 보지 않고, 해당 context를 사용할 수 없는 상태로 처리한다.
 - provider 오류, timeout, 출력 검증 실패는 캐릭터별 fallback 문장으로 응답한다.
-- 대화 원문은 저장하지 않는다.
-- gateway SSE timeout, AI gRPC deadline, prompt에 넣는 기억 조각 수는 환경변수로 조절한다.
+- 대화는 사용자와 캐릭터 단위의 세션으로 격리한다.
+- 세션은 마지막 메시지 기준 30분 동안 활성 상태이며, prompt에는 최근 6턴만 포함한다.
+- 원문 메시지는 단기 멀티턴 맥락 용도로 24시간 보관한다.
+- 만료 세션은 요약한 뒤 `character_talk_memories`에 768차원 embedding으로 저장한다.
+- 새 대화에서는 사용자 메시지와 유사한 요약 기억을 최대 3개 검색해 context로 사용한다.
+- provider가 실제 token usage metadata를 제공하면 prompt/completion/total token을 세션에 누적한다. 실제값이 없으면 추정값을 저장하지 않는다.
+- 사용자별 일일 대화 제한은 20회이며 Redis 기준으로 관리한다. Redis 장애 시 fail closed로 처리하되 캐릭터별 안내 문장을 반환한다.
+- gateway SSE timeout, AI gRPC deadline, prompt에 넣는 기억 조각 수, 세션 TTL, history window, memory search topK, 원문 메시지/세션 보관 기간은 환경변수로 조절한다.
 
 ---
 
@@ -256,7 +262,7 @@
 
 ### 공유 유입
 
-- 공개 공유 링크 클릭 API는 현재 DB 테이블을 만들지 않고 애플리케이션 로그를 남긴 뒤 `recorded=true`를 반환한다.
+- 공개 공유 링크 클릭 API는 DB 테이블 없이 애플리케이션 로그를 남긴 뒤 `recorded=true`를 반환한다.
 - OG 공유 HTML은 `share_cards.image_url`에서 조립한 공개 이미지 URL을 `og:image`로 사용한다.
 
 ---

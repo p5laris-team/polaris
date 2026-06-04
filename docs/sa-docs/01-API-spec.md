@@ -107,18 +107,18 @@ Base Pattern: /api/{domain}/v1/{resource}
 - 공유 시도 보상 기록
 - 출석 보상 지급
 
-### 0.6 현재 구현 기준
+### 0.6 v1.0 API 기준
 
-아래 표는 2026-06-04 기준 `polaris` 백엔드가 제공하는 API 계약을 요약한다. 각 상세 섹션은 이 기준에 맞춰 요청/응답 예시를 작성한다.
+아래 표는 Polaris v1.0 백엔드 API 계약을 요약한다. 각 상세 섹션은 이 기준에 맞춰 요청/응답 예시를 작성한다.
 
-| 구분 | 현재 API 기준 | 응답/처리 규칙 |
+| 구분 | v1.0 API | 응답/처리 규칙 |
 |---|---|---|
 | 홈 통합 조회 | `GET /api/home/v1/home` | 홈 화면은 user, wallet, character, currentMission, notifications 요약을 이 API로 조회한다. |
 | 날씨 권역 | `GET /api/user/v1/weather-regions`, `GET/PUT /api/user/v1/users/me/weather-region` | 사용자가 직접 선택한 권역을 날씨 기반 미션 context에 사용한다. 미선택 상태이면 mission 서비스의 기본 권역을 사용한다. |
 | 현재 캐릭터 | `GET /api/character/v1/characters/me` | `states`, `growth`, `currentAssetUrl`, `assetUrls`, `equippedSkin`을 함께 반환한다. `currentAssetUrl`은 서버가 현재 상태 기준으로 고른 표시용 URL이고, `assetUrls`는 상태별 전환/프리로드용 맵이다. |
 | 스킨 장착/해제 | `PUT /api/character/v1/characters/{characterId}/equipped-skin` | `itemId`가 숫자이면 장착, 생략/null/0이면 기본 외형으로 해제한다. 응답에서 `equippedSkin`이 null이면 기본 외형 상태다. |
 | 캐릭터 성장/서사 | `GET /api/character/v1/characters/{characterId}/status`, `POST /api/character/v1/characters/{characterId}/interactions` | 상태 조회는 성장 상태를 포함하고, 상호작용은 캐릭터 기억 조각 해금 여부를 반환한다. |
-| 별친구 대화 | `POST /api/character/v1/characters/{characterId}/talk/stream` | SSE로 `meta`, `delta`, `done` 이벤트를 반환한다. AI provider 실패 시 캐릭터별 fallback 문장으로 종료한다. |
+| 별친구 대화 | `POST /api/character/v1/characters/{characterId}/talk/stream` | SSE로 `meta`, `delta`, `done` 이벤트를 반환한다. 세션 기반 멀티턴 맥락, 요약 기억 검색, 일일 대화 제한, provider 실제 token usage를 포함한다. |
 | 지갑 거래내역 | `GET /api/wallet/v1/wallets/me/transactions` | cursor 기반 최신순 목록이며 `occurredAt`은 거래 생성 시각이다. |
 | 상점/보관함 아이템 | `GET /api/item/v1/items`, `GET /api/item/v1/user-items` | 응답에 `characterTypeId`, `effectType`, `imageUrl`이 포함된다. 캐릭터별 스킨 필터와 소모품 UI 매핑은 해당 필드를 기준으로 한다. |
 | 아이템 구매 | `POST /api/item/v1/item-purchases` | body의 `idempotencyKey`를 구매 재시도 멱등키로 사용한다. |
@@ -876,16 +876,19 @@ Refresh Token으로 Access Token을 재발급한다.
 **설명**
 별친구에게 말을 걸고 SSE(Server-Sent Events)로 응답을 스트리밍한다. gateway는 character 모듈에서 캐릭터 상태/성장/해금 기억 context를 조회하고, ai 모듈의 `StreamCharacterTalk` gRPC를 호출한다.
 
-대화 원문은 DB에 저장하지 않는다.
+별친구 대화는 세션 단위로 이어진다. 최근 대화 원문은 짧은 멀티턴 맥락을 만들기 위해 제한적으로 저장하고, 오래된 세션은 요약 기억으로 변환해 이후 "아까 말한 거 기억해?" 같은 질문에 사용할 수 있다.
 
 **Request**
 
 ```json
 {
   "message": "나 오늘 너무 힘들었어",
-  "interactionType": "TAP"
+  "interactionType": "TAP",
+  "sessionId": "talk_01HX..."
 }
 ```
+
+`sessionId`는 선택값이다. 값이 없으면 서버는 사용자의 해당 별친구에 대한 활성 세션을 찾고, 없으면 새 세션을 만든다.
 
 **SSE Events**
 
@@ -897,6 +900,28 @@ Refresh Token으로 Access Token을 재발급한다.
   "characterId": 10,
   "characterTypeCode": "MUMU",
   "level": 2,
+  "growth": {
+    "level": 2,
+    "exp": 260,
+    "progressPercent": 15,
+    "growthStage": "GROWING"
+  },
+  "story": {
+    "totalUnlockedCount": 8,
+    "loreUnlockedCount": 3,
+    "easterEggUnlockedCount": 1
+  },
+  "talkStatus": "AVAILABLE",
+  "dailyLimit": 20,
+  "remainingCount": 14,
+  "limitExceeded": false,
+  "resetAt": "2026-06-05T00:00:00+09:00",
+  "sessionId": "talk_01HX...",
+  "newSession": false,
+  "expiresAt": "2026-06-04T01:50:00",
+  "historyWindowTurns": 6,
+  "memorySearchTopK": 3,
+  "memoryHitCount": 1,
   "sentAt": "2026-06-04T01:20:00Z"
 }
 ```
@@ -914,9 +939,21 @@ Refresh Token으로 Access Token을 재발급한다.
 ```json
 {
   "requestId": "e0694194-17a6-4a19-bbb8-eac5b1655e2e",
-  "fallbackUsed": false
+  "fallbackUsed": false,
+  "sessionId": "talk_01HX...",
+  "actualPromptTokens": 6544,
+  "actualCompletionTokens": 59,
+  "actualTotalTokens": 6603,
+  "memoryHitCount": 1,
+  "talkStatus": "AVAILABLE",
+  "dailyLimit": 20,
+  "remainingCount": 14,
+  "limitExceeded": false,
+  "resetAt": "2026-06-05T00:00:00+09:00"
 }
 ```
+
+`actualPromptTokens`, `actualCompletionTokens`, `actualTotalTokens`는 AI provider가 실제 usage metadata를 내려준 경우에만 포함한다.
 
 fallback이 사용된 경우:
 
@@ -924,16 +961,60 @@ fallback이 사용된 경우:
 {
   "requestId": "e0694194-17a6-4a19-bbb8-eac5b1655e2e",
   "fallbackUsed": true,
-  "errorType": "AI_ERROR_TYPE_PROVIDER_ERROR"
+  "errorType": "AI_ERROR_TYPE_PROVIDER_ERROR",
+  "talkStatus": "AVAILABLE",
+  "dailyLimit": 20,
+  "remainingCount": 14,
+  "limitExceeded": false,
+  "resetAt": "2026-06-05T00:00:00+09:00"
+}
+```
+
+일일 대화 제한을 초과한 경우:
+
+```json
+event: meta
+data: {
+  "requestId": "e0694194-17a6-4a19-bbb8-eac5b1655e2e",
+  "characterId": 10,
+  "characterTypeCode": "MUMU",
+  "talkStatus": "LIMIT_EXCEEDED",
+  "dailyLimit": 20,
+  "remainingCount": 0,
+  "limitExceeded": true,
+  "resetAt": "2026-06-05T00:00:00+09:00"
+}
+
+event: delta
+data: {
+  "text": "무... 무무. (해석: 무무가 오늘의 별빛 대화는 여기까지 아껴두고, 내일 다시 이야기하자고 하는 것 같아요.)"
+}
+
+event: done
+data: {
+  "requestId": "e0694194-17a6-4a19-bbb8-eac5b1655e2e",
+  "fallbackUsed": true,
+  "talkStatus": "LIMIT_EXCEEDED",
+  "dailyLimit": 20,
+  "remainingCount": 0,
+  "limitExceeded": true,
+  "resetAt": "2026-06-05T00:00:00+09:00"
 }
 ```
 
 **처리 규칙**
 
 - `delta` 이벤트는 여러 번 올 수 있으며, 프론트는 순서대로 이어 붙여 최종 문장을 만든다.
+- 같은 `sessionId`로 요청하면 같은 세션의 대화 맥락을 이어간다.
+- 세션은 마지막 메시지 기준 30분 동안 활성 상태이며, prompt에는 최근 6턴을 넣는다.
+- 만료된 세션은 요약 memory로 변환하고, 이후 대화에서 최대 3개까지 유사도 검색 context로 사용한다.
+- 원문 메시지는 단기 맥락 용도이며 장기 기억에는 요약만 남긴다.
+- AI provider가 실제 token usage metadata를 제공하면 `done` 이벤트에 실제 토큰 수를 포함하고 세션 누적량에 반영한다. 실제값이 없으면 토큰 필드는 내려주지 않는다.
 - AI provider 오류, timeout, 출력 검증 실패가 발생하면 gateway 또는 ai 모듈에서 캐릭터별 fallback 문장을 내려준다.
 - 무무 응답은 무무 말투와 해석을 함께 포함한다.
+- 일일 대화 제한은 사용자 기준 하루 20회다. Redis 장애 시 fail closed로 처리하되, 프론트에는 캐릭터별 안내 문장을 스트리밍한다.
 - gateway의 SSE 연결 timeout은 `GATEWAY_CHARACTER_TALK_SSE_TIMEOUT_MS`, AI gRPC deadline은 `GATEWAY_CHARACTER_TALK_AI_DEADLINE_MS`, prompt에 넣는 기억 조각 수는 `GATEWAY_CHARACTER_TALK_MEMORY_LIMIT`로 조절한다.
+- ai 모듈의 세션 TTL, history window, memory search topK, 원문 메시지/세션 보관 기간은 `AI_CHARACTER_TALK_*` 환경변수로 조절한다.
 
 ---
 
@@ -1563,7 +1644,7 @@ mission 모듈은 `user_memories`를 먼저 저장하고, embedding이 필요한
 ### 6.9 내부 gRPC `AiService.StreamCharacterTalk`
 
 **설명**
-별친구 대화 응답을 provider streaming으로 생성한다. gateway는 REST SSE 계약을 유지하고, ai 모듈은 gRPC server streaming으로 `DELTA`, `DONE`, `ERROR` 이벤트를 반환한다.
+별친구 대화 응답을 provider streaming으로 생성한다. gateway는 REST SSE 계약을 유지하고, ai 모듈은 gRPC server streaming으로 `META`, `DELTA`, `DONE`, `ERROR` 이벤트를 반환한다.
 
 AI는 Spring AI Tool Calling으로 필요한 백엔드 context를 조회한다. Tool 호출 실패는 대화 전체 실패가 아니라 해당 context를 사용할 수 없는 상태로 prompt에 반영한다.
 
@@ -1587,16 +1668,18 @@ AI는 Spring AI Tool Calling으로 필요한 백엔드 context를 조회한다. 
   "userMessage": "나 오늘 너무 힘들었어",
   "interactionType": "TAP",
   "characterContextJson": "{\"growth\":{\"level\":2},\"memories\":[...]}",
-  "requestId": "CHARACTER_TALK:..."
+  "requestId": "CHARACTER_TALK:...",
+  "sessionId": "talk_01HX..."
 }
 ```
 
 **gRPC Stream Response**
 
 ```json
+{ "eventType": "CHARACTER_TALK_STREAM_EVENT_TYPE_META", "requestId": "CHARACTER_TALK:...", "sessionId": "talk_01HX...", "newSession": false, "expiresAt": "2026-06-04T01:50:00", "historyWindowTurns": 6, "memorySearchTopK": 3, "memoryHitCount": 1 }
 { "eventType": "CHARACTER_TALK_STREAM_EVENT_TYPE_DELTA", "text": "무... 무무.", "requestId": "CHARACTER_TALK:..." }
 { "eventType": "CHARACTER_TALK_STREAM_EVENT_TYPE_DELTA", "text": " (해석: 무무가", "requestId": "CHARACTER_TALK:..." }
-{ "eventType": "CHARACTER_TALK_STREAM_EVENT_TYPE_DONE", "fallbackUsed": false, "requestId": "CHARACTER_TALK:..." }
+{ "eventType": "CHARACTER_TALK_STREAM_EVENT_TYPE_DONE", "fallbackUsed": false, "requestId": "CHARACTER_TALK:...", "sessionId": "talk_01HX...", "actualPromptTokens": 6544, "actualCompletionTokens": 59, "actualTotalTokens": 6603, "memoryHitCount": 1 }
 ```
 
 오류 또는 검증 실패 시:
@@ -1606,9 +1689,19 @@ AI는 Spring AI Tool Calling으로 필요한 백엔드 context를 조회한다. 
   "eventType": "CHARACTER_TALK_STREAM_EVENT_TYPE_ERROR",
   "fallbackUsed": true,
   "errorType": "AI_ERROR_TYPE_PROVIDER_ERROR",
-  "requestId": "CHARACTER_TALK:..."
+  "requestId": "CHARACTER_TALK:...",
+  "sessionId": "talk_01HX..."
 }
 ```
+
+**멀티턴 / 기억 정책**
+
+- 요청의 `sessionId`가 유효한 활성 세션이면 해당 세션을 이어간다.
+- `sessionId`가 비어 있거나 만료됐으면 새 세션을 만든다.
+- 활성 세션 prompt에는 최근 6턴만 넣어 토큰 사용량을 제한한다.
+- 만료 세션은 요약 후 `character_talk_memories`에 768차원 embedding으로 저장한다.
+- 새 대화에서 사용자 메시지와 유사한 memory를 최대 3개 검색해 prompt에 넣는다.
+- provider가 실제 token usage를 내려주면 `actual_prompt_tokens`, `actual_completion_tokens`, `actual_total_tokens`를 세션에 누적한다. 실제값이 없으면 null로 둔다.
 
 ---
 
@@ -1990,7 +2083,7 @@ AI는 Spring AI Tool Calling으로 필요한 백엔드 context를 조회한다. 
 ### 9.7 POST `/api/share/v1/share-clicks` Public
 
 **설명**
-공개 공유 링크 클릭을 기록한다. 현재 구현은 클릭 정보를 로그로 남기고 `recorded=true`를 반환한다.
+공개 공유 링크 클릭을 기록한다. 클릭 정보는 DB 테이블 없이 애플리케이션 로그로 남기고 `recorded=true`를 반환한다.
 
 **Request**
 
