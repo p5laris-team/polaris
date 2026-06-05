@@ -123,6 +123,7 @@ public class AiGrpcController extends AiServiceGrpc.AiServiceImplBase {
                 request.getUserId(),
                 request.getCharacterId(),
                 request.getCharacterType(),
+                request.getCharacterName(),
                 request.getMissionTemplateId(),
                 request.getBaseTitle(),
                 request.getBaseDescription(),

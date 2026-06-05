@@ -45,6 +45,7 @@ import p5laris.mission.domain.infrastructure.grpc.AiTextEmbeddingClient;
 import p5laris.mission.domain.infrastructure.grpc.CharacterExpClient;
 import p5laris.mission.domain.infrastructure.grpc.CharacterExpGrantResult;
 import p5laris.mission.domain.infrastructure.grpc.CharacterProfileClient;
+import p5laris.mission.domain.infrastructure.grpc.CharacterProfileClient.CharacterProfileSnapshot;
 import p5laris.mission.domain.infrastructure.grpc.MissionCharacterGrowth;
 import p5laris.mission.domain.infrastructure.grpc.NotificationPushClient;
 import p5laris.mission.domain.infrastructure.grpc.OnboardingProfileClient;
@@ -207,8 +208,8 @@ class MissionServiceTest {
                             false
                     );
                 });
-        when(characterProfileClient.findActiveCharacterTypeCode(anyLong(), anyLong()))
-                .thenReturn(Optional.of("NOVA"));
+        when(characterProfileClient.findActiveCharacterProfile(anyLong(), anyLong()))
+                .thenReturn(Optional.of(new CharacterProfileSnapshot("NOVA", "노바")));
         when(onboardingProfileClient.findProfile(anyLong()))
                 .thenReturn(Optional.empty());
         ReflectionTestUtils.setField(missionService, "clock", clock);
@@ -304,6 +305,7 @@ class MissionServiceTest {
 
     @Test
     void AI_후보가_정책을_위반하면_한_번_재요청하고_통과한_후보를_저장한다() {
+        ReflectionTestUtils.setField(missionService, "clock", fixedClockAt(2026, 5, 25, 22, 30));
         when(aiMissionTextClient.generateMissionTexts(any()))
                 .thenAnswer(invocation -> {
                     AiMissionTextRequest request = invocation.getArgument(0);
@@ -311,7 +313,7 @@ class MissionServiceTest {
                             901L,
                             "첫 번째 후보",
                             "첫 번째 후보 설명",
-                            differentCategory(request.category()),
+                            "OUTDOOR_LIGHT",
                             "EASY"
                     ));
                 })
@@ -341,24 +343,23 @@ class MissionServiceTest {
 
     @Test
     void AI_후보가_두_번_모두_정책을_위반하면_seed_template_fallback을_유지한다() {
+        ReflectionTestUtils.setField(missionService, "clock", fixedClockAt(2026, 5, 25, 22, 30));
         when(aiMissionTextClient.generateMissionTexts(any()))
                 .thenAnswer(invocation -> {
-                    AiMissionTextRequest request = invocation.getArgument(0);
                     return Optional.of(aiMissionTextResult(
                             911L,
                             "첫 번째 후보",
                             "첫 번째 후보 설명",
-                            differentCategory(request.category()),
+                            "OUTDOOR_LIGHT",
                             "EASY"
                     ));
                 })
                 .thenAnswer(invocation -> {
-                    AiMissionTextRequest request = invocation.getArgument(0);
                     return Optional.of(aiMissionTextResult(
                             912L,
                             "두 번째 후보",
                             "두 번째 후보 설명",
-                            differentCategory(request.category()),
+                            "OUTDOOR_LIGHT",
                             "EASY"
                     ));
                 });
