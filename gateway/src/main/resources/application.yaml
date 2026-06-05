@@ -70,11 +70,11 @@ app:
 gateway:
   character-talk:
     ai:
-      deadline-ms: ${GATEWAY_CHARACTER_TALK_AI_DEADLINE_MS:8000}
+      deadline-ms: ${GATEWAY_CHARACTER_TALK_AI_DEADLINE_MS:20000}
     context:
       memory-limit: ${GATEWAY_CHARACTER_TALK_MEMORY_LIMIT:${AI_CHARACTER_TALK_MEMORY_LIMIT:5}}
     sse:
-      timeout-ms: ${GATEWAY_CHARACTER_TALK_SSE_TIMEOUT_MS:30000}
+      timeout-ms: ${GATEWAY_CHARACTER_TALK_SSE_TIMEOUT_MS:45000}
     daily-limit:
       enabled: ${GATEWAY_CHARACTER_TALK_DAILY_LIMIT_ENABLED:true}
       backend: ${GATEWAY_CHARACTER_TALK_DAILY_LIMIT_BACKEND:redis}

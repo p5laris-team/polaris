@@ -29,7 +29,7 @@ public final class MissionActionFamilyClassifier {
         if (containsAny(text, "방청소", "방정리", "침대정리", "바닥", "쓰레기통", "휴지통", "수납")) {
             return MissionActionFamily.ROOM_RESET;
         }
-        if (containsAny(text, "목", "어깨", "승모근", "날개뼈")) {
+        if (containsNeckShoulderKeyword(text)) {
             return MissionActionFamily.NECK_SHOULDER_STRETCH;
         }
         if (containsAny(text, "스트레칭", "기지개", "손목", "허리", "종아리", "발목", "다리", "몸풀")) {
@@ -44,14 +44,14 @@ public final class MissionActionFamilyClassifier {
         if (containsAny(text, "산책", "걷기", "걸어", "걸음", "발걸음")) {
             return MissionActionFamily.WALKING;
         }
+        if (containsAny(text, "연락", "메시지", "문자", "전화", "카톡", "안부", "dm", "보내")) {
+            return MissionActionFamily.SOCIAL_CONTACT;
+        }
         if (containsAny(text, "기록", "일기", "메모", "적어", "써보", "문장")) {
             return MissionActionFamily.JOURNALING;
         }
-        if (containsAny(text, "잠", "수면", "침대", "불끄", "자기전", "잠들")) {
+        if (containsAny(text, "수면", "침대", "불끄", "자기전", "잠들", "잠자리", "잠을", "잠이")) {
             return MissionActionFamily.SLEEP_PREP;
-        }
-        if (containsAny(text, "연락", "메시지", "문자", "전화", "카톡", "안부", "dm")) {
-            return MissionActionFamily.SOCIAL_CONTACT;
         }
         if (containsAny(text, "집중", "타이머", "알림끄", "방해금지", "할일", "우선순위")) {
             return MissionActionFamily.FOCUS_RESET;
@@ -72,5 +72,25 @@ public final class MissionActionFamilyClassifier {
 
     private static boolean containsAny(String text, String... keywords) {
         return List.of(keywords).stream().anyMatch(text::contains);
+    }
+
+    private static boolean containsNeckShoulderKeyword(String text) {
+        String withoutWristOrAnkle = text
+                .replace("손목", "")
+                .replace("발목", "");
+        return containsAny(
+                withoutWristOrAnkle,
+                "어깨",
+                "승모근",
+                "날개뼈",
+                "목과",
+                "목을",
+                "목이",
+                "목도",
+                "목은",
+                "목에",
+                "목의",
+                "목,"
+        );
     }
 }

@@ -49,12 +49,14 @@ import p5laris.character.domain.infrastructure.config.CharacterItemGrpcPropertie
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
 import org.springframework.context.ApplicationEventPublisher;
@@ -470,20 +472,15 @@ public class CharacterService {
         }
 
         Set<Long> unlockedFragmentIds = findUnlockedFragmentIds(userId, characterId, candidates);
-        CharacterStoryFragment selected = findNewUnlockableFragment(candidates, unlockedFragmentIds);
+        CharacterStoryFragment selected = chooseRandomNewUnlockableFragment(candidates, unlockedFragmentIds);
         if (selected != null) {
             saveStoryUnlock(userId, characterId, level, selected);
             return toInteractionResponse(character, level, selected, true, false);
         }
 
-        selected = findCommonFragment(candidates);
-        if (selected != null) {
-            return toInteractionResponse(character, level, selected, false, false);
-        }
-
-        selected = findAlreadyUnlockedFragment(candidates, unlockedFragmentIds);
-        if (selected != null) {
-            return toInteractionResponse(character, level, selected, false, true);
+        SelectedStoryFragment seenFragment = chooseRandomSeenFragment(candidates, unlockedFragmentIds);
+        if (seenFragment != null) {
+            return toInteractionResponse(character, level, seenFragment.fragment(), false, seenFragment.alreadyUnlocked());
         }
 
         return fallbackInteractionResponse(character, level, triggerType);
@@ -768,35 +765,43 @@ public class CharacterService {
         return unlockedIds;
     }
 
-    private CharacterStoryFragment findNewUnlockableFragment(
+    private CharacterStoryFragment chooseRandomNewUnlockableFragment(
             List<CharacterStoryFragment> candidates,
             Set<Long> unlockedFragmentIds
     ) {
-        return candidates.stream()
+        List<CharacterStoryFragment> newFragments = candidates.stream()
                 .filter(CharacterStoryFragment::unlockable)
                 .filter(fragment -> fragment.getId() != null)
                 .filter(fragment -> !unlockedFragmentIds.contains(fragment.getId()))
-                .findFirst()
-                .orElse(null);
+                .toList();
+        return chooseRandom(newFragments);
     }
 
-    private CharacterStoryFragment findCommonFragment(List<CharacterStoryFragment> candidates) {
-        return candidates.stream()
-                .filter(fragment -> fragment.getFragmentType() == CharacterStoryFragmentType.COMMON)
-                .findFirst()
-                .orElse(null);
-    }
-
-    private CharacterStoryFragment findAlreadyUnlockedFragment(
+    private SelectedStoryFragment chooseRandomSeenFragment(
             List<CharacterStoryFragment> candidates,
             Set<Long> unlockedFragmentIds
     ) {
-        return candidates.stream()
-                .filter(CharacterStoryFragment::unlockable)
-                .filter(fragment -> fragment.getId() != null)
-                .filter(fragment -> unlockedFragmentIds.contains(fragment.getId()))
-                .findFirst()
-                .orElse(null);
+        List<SelectedStoryFragment> seenFragments = new ArrayList<>();
+        for (CharacterStoryFragment fragment : candidates) {
+            if (fragment.getFragmentType() == CharacterStoryFragmentType.COMMON) {
+                seenFragments.add(new SelectedStoryFragment(fragment, false));
+                continue;
+            }
+
+            if (fragment.unlockable()
+                    && fragment.getId() != null
+                    && unlockedFragmentIds.contains(fragment.getId())) {
+                seenFragments.add(new SelectedStoryFragment(fragment, true));
+            }
+        }
+        return chooseRandom(seenFragments);
+    }
+
+    private <T> T chooseRandom(List<T> values) {
+        if (values == null || values.isEmpty()) {
+            return null;
+        }
+        return values.get(ThreadLocalRandom.current().nextInt(values.size()));
     }
 
     private void saveStoryUnlock(
@@ -825,8 +830,8 @@ public class CharacterService {
         if (fragment.unlockable()) {
             memory = CharacterInteractionResponse.Memory.builder()
                     .memoryKey(fragment.getMemoryKey())
-                    .title(fragment.getTitle())
-                    .storyText(fragment.getStoryText())
+                    .title(useCharacterName(fragment.getTitle(), character))
+                    .storyText(useCharacterName(fragment.getStoryText(), character))
                     .build();
         }
 
@@ -836,8 +841,8 @@ public class CharacterService {
                 .level(level)
                 .fragmentType(fragment.getFragmentType().name())
                 .triggerType(fragment.getTriggerType().name())
-                .message(fragment.getMessage())
-                .interpretation(fragment.getInterpretation())
+                .message(useCharacterName(fragment.getMessage(), character))
+                .interpretation(useCharacterName(fragment.getInterpretation(), character))
                 .memoryUnlocked(memoryUnlocked)
                 .alreadyUnlocked(alreadyUnlocked)
                 .memory(memory)
@@ -857,7 +862,7 @@ public class CharacterService {
             default -> "오늘의 작은 기록을 별친구가 지켜보고 있어요.";
         };
         String interpretation = switch (characterTypeCode) {
-            case "MUMU" -> "무무가 아직 꺼내지 못한 기억을 조용히 품고 있는 것 같아요.";
+            case "MUMU" -> characterSubject(character) + " 아직 꺼내지 못한 기억을 조용히 품고 있는 것 같아요.";
             case "NOVA" -> "노바가 오늘의 작은 빛을 서두르지 않고 바라보는 것 같아요.";
             case "JJORY" -> "쪼리가 지금의 작은 움직임도 원정 기록에 남기려는 것 같아요.";
             default -> "별친구가 오늘의 작은 기록을 곁에서 지켜주는 것 같아요.";
@@ -875,6 +880,57 @@ public class CharacterService {
                 .alreadyUnlocked(false)
                 .memory(null)
                 .build();
+    }
+
+    private String useCharacterName(String value, UserCharacter character) {
+        if (value == null || value.isBlank() || !"MUMU".equals(character.getCharacterType().getCode())) {
+            return value;
+        }
+
+        String name = displayCharacterName(character.getName());
+        return value
+                .replace("무무가", name + subjectParticle(name))
+                .replace("무무는", name + topicParticle(name))
+                .replace("무무도", name + "도")
+                .replace("무무에게", name + "에게")
+                .replace("무무와", name + companionParticle(name))
+                .replace("무무의", name + "의");
+    }
+
+    private String characterSubject(UserCharacter character) {
+        String name = displayCharacterName(character.getName());
+        return name + subjectParticle(name);
+    }
+
+    private String displayCharacterName(String name) {
+        if (name == null || name.isBlank()) {
+            return "무무";
+        }
+        return name.trim();
+    }
+
+    private String subjectParticle(String name) {
+        return hasFinalConsonant(name) ? "이" : "가";
+    }
+
+    private String topicParticle(String name) {
+        return hasFinalConsonant(name) ? "은" : "는";
+    }
+
+    private String companionParticle(String name) {
+        return hasFinalConsonant(name) ? "과" : "와";
+    }
+
+    private boolean hasFinalConsonant(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+
+        int codePoint = value.codePointBefore(value.length());
+        return codePoint >= '가' && codePoint <= '힣' && ((codePoint - '가') % 28) != 0;
+    }
+
+    private record SelectedStoryFragment(CharacterStoryFragment fragment, boolean alreadyUnlocked) {
     }
 
     private ActionType parseActionType(String actionTypeStr) {

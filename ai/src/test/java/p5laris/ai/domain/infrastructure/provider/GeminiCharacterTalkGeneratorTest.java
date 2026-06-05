@@ -22,7 +22,7 @@ class GeminiCharacterTalkGeneratorTest {
     @Test
     @DisplayName("별친구 대화 - Tool 객체를 provider streaming 호출에 함께 전달한다")
     void stream_passesToolsToProviderCall() {
-        CapturingAiChatClient chatClient = new CapturingAiChatClient("무... 무무. (해석: 무무가 같이 있어도 괜찮다고 하는 것 같아요.)");
+        CapturingAiChatClient chatClient = new CapturingAiChatClient("무무 ㅠㅠ... (해석: 나 여기 있어. 오늘 말이 조금 엉켜도 천천히 들려줘.)");
         AiCharacterTalkProperties properties = new AiCharacterTalkProperties();
         Object toolObject = new TestTool();
         CharacterTalkToolsFactory toolsFactory = mock(CharacterTalkToolsFactory.class);
@@ -38,9 +38,17 @@ class GeminiCharacterTalkGeneratorTest {
         List<String> chunks = new ArrayList<>();
         generator.stream(command, chunks::add);
 
-        assertEquals("무... 무무. (해석: 무무가 같이 있어도 괜찮다고 하는 것 같아요.)", String.join("", chunks));
+        assertEquals("무무 ㅠㅠ... (해석: 나 여기 있어. 오늘 말이 조금 엉켜도 천천히 들려줘.)", String.join("", chunks));
         assertSame(toolObject, chatClient.tools[0]);
-        assertTrue(chatClient.systemPrompt.contains("getCharacterStatus Tool과 getUnlockedCharacterMemories Tool을 먼저 호출"));
+        assertTrue(chatClient.systemPrompt.contains("필요할 때만 Tool을 호출"));
+        assertTrue(chatClient.systemPrompt.contains("단순 인사, 잡담, 감정 표현, 하소연에는 Tool 호출 없이"));
+        assertTrue(chatClient.systemPrompt.contains("통역 설명문이 아니라 캐릭터가 사용자에게 직접 건네는 말"));
+        assertTrue(chatClient.systemPrompt.contains("간접화법은 금지"));
+        assertTrue(chatClient.systemPrompt.contains("캐릭터 이름\" 값은 별친구 자신의 이름"));
+        assertTrue(chatClient.systemPrompt.contains("모든 MUMU 답변을 \"무... 무무\"로 시작하지 않는다"));
+        assertTrue(chatClient.systemPrompt.contains("나 칭찬받은 거야?"));
+        assertTrue(chatClient.systemPrompt.contains("그 말 좀 더 해줘도 돼"));
+        assertTrue(chatClient.userPrompt.contains("사용자 이름으로 착각하지 않는다"));
         assertTrue(chatClient.userPrompt.contains("fallbackContext JSON"));
         assertTrue(chatClient.userPrompt.contains("conversationHistory JSON"));
         assertTrue(chatClient.userPrompt.contains("longTermMemoryContext JSON"));
@@ -53,7 +61,7 @@ class GeminiCharacterTalkGeneratorTest {
                 1L,
                 1L,
                 "MUMU",
-                "무무",
+                "무다리",
                 "오늘 좀 피곤해",
                 "TAP",
                 "{\"fallback\":true}",

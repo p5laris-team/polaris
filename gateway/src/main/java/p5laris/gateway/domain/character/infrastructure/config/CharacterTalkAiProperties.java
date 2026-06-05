@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "gateway.character-talk.ai")
 public class CharacterTalkAiProperties {
 
-    private long deadlineMs = 8000;
+    private long deadlineMs = 20000;
 
     public long getDeadlineMs() {
         return deadlineMs;

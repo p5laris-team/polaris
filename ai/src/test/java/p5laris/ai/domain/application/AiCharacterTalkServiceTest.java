@@ -70,13 +70,32 @@ class AiCharacterTalkServiceTest {
 
         assertTrue(emitter.fallbackUsed);
         assertEquals(AiErrorType.INVALID_OUTPUT, emitter.errorType);
-        assertTrue(emitter.joinedText().contains("좌표"));
+        assertTrue(emitter.joinedText().contains("천천히 같이 짚어볼게"));
         verify(generator, never()).stream(any(), any());
         verify(rateLimiter, never()).checkAllowed(
                 anyLong(),
                 any(AiProviderType.class),
                 anyString()
         );
+    }
+
+    @Test
+    @DisplayName("별친구 대화 - 무무 fallback도 사용자 감정에 맞는 발화 리듬을 고른다")
+    void streamCharacterTalk_mumuFallback_usesEmotionalUtterance() {
+        GeminiCharacterTalkGenerator generator = mock(GeminiCharacterTalkGenerator.class);
+        AiRateLimiter rateLimiter = mock(AiRateLimiter.class);
+        AiCharacterTalkService service = service(false, 300, generator, rateLimiter);
+        CapturingEmitter emitter = new CapturingEmitter();
+
+        service.streamCharacterTalk(command("MUMU", "무다리 칭찬해!"), emitter);
+
+        assertTrue(emitter.fallbackUsed);
+        assertTrue(emitter.joinedText().startsWith("무"));
+        assertTrue(emitter.joinedText().contains("(해석:"));
+        assertTrue(emitter.joinedText().contains("칭찬")
+                || emitter.joinedText().contains("좋")
+                || emitter.joinedText().contains("기뻐")
+                || emitter.joinedText().contains("신났"));
     }
 
     @Test
@@ -104,8 +123,8 @@ class AiCharacterTalkServiceTest {
     }
 
     @Test
-    @DisplayName("별친구 대화 - 무무는 해석 라벨이 나올 때까지 초반 chunk를 buffer한다")
-    void streamCharacterTalk_mumuBuffersUntilInterpretationLabel() {
+    @DisplayName("별친구 대화 - 무무도 안전한 발화 prefix는 먼저 스트리밍한다")
+    void streamCharacterTalk_mumuStreamsSafeUtterancePrefix() {
         GeminiCharacterTalkGenerator generator = mock(GeminiCharacterTalkGenerator.class);
         AiRateLimiter rateLimiter = mock(AiRateLimiter.class);
         AiCharacterTalkService service = service(true, 300, generator, rateLimiter);
@@ -114,15 +133,17 @@ class AiCharacterTalkServiceTest {
         doAnswer(invocation -> {
             @SuppressWarnings("unchecked")
             Consumer<String> consumer = invocation.getArgument(1);
-            consumer.accept("무... 무무. ");
-            assertTrue(emitter.chunks.isEmpty());
-            consumer.accept("(해석: 무무가 잠깐 쉬어도 괜찮다고 하는 것 같아요.)");
+            consumer.accept("무무 ㅠㅠ... ");
+            assertEquals(List.of("무무 ㅠㅠ... "), emitter.chunks);
+            consumer.accept("(해");
+            assertEquals(List.of("무무 ㅠㅠ... "), emitter.chunks);
+            consumer.accept("석: 나 여기 있어. 지금 말이 조금 엉켜도 천천히 들려줘.)");
             return AiTokenUsage.empty();
         }).when(generator).stream(any(), any());
 
         service.streamCharacterTalk(command("MUMU", "오늘 좀 피곤해"), emitter);
 
-        assertEquals("무... 무무. (해석: 무무가 잠깐 쉬어도 괜찮다고 하는 것 같아요.)", emitter.joinedText());
+        assertEquals("무무 ㅠㅠ... (해석: 나 여기 있어. 지금 말이 조금 엉켜도 천천히 들려줘.)", emitter.joinedText());
         assertTrue(emitter.completed);
         assertTrue(!emitter.fallbackUsed);
     }
@@ -173,7 +194,7 @@ class AiCharacterTalkServiceTest {
                 1L,
                 1L,
                 characterType,
-                characterType,
+                "MUMU".equals(characterType) ? "무다리" : characterType,
                 userMessage,
                 "TAP",
                 "{}",

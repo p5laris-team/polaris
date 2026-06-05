@@ -239,6 +239,7 @@ public class AiMissionTextService {
         source.put("userId", command.userId());
         source.put("characterId", command.characterId());
         source.put("characterType", command.characterType());
+        source.put("characterName", command.characterName());
         source.put("missionTemplateId", command.missionTemplateId());
         source.put("baseTitle", command.baseTitle());
         source.put("baseDescription", command.baseDescription());
@@ -257,6 +258,7 @@ public class AiMissionTextService {
     private String toRequestContextJson(MissionTextGenerationCommand command) {
         Map<String, Object> context = new LinkedHashMap<>();
         context.put("characterType", command.characterType());
+        context.put("characterName", command.characterName());
         context.put("baseTitle", command.baseTitle());
         context.put("baseDescription", command.baseDescription());
         context.put("category", command.category());

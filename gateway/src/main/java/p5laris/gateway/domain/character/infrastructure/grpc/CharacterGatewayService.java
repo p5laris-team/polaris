@@ -612,7 +612,7 @@ public class CharacterGatewayService {
 
     private String fallbackTalk(String characterTypeCode) {
         return switch (normalizeCharacterType(characterTypeCode)) {
-            case "MUMU" -> "무... 무무. (해석: 무무가 지금은 잠깐 천천히 숨을 고르자고 하는 것 같아요.)";
+            case "MUMU" -> "무무 ㅠㅠ... (해석: 연결이 잠깐 느려졌어. 나 여기 있으니까 조금 뒤에 다시 말 걸어줘.)";
             case "NOVA" -> "지금은 대답이 조금 늦어졌어. 그래도 작은 숨 하나부터 다시 좌표를 잡아보자.";
             case "JJORY" -> "통신이 잠깐 삐끗함. 그래도 작전은 유지됨. 잠깐 숨 고르고 다시 가보자.";
             default -> "별친구가 지금 곁에서 천천히 들어주고 있어요. 아주 작게 숨부터 골라도 괜찮아요.";
@@ -622,7 +622,7 @@ public class CharacterGatewayService {
     private String limitFallbackTalk(String characterTypeCode, CharacterTalkLimitStatus talkStatus) {
         if (talkStatus == CharacterTalkLimitStatus.LIMIT_EXCEEDED) {
             return switch (normalizeCharacterType(characterTypeCode)) {
-                case "MUMU" -> "무... 무무. (해석: 무무가 오늘의 별빛 대화는 여기까지 아껴두고, 내일 다시 이야기하자고 하는 것 같아요.)";
+                case "MUMU" -> "무우... 무무. (해석: 오늘은 여기까지 아껴두자. 내일 오면 나 다시 바로 들을게.)";
                 case "NOVA" -> "오늘의 교신은 여기까지야. 내일 다시 별의 좌표를 이어가자.";
                 case "JJORY" -> "오늘 작전 회의는 여기까지! 내일 다시 지도 펴고 얘기하자.";
                 default -> "오늘 별친구와 나눌 수 있는 대화는 여기까지예요. 내일 다시 이야기해요.";
@@ -630,7 +630,7 @@ public class CharacterGatewayService {
         }
 
         return switch (normalizeCharacterType(characterTypeCode)) {
-            case "MUMU" -> "무... 무무. (해석: 무무가 별빛 연결이 잠깐 흐려졌지만, 조금 뒤에 다시 이야기하자고 하는 것 같아요.)";
+            case "MUMU" -> "무...? 무무 ㅠ (해석: 별빛 연결이 잠깐 흐려졌어. 조금 뒤에 다시 말 걸어줘.)";
             case "NOVA" -> "별빛 회선이 잠깐 흔들리고 있어. 조금 뒤에 다시 말을 걸어줘.";
             case "JJORY" -> "작전 통신이 잠깐 삐끗했음! 조금 있다가 다시 연결해보자.";
             default -> "별친구와의 연결이 잠깐 흔들리고 있어요. 조금 뒤에 다시 이야기해요.";

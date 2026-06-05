@@ -235,6 +235,66 @@ class CharacterServiceTest {
     }
 
     @Test
+    @DisplayName("캐릭터 상호작용 - MUMU 서술문은 사용자가 지은 이름으로 보정")
+    void interactWithCharacter_mumuUsesUserCharacterName() {
+        CharacterType mumuType = CharacterType.builder()
+                .code("MUMU")
+                .name("무무")
+                .active(true)
+                .build();
+        org.springframework.test.util.ReflectionTestUtils.setField(mumuType, "id", 2L);
+        UserCharacter mumu = UserCharacter.builder()
+                .userId(1L)
+                .characterType(mumuType)
+                .name("무다리")
+                .level(1)
+                .exp(0)
+                .fullness(50)
+                .energy(50)
+                .affection(50)
+                .active(true)
+                .build();
+        org.springframework.test.util.ReflectionTestUtils.setField(mumu, "id", 1L);
+        CharacterStoryFragment lore = CharacterStoryFragment.builder()
+                .memoryKey("mumu_lv1_lore_name")
+                .characterTypeCode("MUMU")
+                .minLevel(1)
+                .fragmentType(CharacterStoryFragmentType.LORE)
+                .triggerType(CharacterStoryTriggerType.TAP)
+                .title("무무가 숨겨 둔 조각")
+                .message("무... 무무.")
+                .interpretation("무무가 발끝을 꼼지락거리는 것 같아요.")
+                .storyText("무무는 오늘의 별빛을 몰래 접어 두었어요.")
+                .sortOrder(1)
+                .active(true)
+                .build();
+        org.springframework.test.util.ReflectionTestUtils.setField(lore, "id", 15L);
+
+        when(userCharacterRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(mumu));
+        when(characterStoryFragmentRepository
+                .findByActiveTrueAndCharacterTypeCodeInAndTriggerTypeAndMinLevelLessThanEqualOrderBySortOrderAscIdAsc(
+                        anyList(),
+                        eq(CharacterStoryTriggerType.TAP),
+                        eq(1)
+                ))
+                .thenReturn(List.of(lore));
+        when(userCharacterStoryUnlockRepository.findByUserIdAndUserCharacterIdAndStoryFragmentIdIn(
+                eq(1L),
+                eq(1L),
+                anyCollection()
+        )).thenReturn(List.of());
+
+        var response = characterService.interactWithCharacter(1L, 1L, "TAP");
+
+        assertEquals("무다리가 발끝을 꼼지락거리는 것 같아요.", response.interpretation());
+        assertNotNull(response.memory());
+        assertEquals("무다리가 숨겨 둔 조각", response.memory().title());
+        assertEquals("무다리는 오늘의 별빛을 몰래 접어 두었어요.", response.memory().storyText());
+        assertFalse(response.interpretation().contains("무무가"));
+        verify(userCharacterStoryUnlockRepository).save(any(UserCharacterStoryUnlock.class));
+    }
+
+    @Test
     @DisplayName("캐릭터 상호작용 - 현재 레벨보다 높은 조각은 방어적으로 제외")
     void interactWithCharacter_higherLevelFragment_returnsFallback() {
         CharacterStoryFragment highLevelLore = storyFragment(
