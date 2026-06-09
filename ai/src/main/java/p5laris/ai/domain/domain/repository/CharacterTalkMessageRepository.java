@@ -28,6 +28,23 @@ public interface CharacterTalkMessageRepository extends JpaRepository<CharacterT
             """)
     List<CharacterTalkMessage> findBySessionIdOrderBySequenceAsc(@Param("sessionId") Long sessionId);
 
+    @Query("""
+            select message
+            from CharacterTalkMessage message
+            join fetch message.session session
+            where message.userId = :userId
+              and message.characterId = :characterId
+              and message.createdAt >= :startAt
+              and message.createdAt < :endAt
+            order by message.createdAt asc, session.id asc, message.sequence asc
+            """)
+    List<CharacterTalkMessage> findDailyMessages(
+            @Param("userId") Long userId,
+            @Param("characterId") Long characterId,
+            @Param("startAt") LocalDateTime startAt,
+            @Param("endAt") LocalDateTime endAt
+    );
+
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("delete from CharacterTalkMessage message where message.createdAt < :cutoff")
     int deleteMessagesBefore(@Param("cutoff") LocalDateTime cutoff);
