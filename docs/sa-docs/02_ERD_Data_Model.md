@@ -1062,14 +1062,16 @@ check(role in ('USER', 'ASSISTANT'))
 check(sequence > 0)
 index(session_id, sequence)
 index(created_at)
+index(user_id, character_id, created_at, id)
 ```
 
 ### 정책
 
 ```
 prompt에는 최근 6턴만 사용한다.
-원문 메시지는 장기 보관하지 않고 24시간 보관 후 cleanup 대상이 된다.
+원문 메시지는 단기 대화 맥락과 당일 대화 복원에 사용하며, 장기 보관하지 않고 24시간 보관 후 cleanup 대상이 된다.
 장기 기억은 원문 전체가 아니라 요약 memory로만 남긴다.
+메시지 저장 시 세션 행을 잠근 뒤 sequence를 계산해 같은 세션의 동시 요청에서도 순번을 보존한다.
 ```
 
 ---

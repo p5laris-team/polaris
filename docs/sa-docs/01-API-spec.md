@@ -118,7 +118,7 @@ Base Pattern: /api/{domain}/v1/{resource}
 | 현재 캐릭터 | `GET /api/character/v1/characters/me` | `states`, `growth`, `currentAssetUrl`, `assetUrls`, `equippedSkin`을 함께 반환한다. `currentAssetUrl`은 서버가 현재 상태 기준으로 고른 표시용 URL이고, `assetUrls`는 상태별 전환/프리로드용 맵이다. |
 | 스킨 장착/해제 | `PUT /api/character/v1/characters/{characterId}/equipped-skin` | `itemId`가 숫자이면 장착, 생략/null/0이면 기본 외형으로 해제한다. 응답에서 `equippedSkin`이 null이면 기본 외형 상태다. |
 | 캐릭터 성장/서사 | `GET /api/character/v1/characters/{characterId}/status`, `POST /api/character/v1/characters/{characterId}/interactions` | 상태 조회는 성장 상태를 포함하고, 상호작용은 캐릭터 기억 조각 해금 여부를 반환한다. |
-| 별친구 대화 | `POST /api/character/v1/characters/{characterId}/talk/stream` | SSE로 `meta`, `delta`, `done` 이벤트를 반환한다. 세션 기반 멀티턴 맥락, 요약 기억 검색, 일일 대화 제한, provider 실제 token usage를 포함한다. |
+| 별친구 대화 | `POST /api/character/v1/characters/{characterId}/talk/stream`, `GET /api/character/v1/characters/{characterId}/talk/messages`, `GET /api/character/v1/characters/{characterId}/talk/diaries` | SSE 대화, 오늘 원문 복원, 날짜별 요약 기록 조회를 제공한다. 세션 기반 멀티턴 맥락, 요약 기억 검색, 일일 대화 제한, provider 실제 token usage를 포함한다. |
 | 지갑 거래내역 | `GET /api/wallet/v1/wallets/me/transactions` | cursor 기반 최신순 목록이며 `occurredAt`은 거래 생성 시각이다. |
 | 상점/보관함 아이템 | `GET /api/item/v1/items`, `GET /api/item/v1/user-items` | 응답에 `characterTypeId`, `effectType`, `imageUrl`이 포함된다. 캐릭터별 스킨 필터와 소모품 UI 매핑은 해당 필드를 기준으로 한다. |
 | 아이템 구매 | `POST /api/item/v1/item-purchases` | body의 `idempotencyKey`를 구매 재시도 멱등키로 사용한다. |
@@ -152,6 +152,8 @@ Base Pattern: /api/{domain}/v1/{resource}
 | PUT    | `⚠️ /api/character/v1/characters/{characterId}/equipped-skin`   | 캐릭터 스킨 장착/해제 | path + body | equipped skin | 🔐 |
 | POST   | `/api/character/v1/characters/{characterId}/interactions`       | 캐릭터 터치/상태 기반 상호작용 및 기억 조각 해금 | path + body | interaction result | 🔐 |
 | POST   | `/api/character/v1/characters/{characterId}/talk/stream`        | 별친구 대화 SSE 스트리밍 | path + body | SSE stream | 🔐 |
+| GET    | `/api/character/v1/characters/{characterId}/talk/messages`      | 특정 날짜 별친구 대화 원문 조회 | path + query | messages | 🔐 |
+| GET    | `/api/character/v1/characters/{characterId}/talk/diaries`       | 날짜 범위 별친구 대화 요약 조회 | path + query | diaries | 🔐 |
 | GET    | `💾 /api/onboarding/v1/questions`                               | 온보딩 질문 목록 조회  | none | questions | 🔐 |
 | GET    | `/api/onboarding/v1/profiles/me`                                | 내 온보딩 프로필 조회  | none | profile | 🔐 |
 | PUT    | `/api/onboarding/v1/profiles/me`                                | 내 온보딩 프로필 저장/완료 | body | profile | 🔐 |
@@ -1018,6 +1020,96 @@ data: {
 
 ---
 
+### 4.11 GET `/api/character/v1/characters/{characterId}/talk/messages` 🔐
+
+**설명**
+특정 날짜의 별친구 대화 원문을 시간순으로 조회한다. 화면을 나갔다가 돌아와도 오늘 나눈 대화를 복원하기 위한 계약이다.
+
+원문 메시지는 단기 맥락과 당일 복원용이다. 기본 보관 기간은 24시간이며, 장기 회고 화면은 원문 전체가 아니라 요약 기록 API를 사용한다.
+
+**Request**
+
+| 파라미터 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| date | `yyyy-MM-dd` | X | 조회 날짜. 생략하면 서버 기준 오늘 |
+
+**Response**
+
+```json
+{
+  "characterId": 10,
+  "date": "2026-06-09",
+  "latestSessionId": "talk_01HX...",
+  "messages": [
+    {
+      "role": "user",
+      "content": "나 오늘 회사 다녀와서 너무 힘들었어",
+      "sequence": 1,
+      "requestId": "CHARACTER_TALK:...",
+      "fallbackUsed": false,
+      "createdAt": "2026-06-09T20:12:01.123",
+      "sessionId": "talk_01HX..."
+    },
+    {
+      "role": "assistant",
+      "content": "무... 무무. (해석: 무무가 오늘 많이 힘들었다는 걸 기억한다고 하는 것 같아요.)",
+      "sequence": 2,
+      "requestId": "CHARACTER_TALK:...",
+      "fallbackUsed": false,
+      "createdAt": "2026-06-09T20:12:04.456",
+      "sessionId": "talk_01HX..."
+    }
+  ]
+}
+```
+
+**정책**
+
+- 로그인 사용자와 `characterId` 기준으로만 조회한다.
+- 같은 세션 안 메시지는 `sequence` 오름차순으로 정렬한다.
+- 세션이 여러 개이면 `createdAt`, `sessionId`, `sequence` 기준으로 시간순 정렬한다.
+- `latestSessionId`는 프론트가 이어 말하기 요청에 사용할 수 있는 가장 최근 세션 ID다. 대화가 없으면 빈 문자열이다.
+
+---
+
+### 4.12 GET `/api/character/v1/characters/{characterId}/talk/diaries` 🔐
+
+**설명**
+날짜 범위의 별친구 대화 요약 기록을 조회한다. 사용자가 과거의 감정 흐름을 일기처럼 돌아볼 수 있도록, 만료된 대화 세션의 요약 memory를 반환한다.
+
+**Request**
+
+| 파라미터 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| from | `yyyy-MM-dd` | X | 시작 날짜. 생략하면 `to - 6일` |
+| to | `yyyy-MM-dd` | X | 종료 날짜. 생략하면 서버 기준 오늘 |
+
+**Response**
+
+```json
+{
+  "characterId": 10,
+  "fromDate": "2026-06-03",
+  "toDate": "2026-06-09",
+  "items": [
+    {
+      "date": "2026-06-08",
+      "summary": "이전 대화 요약: 사용자: 회사 다녀와서 많이 지쳤다고 말했다. 별친구: 쉬어도 괜찮다고 위로했다.",
+      "sourceSessionId": 42,
+      "createdAt": "2026-06-08T23:45:10.123"
+    }
+  ]
+}
+```
+
+**정책**
+
+- 한 번에 조회할 수 있는 기간은 최대 31일이다.
+- 원문 전체가 아니라 `SESSION_SUMMARY` memory를 반환한다.
+- 요약 생성 전인 활성 세션은 `talk/messages`에서 조회하고, 만료 후 요약된 세션은 `talk/diaries`에서 조회한다.
+
+---
+
 ## 5. 온보딩
 
 ### 5.1 GET `💾 /api/onboarding/v1/questions` 🔐
@@ -1702,6 +1794,80 @@ AI는 Spring AI Tool Calling으로 필요한 백엔드 context를 조회한다. 
 - 만료 세션은 요약 후 `character_talk_memories`에 768차원 embedding으로 저장한다.
 - 새 대화에서 사용자 메시지와 유사한 memory를 최대 3개 검색해 prompt에 넣는다.
 - provider가 실제 token usage를 내려주면 `actual_prompt_tokens`, `actual_completion_tokens`, `actual_total_tokens`를 세션에 누적한다. 실제값이 없으면 null로 둔다.
+
+---
+
+### 6.10 내부 gRPC `AiService.GetCharacterTalkMessages`
+
+**설명**
+gateway가 특정 날짜의 별친구 원문 대화를 조회할 때 사용한다.
+
+**Request**
+
+```json
+{
+  "userId": 1,
+  "characterId": 10,
+  "date": "2026-06-09"
+}
+```
+
+**Response**
+
+```json
+{
+  "characterId": 10,
+  "date": "2026-06-09",
+  "latestSessionId": "talk_01HX...",
+  "messages": [
+    {
+      "role": "user",
+      "content": "나 오늘 너무 힘들었어",
+      "sequence": 1,
+      "requestId": "CHARACTER_TALK:...",
+      "fallbackUsed": false,
+      "createdAt": "2026-06-09T20:12:01.123",
+      "sessionId": "talk_01HX..."
+    }
+  ]
+}
+```
+
+---
+
+### 6.11 내부 gRPC `AiService.GetCharacterTalkDiaries`
+
+**설명**
+gateway가 날짜 범위의 별친구 대화 요약 기록을 조회할 때 사용한다.
+
+**Request**
+
+```json
+{
+  "userId": 1,
+  "characterId": 10,
+  "fromDate": "2026-06-03",
+  "toDate": "2026-06-09"
+}
+```
+
+**Response**
+
+```json
+{
+  "characterId": 10,
+  "fromDate": "2026-06-03",
+  "toDate": "2026-06-09",
+  "items": [
+    {
+      "date": "2026-06-08",
+      "summary": "이전 대화 요약: 사용자: 회사 다녀와서 많이 지쳤다고 말했다. 별친구: 쉬어도 괜찮다고 위로했다.",
+      "sourceSessionId": 42,
+      "createdAt": "2026-06-08T23:45:10.123"
+    }
+  ]
+}
+```
 
 ---
 

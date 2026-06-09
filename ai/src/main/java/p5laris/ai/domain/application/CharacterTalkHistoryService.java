@@ -7,11 +7,16 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import p5laris.ai.domain.application.dto.CharacterTalkDiariesResult;
+import p5laris.ai.domain.application.dto.CharacterTalkDiaryItem;
 import p5laris.ai.domain.application.dto.CharacterTalkGenerationCommand;
+import p5laris.ai.domain.application.dto.CharacterTalkMessageItem;
+import p5laris.ai.domain.application.dto.CharacterTalkMessagesResult;
 import p5laris.ai.domain.application.dto.PreparedCharacterTalkContext;
 import p5laris.ai.domain.application.dto.TextEmbeddingCommand;
 import p5laris.ai.domain.application.dto.TextEmbeddingResult;
 import p5laris.ai.domain.application.generator.AiTokenUsage;
+import p5laris.ai.domain.application.memory.CharacterTalkDiarySummary;
 import p5laris.ai.domain.application.memory.CharacterTalkMemoryHit;
 import p5laris.ai.domain.application.memory.EmbeddingVectorUtils;
 import p5laris.ai.domain.domain.entity.CharacterTalkMessage;
@@ -26,7 +31,10 @@ import p5laris.ai.domain.infrastructure.config.AiCharacterTalkProperties;
 import p5laris.ai.domain.infrastructure.config.AiEmbeddingProperties;
 import p5laris.ai.domain.infrastructure.repository.CharacterTalkMemoryJdbcRepository;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeParseException;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -46,10 +54,12 @@ import java.util.UUID;
 public class CharacterTalkHistoryService {
 
     private static final int SUMMARY_MAX_LENGTH = 700;
+    private static final int MAX_DIARY_RANGE_DAYS = 31;
 
     private final CharacterTalkSessionRepository sessionRepository;
     private final CharacterTalkMessageRepository messageRepository;
     private final CharacterTalkMemoryJdbcRepository memoryJdbcRepository;
+    private final CharacterTalkMessageWriter messageWriter;
     private final AiTextEmbeddingService textEmbeddingService;
     private final AiCharacterTalkProperties properties;
     private final AiEmbeddingProperties embeddingProperties;
@@ -68,7 +78,7 @@ public class CharacterTalkHistoryService {
         String historyJson = toHistoryJson(previousMessages);
         String memoryJson = toMemoryJson(memoryHits);
 
-        recordUserMessage(session, command, now, nextExpiresAt);
+        messageWriter.recordUserMessage(session.getId(), command, now, nextExpiresAt);
 
         return new PreparedCharacterTalkContext(
                 session,
@@ -83,7 +93,6 @@ public class CharacterTalkHistoryService {
         );
     }
 
-    @Transactional
     public void recordAssistantResponse(
             PreparedCharacterTalkContext context,
             CharacterTalkGenerationCommand command,
@@ -95,27 +104,57 @@ public class CharacterTalkHistoryService {
             return;
         }
 
-        CharacterTalkSession session = sessionRepository.findById(context.session().getId())
-                .orElse(null);
-        if (session == null) {
-            return;
+        messageWriter.recordAssistantResponse(
+                context.session().getId(),
+                command,
+                assistantText,
+                fallbackUsed,
+                tokenUsage
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public CharacterTalkMessagesResult getDailyMessages(Long userId, Long characterId, String dateText) {
+        LocalDate date = parseDateOrDefault(dateText, LocalDate.now());
+        LocalDateTime startAt = date.atStartOfDay();
+        LocalDateTime endAt = date.plusDays(1).atStartOfDay();
+        List<CharacterTalkMessage> messages = messageRepository.findDailyMessages(
+                userId,
+                characterId,
+                startAt,
+                endAt
+        );
+        List<CharacterTalkMessageItem> items = messages.stream()
+                .map(this::toMessageItem)
+                .toList();
+        String latestSessionId = messages.isEmpty()
+                ? ""
+                : messages.get(messages.size() - 1).getSession().getSessionId();
+        return new CharacterTalkMessagesResult(characterId, date, latestSessionId, items);
+    }
+
+    @Transactional(readOnly = true)
+    public CharacterTalkDiariesResult getDiaries(
+            Long userId,
+            Long characterId,
+            String fromDateText,
+            String toDateText
+    ) {
+        LocalDate toDate = parseDateOrDefault(toDateText, LocalDate.now());
+        LocalDate fromDate = parseDateOrDefault(fromDateText, toDate.minusDays(6));
+        if (fromDate.isAfter(toDate)) {
+            throw new AiException(AiErrorCode.AI_INVALID_REQUEST);
+        }
+        if (ChronoUnit.DAYS.between(fromDate, toDate) + 1 > MAX_DIARY_RANGE_DAYS) {
+            throw new AiException(AiErrorCode.AI_INVALID_REQUEST);
         }
 
-        CharacterTalkMessage assistantMessage = CharacterTalkMessage.create(
-                session,
-                CharacterTalkMessageRole.ASSISTANT,
-                trimForStorage(assistantText),
-                session.nextSequence(),
-                command.requestId(),
-                fallbackUsed
-        );
-        session.recordAssistantMessage(
-                tokenUsage != null ? tokenUsage.promptTokens() : null,
-                tokenUsage != null ? tokenUsage.completionTokens() : null,
-                tokenUsage != null ? tokenUsage.totalTokens() : null
-        );
-        messageRepository.save(assistantMessage);
-        sessionRepository.save(session);
+        List<CharacterTalkDiaryItem> items = memoryJdbcRepository
+                .findDiarySummaries(userId, characterId, fromDate, toDate)
+                .stream()
+                .map(this::toDiaryItem)
+                .toList();
+        return new CharacterTalkDiariesResult(characterId, fromDate, toDate, items);
     }
 
     @Transactional
@@ -249,25 +288,6 @@ public class CharacterTalkHistoryService {
         return new SessionResolution(sessionRepository.save(session), true);
     }
 
-    protected void recordUserMessage(
-            CharacterTalkSession session,
-            CharacterTalkGenerationCommand command,
-            LocalDateTime now,
-            LocalDateTime expiresAt
-    ) {
-        CharacterTalkMessage message = CharacterTalkMessage.create(
-                session,
-                CharacterTalkMessageRole.USER,
-                trimForStorage(command.userMessage()),
-                session.nextSequence(),
-                command.requestId(),
-                false
-        );
-        session.recordUserMessage(now, expiresAt);
-        messageRepository.save(message);
-        sessionRepository.save(session);
-    }
-
     private List<CharacterTalkMessage> findPromptWindowMessages(CharacterTalkSession session) {
         int maxMessages = properties.normalizedHistoryMaxTurns() * 2;
         List<CharacterTalkMessage> recent = messageRepository.findRecentMessages(
@@ -320,6 +340,27 @@ public class CharacterTalkHistoryService {
                 })
                 .toList();
         return toJson(body);
+    }
+
+    private CharacterTalkMessageItem toMessageItem(CharacterTalkMessage message) {
+        return new CharacterTalkMessageItem(
+                message.getRole().name().toLowerCase(Locale.ROOT),
+                message.getContent(),
+                message.getSequence(),
+                message.getRequestId(),
+                message.isFallbackUsed(),
+                message.getCreatedAt(),
+                message.getSession().getSessionId()
+        );
+    }
+
+    private CharacterTalkDiaryItem toDiaryItem(CharacterTalkDiarySummary summary) {
+        return new CharacterTalkDiaryItem(
+                summary.date(),
+                summary.summary(),
+                summary.sourceSessionId(),
+                summary.createdAt()
+        );
     }
 
     private String toMemoryJson(List<CharacterTalkMemoryHit> hits) {
@@ -385,6 +426,18 @@ public class CharacterTalkHistoryService {
 
     private String normalizeText(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private LocalDate parseDateOrDefault(String value, LocalDate defaultDate) {
+        String normalized = normalizeText(value);
+        if (normalized.isBlank()) {
+            return defaultDate;
+        }
+        try {
+            return LocalDate.parse(normalized);
+        } catch (DateTimeParseException e) {
+            throw new AiException(AiErrorCode.AI_INVALID_REQUEST);
+        }
     }
 
     private record SessionResolution(CharacterTalkSession session, boolean newSession) {
