@@ -5,18 +5,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import p5laris.ai.domain.application.dto.CharacterTalkGenerationCommand;
 import p5laris.ai.domain.application.dto.PreparedCharacterTalkContext;
-import p5laris.ai.domain.application.generator.AiRateLimiter;
 import p5laris.ai.domain.application.generator.AiTokenUsage;
+import p5laris.ai.domain.application.generator.CharacterTalkGenerator;
 import p5laris.ai.domain.application.generator.CharacterTalkStreamEmitter;
 import p5laris.ai.domain.domain.enums.AiErrorType;
-import p5laris.ai.domain.domain.enums.AiProviderType;
 import p5laris.ai.domain.domain.policy.CharacterTalkValidationPolicy;
 import p5laris.ai.domain.exception.AiErrorCode;
 import p5laris.ai.domain.exception.AiException;
 import p5laris.ai.domain.exception.FallbackRequiredException;
-import p5laris.ai.domain.infrastructure.config.AiProviderProperties;
-import p5laris.ai.domain.infrastructure.provider.AiProviderCircuitBreaker;
-import p5laris.ai.domain.infrastructure.provider.GeminiCharacterTalkGenerator;
 
 import java.util.Locale;
 
@@ -47,10 +43,7 @@ public class AiCharacterTalkService {
             "무무. 무우...? (해석: 좋아, 천천히 이어가자. 지금 제일 먼저 떠오른 말이 뭐야?)"
     };
 
-    private final AiProviderProperties aiProviderProperties;
-    private final AiRateLimiter aiRateLimiter;
-    private final AiProviderCircuitBreaker aiProviderCircuitBreaker;
-    private final GeminiCharacterTalkGenerator geminiCharacterTalkGenerator;
+    private final CharacterTalkGenerator characterTalkGenerator;
     private final CharacterTalkValidationPolicy characterTalkValidationPolicy;
     private final CharacterTalkHistoryService characterTalkHistoryService;
 
@@ -95,26 +88,10 @@ public class AiCharacterTalkService {
     }
 
     private AiTokenUsage streamReply(CharacterTalkGenerationCommand command, CharacterTalkStreamEmitter emitter) {
-        AiProviderType providerType = aiProviderProperties.providerType();
-        if (!aiProviderProperties.isExternalEnabled()) {
-            throw new FallbackRequiredException(AiErrorType.PROVIDER_ERROR, "외부 AI provider가 비활성화되어 있습니다.");
-        }
-        if (providerType != AiProviderType.GEMINI) {
-            throw new FallbackRequiredException(AiErrorType.PROVIDER_ERROR, "지원하지 않는 별친구 대화 provider입니다.");
-        }
-
-        aiRateLimiter.checkAllowed(command.userId(), providerType, aiProviderProperties.resolvedModel());
-        return aiProviderCircuitBreaker.execute(
-                providerType,
-                aiProviderProperties.resolvedModel(),
-                command.requestId(),
-                () -> {
-                    StreamingReplyGuard guard = new StreamingReplyGuard(command, emitter);
-                    AiTokenUsage tokenUsage = geminiCharacterTalkGenerator.stream(command, guard::accept);
-                    guard.finish();
-                    return tokenUsage;
-                }
-        );
+        StreamingReplyGuard guard = new StreamingReplyGuard(command, emitter);
+        AiTokenUsage tokenUsage = characterTalkGenerator.stream(command, guard::accept);
+        guard.finish();
+        return tokenUsage;
     }
 
     private void validateRequest(CharacterTalkGenerationCommand command) {
@@ -383,3 +360,4 @@ public class AiCharacterTalkService {
         }
     }
 }
+

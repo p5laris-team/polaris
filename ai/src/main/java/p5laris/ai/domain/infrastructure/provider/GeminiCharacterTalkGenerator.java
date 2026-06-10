@@ -7,7 +7,9 @@ import p5laris.ai.domain.application.dto.CharacterTalkGenerationCommand;
 import p5laris.ai.domain.application.generator.AiChatStreamChunk;
 import p5laris.ai.domain.application.generator.AiChatClient;
 import p5laris.ai.domain.application.generator.AiTokenUsage;
+import p5laris.ai.domain.application.generator.ExternalCharacterTalkGenerator;
 import p5laris.ai.domain.domain.enums.AiErrorType;
+import p5laris.ai.domain.domain.enums.AiProviderType;
 import p5laris.ai.domain.exception.FallbackRequiredException;
 import p5laris.ai.domain.infrastructure.config.AiCharacterTalkProperties;
 import p5laris.ai.domain.infrastructure.tool.CharacterTalkToolsFactory;
@@ -26,12 +28,18 @@ import java.util.function.Consumer;
 @Component
 @RequiredArgsConstructor
 @Slf4j
-public class GeminiCharacterTalkGenerator {
+public class GeminiCharacterTalkGenerator implements ExternalCharacterTalkGenerator {
 
     private final AiChatClient aiChatClient;
     private final AiCharacterTalkProperties properties;
     private final CharacterTalkToolsFactory characterTalkToolsFactory;
 
+    @Override
+    public AiProviderType providerType() {
+        return AiProviderType.GEMINI;
+    }
+
+    @Override
     public AiTokenUsage stream(CharacterTalkGenerationCommand command, Consumer<String> chunkConsumer) {
         try {
             TokenUsageCollector usageCollector = new TokenUsageCollector();
