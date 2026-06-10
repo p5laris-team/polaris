@@ -29,6 +29,8 @@ import p5laris.character.domain.domain.repository.CharacterStoryFragmentReposito
 import p5laris.character.domain.domain.repository.CharacterTypeRepository;
 import p5laris.character.domain.domain.repository.UserCharacterStoryUnlockRepository;
 import p5laris.character.domain.domain.repository.UserCharacterRepository;
+import org.springframework.transaction.support.TransactionCallback;
+import org.springframework.transaction.support.TransactionTemplate;
 import p5laris.character.domain.exception.CharacterErrorCode;
 import p5laris.character.domain.exception.CharacterException;
 import p5laris.character.domain.infrastructure.config.CharacterItemGrpcProperties;
@@ -82,6 +84,9 @@ class CharacterServiceTest {
     @Mock
     private ApplicationEventPublisher eventPublisher;
 
+    @Mock
+    private TransactionTemplate transactionTemplate;
+
     @Spy
     private ObjectMapper objectMapper = new ObjectMapper();
 
@@ -93,6 +98,10 @@ class CharacterServiceTest {
     @BeforeEach
     void setUp() {
         org.springframework.test.util.ReflectionTestUtils.setField(characterService, "itemStub", itemStub);
+        lenient().when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+            TransactionCallback<?> callback = invocation.getArgument(0);
+            return callback.doInTransaction(null);
+        });
         lenient().when(itemGrpcProperties.getDeadlineMs()).thenReturn(1000L);
         lenient().when(itemStub.withDeadlineAfter(1000L, TimeUnit.MILLISECONDS)).thenReturn(itemStub);
         lenient().when(s3StorageService.toPublicUrl(any())).thenAnswer(invocation -> invocation.getArgument(0));
