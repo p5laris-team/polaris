@@ -18,10 +18,10 @@ import p5laris.ai.domain.application.dto.TextEmbeddingResult;
 import p5laris.ai.domain.application.generator.AiTokenUsage;
 import p5laris.ai.domain.application.memory.CharacterTalkDiarySummary;
 import p5laris.ai.domain.application.memory.CharacterTalkMemoryHit;
+import p5laris.ai.domain.application.memory.CharacterTalkSessionSummary;
 import p5laris.ai.domain.application.memory.EmbeddingVectorUtils;
 import p5laris.ai.domain.domain.entity.CharacterTalkMessage;
 import p5laris.ai.domain.domain.entity.CharacterTalkSession;
-import p5laris.ai.domain.domain.enums.CharacterTalkMessageRole;
 import p5laris.ai.domain.domain.enums.CharacterTalkSessionStatus;
 import p5laris.ai.domain.domain.repository.CharacterTalkMessageRepository;
 import p5laris.ai.domain.domain.repository.CharacterTalkSessionRepository;
@@ -53,13 +53,13 @@ import java.util.UUID;
 @Slf4j
 public class CharacterTalkHistoryService {
 
-    private static final int SUMMARY_MAX_LENGTH = 700;
     private static final int MAX_DIARY_RANGE_DAYS = 31;
 
     private final CharacterTalkSessionRepository sessionRepository;
     private final CharacterTalkMessageRepository messageRepository;
     private final CharacterTalkMemoryJdbcRepository memoryJdbcRepository;
     private final CharacterTalkMessageWriter messageWriter;
+    private final CharacterTalkSessionSummarizer sessionSummarizer;
     private final AiTextEmbeddingService textEmbeddingService;
     private final AiCharacterTalkProperties properties;
     private final AiEmbeddingProperties embeddingProperties;
@@ -157,22 +157,26 @@ public class CharacterTalkHistoryService {
         return new CharacterTalkDiariesResult(characterId, fromDate, toDate, items);
     }
 
-    @Transactional
     public void cleanupExpiredData() {
         if (!properties.isCleanupEnabled()) {
             return;
         }
 
-        LocalDateTime messageCutoff = LocalDateTime.now().minusHours(properties.normalizedMessageRetentionHours());
-        LocalDateTime sessionCutoff = LocalDateTime.now().minusDays(properties.normalizedSessionRetentionDays());
-        int deletedMessages = messageRepository.deleteMessagesBefore(messageCutoff);
+        LocalDateTime now = LocalDateTime.now();
+        int summarizedSessions = summarizeExpiredSessions(now);
+        LocalDateTime messageCutoff = now.minusHours(properties.normalizedMessageRetentionHours());
+        LocalDateTime sessionCutoff = now.minusDays(properties.normalizedSessionRetentionDays());
+        int deletedMessages = messageRepository.deleteMessagesBefore(
+                messageCutoff,
+                CharacterTalkSessionStatus.ACTIVE
+        );
         int deletedSessions = sessionRepository.deleteClosedSessionsBefore(
                 CharacterTalkSessionStatus.ACTIVE,
                 sessionCutoff
         );
-        if (deletedMessages > 0 || deletedSessions > 0) {
-            log.info("별친구 대화 보관 정책 정리 완료. deletedMessages={}, deletedSessions={}",
-                    deletedMessages, deletedSessions);
+        if (summarizedSessions > 0 || deletedMessages > 0 || deletedSessions > 0) {
+            log.info("별친구 대화 보관 정책 정리 완료. summarizedSessions={}, deletedMessages={}, deletedSessions={}",
+                    summarizedSessions, deletedMessages, deletedSessions);
         }
     }
 
@@ -185,22 +189,39 @@ public class CharacterTalkHistoryService {
                         now
                 );
         for (CharacterTalkSession session : sessions) {
-            summarizeSession(command, session);
+            summarizeSession(session);
         }
     }
 
-    private void summarizeSession(CharacterTalkGenerationCommand command, CharacterTalkSession session) {
+    private int summarizeExpiredSessions(LocalDateTime now) {
+        List<CharacterTalkSession> sessions = sessionRepository
+                .findTop10ByStatusAndExpiresAtLessThanEqualOrderByExpiresAtAsc(
+                        CharacterTalkSessionStatus.ACTIVE,
+                        now
+                );
+        int summarized = 0;
+        for (CharacterTalkSession session : sessions) {
+            if (summarizeSession(session)) {
+                summarized += 1;
+            }
+        }
+        return summarized;
+    }
+
+    private boolean summarizeSession(CharacterTalkSession session) {
         try {
             List<CharacterTalkMessage> messages = messageRepository.findBySessionIdOrderBySequenceAsc(session.getId());
-            String summary = buildSummary(messages);
+            CharacterTalkSessionSummary summary = sessionSummarizer.summarize(session, messages);
             if (summary.isBlank()) {
                 markExpired(session);
-                return;
+                return false;
             }
 
+            String contextSummary = summary.resolvedContextSummary();
+            String diaryText = summary.resolvedDiaryText();
             TextEmbeddingResult embedding = textEmbeddingService.generateTextEmbedding(new TextEmbeddingCommand(
-                    command.userId(),
-                    summary,
+                    session.getUserId(),
+                    contextSummary,
                     embeddingProperties.resolvedModel(),
                     embeddingProperties.getDimension(),
                     "character-talk-memory-" + session.getSessionId()
@@ -210,16 +231,19 @@ public class CharacterTalkHistoryService {
                     session.getUserId(),
                     session.getCharacterId(),
                     session.getId(),
-                    summary,
+                    contextSummary,
+                    diaryText,
                     embedding.model(),
                     embedding.dimension(),
                     normalized
             );
             markMemoryReady(session);
+            return true;
         } catch (Exception e) {
             log.warn("별친구 대화 세션 기억화 실패. sessionId={}, characterId={}, 예외클래스={}",
                     session.getSessionId(), session.getCharacterId(), e.getClass().getSimpleName());
             markExpired(session);
+            return false;
         }
     }
 
@@ -374,42 +398,6 @@ public class CharacterTalkHistoryService {
                 })
                 .toList();
         return toJson(body);
-    }
-
-    private String buildSummary(List<CharacterTalkMessage> messages) {
-        if (messages == null || messages.isEmpty()) {
-            return "";
-        }
-        StringBuilder builder = new StringBuilder();
-        builder.append("이전 대화 요약: ");
-        messages.stream()
-                .sorted(Comparator.comparingInt(CharacterTalkMessage::getSequence))
-                .limit(12)
-                .forEach(message -> builder
-                        .append(message.getRole() == CharacterTalkMessageRole.USER ? "사용자: " : "별친구: ")
-                        .append(trimForSummary(message.getContent()))
-                        .append(' '));
-        String summary = builder.toString().trim();
-        if (summary.length() <= SUMMARY_MAX_LENGTH) {
-            return summary;
-        }
-        return summary.substring(0, SUMMARY_MAX_LENGTH);
-    }
-
-    private String trimForSummary(String value) {
-        String trimmed = normalizeText(value);
-        if (trimmed.length() <= 120) {
-            return trimmed;
-        }
-        return trimmed.substring(0, 120);
-    }
-
-    private String trimForStorage(String value) {
-        String trimmed = normalizeText(value);
-        if (trimmed.length() <= 2_000) {
-            return trimmed;
-        }
-        return trimmed.substring(0, 2_000);
     }
 
     private String toJson(Object value) {

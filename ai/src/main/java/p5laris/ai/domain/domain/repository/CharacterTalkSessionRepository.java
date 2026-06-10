@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.repository.query.Param;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.transaction.annotation.Transactional;
 import p5laris.ai.domain.domain.entity.CharacterTalkSession;
 import p5laris.ai.domain.domain.enums.CharacterTalkSessionStatus;
 
@@ -39,6 +40,12 @@ public interface CharacterTalkSessionRepository extends JpaRepository<CharacterT
             LocalDateTime now
     );
 
+    List<CharacterTalkSession> findTop10ByStatusAndExpiresAtLessThanEqualOrderByExpiresAtAsc(
+            CharacterTalkSessionStatus status,
+            LocalDateTime now
+    );
+
+    @Transactional
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
             delete from CharacterTalkSession session
