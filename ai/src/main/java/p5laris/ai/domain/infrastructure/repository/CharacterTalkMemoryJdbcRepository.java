@@ -29,7 +29,8 @@ public class CharacterTalkMemoryJdbcRepository {
             Long userId,
             Long characterId,
             Long sourceSessionId,
-            String summary,
+            String contextSummary,
+            String diaryText,
             String model,
             int dimension,
             List<Float> normalizedVector
@@ -41,16 +42,18 @@ public class CharacterTalkMemoryJdbcRepository {
                             source_session_id,
                             memory_type,
                             summary,
+                            diary_text,
                             embedding_model,
                             embedding_dimension,
                             embedding,
                             created_at,
                             updated_at
                         )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, CAST(? AS vector), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS vector), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                         ON CONFLICT (source_session_id, memory_type)
                         DO UPDATE SET
                             summary = EXCLUDED.summary,
+                            diary_text = EXCLUDED.diary_text,
                             embedding_model = EXCLUDED.embedding_model,
                             embedding_dimension = EXCLUDED.embedding_dimension,
                             embedding = EXCLUDED.embedding,
@@ -60,7 +63,8 @@ public class CharacterTalkMemoryJdbcRepository {
                 characterId,
                 sourceSessionId,
                 CharacterTalkMemoryType.SESSION_SUMMARY.name(),
-                summary,
+                contextSummary,
+                diaryText,
                 model,
                 dimension,
                 EmbeddingVectorUtils.toPgVectorLiteral(normalizedVector)
@@ -126,7 +130,7 @@ public class CharacterTalkMemoryJdbcRepository {
         return jdbcTemplate.query("""
                         SELECT
                             CAST(session.started_at AS date) AS diary_date,
-                            memory.summary,
+                            COALESCE(NULLIF(memory.diary_text, ''), memory.summary) AS summary,
                             memory.source_session_id,
                             memory.created_at
                         FROM character_talk_memories memory
