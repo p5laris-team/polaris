@@ -14,6 +14,7 @@ import net.devh.boot.grpc.client.inject.GrpcClient;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import p5laris.character.domain.application.dto.CharacterAssetResponse;
 import p5laris.character.domain.application.dto.CharacterInteractionResponse;
 import p5laris.character.domain.application.dto.CharacterTalkContextResponse;
@@ -81,6 +82,7 @@ public class CharacterService {
     private final ObjectMapper objectMapper;
     private final ApplicationEventPublisher eventPublisher;
     private final CharacterItemGrpcProperties itemGrpcProperties;
+    private final TransactionTemplate transactionTemplate;
 
     @GrpcClient("item")
     private ItemServiceGrpc.ItemServiceBlockingStub itemStub;
@@ -290,7 +292,6 @@ public class CharacterService {
                 .build();
     }
 
-    @Transactional
     public p5laris.character.domain.application.dto.CareActionResponse performCareAction(
             Long characterId, Long userId, String actionTypeStr, Long itemId, String idempotencyKey) {
 
@@ -303,83 +304,109 @@ public class CharacterService {
             return replayCareLog(existingLog.get());
         }
 
-        ActionType actionType = parseActionType(actionTypeStr);
-        long resolvedItemId = requirePositiveItemId(itemId);
-        UserItem careItem = findOwnedItem(userId, resolvedItemId, "CONSUMABLE");
-        validateCareItemMatchesAction(careItem, actionType);
+        CareActionResult txResult = transactionTemplate.execute(status -> {
+            ActionType actionType = parseActionType(actionTypeStr);
+            long resolvedItemId = requirePositiveItemId(itemId);
+            UserItem careItem = findOwnedItem(userId, resolvedItemId, "CONSUMABLE");
+            validateCareItemMatchesAction(careItem, actionType);
 
-        UserCharacter character = userCharacterRepository.findByIdForUpdate(characterId)
-                .orElseThrow(() -> new CharacterException(CharacterErrorCode.CHARACTER_NOT_FOUND));
+            UserCharacter character = userCharacterRepository.findByIdForUpdate(characterId)
+                    .orElseThrow(() -> new CharacterException(CharacterErrorCode.CHARACTER_NOT_FOUND));
 
-        if (!character.getUserId().equals(userId)) {
-            throw new CharacterException(CharacterErrorCode.NOT_CHARACTER_OWNER);
-        }
+            if (!character.getUserId().equals(userId)) {
+                throw new CharacterException(CharacterErrorCode.NOT_CHARACTER_OWNER);
+            }
 
-        var beforeStates = p5laris.character.domain.application.dto.CareActionResponse.States.builder()
-                .hunger(character.getFullness())
-                .energy(character.getEnergy())
-                .affection(character.getAffection())
-                .build();
-        var beforeGrowth = buildGrowth(character);
-        int earnedCountToday = countTodayEarnedCareExp(characterId, actionType);
-        int expGained = CharacterCareGrowthPolicy.calculateExpGained(actionType, earnedCountToday);
+            var beforeStates = p5laris.character.domain.application.dto.CareActionResponse.States.builder()
+                    .hunger(character.getFullness())
+                    .energy(character.getEnergy())
+                    .affection(character.getAffection())
+                    .build();
+            var beforeGrowth = buildGrowth(character);
+            int earnedCountToday = countTodayEarnedCareExp(characterId, actionType);
+            int expGained = CharacterCareGrowthPolicy.calculateExpGained(actionType, earnedCountToday);
 
-        character.applyCare(actionType, CARE_AMOUNT);
-        if (expGained > 0) {
-            character.gainExp(expGained);
-        }
+            character.applyCare(actionType, CARE_AMOUNT);
+            if (expGained > 0) {
+                character.gainExp(expGained);
+            }
 
-        var afterStates = p5laris.character.domain.application.dto.CareActionResponse.States.builder()
-                .hunger(character.getFullness())
-                .energy(character.getEnergy())
-                .affection(character.getAffection())
-                .build();
-        var afterGrowth = buildGrowth(character);
-        boolean levelUp = afterGrowth.level() > beforeGrowth.level();
+            var afterStates = p5laris.character.domain.application.dto.CareActionResponse.States.builder()
+                    .hunger(character.getFullness())
+                    .energy(character.getEnergy())
+                    .affection(character.getAffection())
+                    .build();
+            var afterGrowth = buildGrowth(character);
+            boolean levelUp = afterGrowth.level() > beforeGrowth.level();
 
-        CharacterCareLog careLog = CharacterCareLog.builder()
-                .userId(userId)
-                .characterId(characterId)
-                .itemId(resolvedItemId)
-                .actionType(actionType)
-                .beforeStateJson(toStateJson(beforeStates, beforeGrowth))
-                .afterStateJson(toStateJson(afterStates, afterGrowth, expGained, levelUp))
-                .idempotencyKey(idempotencyKey)
-                .build();
-        CharacterCareLog savedCareLog = characterCareLogRepository.save(careLog);
+            CharacterCareLog careLog = CharacterCareLog.builder()
+                    .userId(userId)
+                    .characterId(characterId)
+                    .itemId(resolvedItemId)
+                    .actionType(actionType)
+                    .beforeStateJson(toStateJson(beforeStates, beforeGrowth))
+                    .afterStateJson(toStateJson(afterStates, afterGrowth, expGained, levelUp))
+                    .idempotencyKey(idempotencyKey)
+                    .build();
+            CharacterCareLog savedCareLog = characterCareLogRepository.save(careLog);
+
+            return new CareActionResult(
+                    savedCareLog,
+                    actionType,
+                    resolvedItemId,
+                    beforeStates,
+                    afterStates,
+                    beforeGrowth,
+                    afterGrowth,
+                    expGained,
+                    levelUp
+            );
+        });
 
         try {
             deadlineItemStub().useItem(
                     UseItemRequest.newBuilder()
                             .setUserId(userId)
-                            .setItemId(resolvedItemId)
+                            .setItemId(txResult.resolvedItemId())
                             .setQuantity(1)
                             .setRefType("CARE_ACTION")
-                            .setRefId(savedCareLog.getId() != null ? savedCareLog.getId() : 0L)
+                            .setRefId(txResult.savedCareLog().getId() != null ? txResult.savedCareLog().getId() : 0L)
                             .setIdempotencyKey(idempotencyKey)
                             .build()
             );
         } catch (Exception e) {
             log.warn("돌보기 아이템 사용 gRPC 호출에 실패했습니다. userId={}, itemId={}, careLogId={}, statusCode={}, errorCode={}",
-                    userId, resolvedItemId, savedCareLog.getId(), grpcStatusCode(e), grpcErrorCode(e), e);
+                    userId, txResult.resolvedItemId(), txResult.savedCareLog().getId(), grpcStatusCode(e), grpcErrorCode(e), e);
             throw mapItemFailure(e);
         }
 
         return p5laris.character.domain.application.dto.CareActionResponse.builder()
-                .careLogId(savedCareLog.getId())
+                .careLogId(txResult.savedCareLog().getId())
                 .characterId(characterId)
-                .actionType(actionType.name())
-                .consumedItemId(resolvedItemId)
+                .actionType(txResult.actionType().name())
+                .consumedItemId(txResult.resolvedItemId())
                 .consumedQuantity(1)
-                .beforeStates(beforeStates)
-                .afterStates(afterStates)
-                .beforeGrowth(beforeGrowth)
-                .afterGrowth(afterGrowth)
-                .expGained(expGained)
-                .levelUp(levelUp)
-                .characterMessage(characterMessage(actionType))
+                .beforeStates(txResult.beforeStates())
+                .afterStates(txResult.afterStates())
+                .beforeGrowth(txResult.beforeGrowth())
+                .afterGrowth(txResult.afterGrowth())
+                .expGained(txResult.expGained())
+                .levelUp(txResult.levelUp())
+                .characterMessage(characterMessage(txResult.actionType()))
                 .build();
     }
+
+    private record CareActionResult(
+            CharacterCareLog savedCareLog,
+            ActionType actionType,
+            long resolvedItemId,
+            p5laris.character.domain.application.dto.CareActionResponse.States beforeStates,
+            p5laris.character.domain.application.dto.CareActionResponse.States afterStates,
+            p5laris.character.domain.application.dto.CharacterGrowthResponse beforeGrowth,
+            p5laris.character.domain.application.dto.CharacterGrowthResponse afterGrowth,
+            int expGained,
+            boolean levelUp
+    ) {}
 
     @Transactional
     public GrantCharacterExpResponse grantCharacterExp(
