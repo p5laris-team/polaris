@@ -1,0 +1,67 @@
+[versions]
+# Spring Boot & Dependency Management
+springBoot = "3.5.14"
+springBootAi = "4.0.6"
+springDependencyManagement = "1.1.7"
+
+# gRPC
+grpc = "1.70.0"
+grpcProto = "1.63.0"
+grpcSpringBootStarter = "3.1.0.RELEASE"
+
+# Libraries
+dotenv = "4.0.0"
+jjwt = "0.12.5"
+resilience4j = "2.3.0"
+firebaseAdmin = "9.2.0"
+awsSdk = "2.24.0"
+springAi = "2.0.0-M5"
+junitBom = "5.10.0"
+slf4j = "2.0.17"
+tomcatAnnotations = "6.0.53"
+protobuf = "3.25.3"
+
+[libraries]
+# gRPC & Protobuf (used in modules)
+grpc-services = { group = "io.grpc", name = "grpc-services" }
+grpc-starter-server = { group = "net.devh", name = "grpc-server-spring-boot-starter", version.ref = "grpcSpringBootStarter" }
+grpc-starter-client = { group = "net.devh", name = "grpc-client-spring-boot-starter", version.ref = "grpcSpringBootStarter" }
+grpc-stub = { group = "io.grpc", name = "grpc-stub", version.ref = "grpcProto" }
+grpc-protobuf = { group = "io.grpc", name = "grpc-protobuf", version.ref = "grpcProto" }
+grpc-bom = { group = "io.grpc", name = "grpc-bom", version.ref = "grpc" }
+protobuf-java = { group = "com.google.protobuf", name = "protobuf-java", version.ref = "protobuf" }
+
+# Dotenv
+spring-dotenv = { group = "me.paulschwarz", name = "spring-dotenv", version.ref = "dotenv" }
+
+# JWT
+jjwt-api = { group = "io.jsonwebtoken", name = "jjwt-api", version.ref = "jjwt" }
+jjwt-impl = { group = "io.jsonwebtoken", name = "jjwt-impl", version.ref = "jjwt" }
+jjwt-jackson = { group = "io.jsonwebtoken", name = "jjwt-jackson", version.ref = "jjwt" }
+
+# Resilience4j
+resilience4j-circuitbreaker = { group = "io.github.resilience4j", name = "resilience4j-circuitbreaker", version.ref = "resilience4j" }
+
+# Firebase
+firebase-admin = { group = "com.google.firebase", name = "firebase-admin", version.ref = "firebaseAdmin" }
+
+# AWS SDK
+aws-sdk-bom = { group = "software.amazon.awssdk", name = "bom", version.ref = "awsSdk" }
+aws-sdk-s3 = { group = "software.amazon.awssdk", name = "s3" }
+
+# Spring AI
+spring-ai-bom = { group = "org.springframework.ai", name = "spring-ai-bom", version.ref = "springAi" }
+spring-ai-genai = { group = "org.springframework.ai", name = "spring-ai-starter-model-google-genai" }
+spring-ai-embedding = { group = "org.springframework.ai", name = "spring-ai-google-genai-embedding" }
+
+# Slf4j & Utils
+slf4j-api = { group = "org.slf4j", name = "slf4j-api", version.ref = "slf4j" }
+tomcat-annotations = { group = "org.apache.tomcat", name = "annotations-api", version.ref = "tomcatAnnotations" }
+
+# JUnit
+junit-bom = { group = "org.junit", name = "junit-bom", version.ref = "junitBom" }
+
+[plugins]
+spring-boot = { id = "org.springframework.boot", version.ref = "springBoot" }
+spring-boot-ai = { id = "org.springframework.boot", version.ref = "springBootAi" }
+dependency-management = { id = "io.spring.dependency-management", version.ref = "springDependencyManagement" }

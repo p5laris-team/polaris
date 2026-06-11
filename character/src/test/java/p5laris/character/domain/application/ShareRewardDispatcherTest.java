@@ -57,8 +57,7 @@ class ShareRewardDispatcherTest {
     @Mock
     private NotificationPushClient notificationPushClient;
 
-    @Mock
-    private ShareRewardBackoffPolicy shareRewardBackoffPolicy;
+
 
     @Mock
     private ShareRewardOutboxProperties properties;
@@ -77,7 +76,6 @@ class ShareRewardDispatcherTest {
                 shareLogRepository,
                 shareRewardWalletClient,
                 notificationPushClient,
-                shareRewardBackoffPolicy,
                 properties,
                 transactionTemplate,
                 new ObjectMapper(),

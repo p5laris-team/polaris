@@ -95,6 +95,35 @@ class AuthServiceTest {
         verify(transactionTemplate, never()).execute(any());
     }
 
+    @Test
+    void refreshToken_success() {
+        AuthService authService = authService();
+        User user = User.builder()
+                .email("tester@p5laris.life")
+                .build();
+        ReflectionTestUtils.setField(user, "id", 123L);
+
+        when(userRepository.findByRefreshToken("valid-token")).thenReturn(Optional.of(user));
+        when(jwtProvider.generateAccessToken(123L)).thenReturn("new-access-token");
+        when(jwtProvider.generateRefreshToken(123L)).thenReturn("new-refresh-token");
+
+        AuthService.RefreshResult result = authService.refreshToken("valid-token");
+
+        assertThat(result.accessToken()).isEqualTo("new-access-token");
+        assertThat(result.refreshToken()).isEqualTo("new-refresh-token");
+        assertThat(user.getRefreshToken()).isEqualTo("new-refresh-token");
+    }
+
+    @Test
+    void refreshToken_throwsUserException_whenTokenInvalid() {
+        AuthService authService = authService();
+        when(userRepository.findByRefreshToken("invalid-token")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> authService.refreshToken("invalid-token"))
+                .isInstanceOf(UserException.class)
+                .hasMessageContaining(UserErrorCode.INVALID_REFRESH_TOKEN.getMessage());
+    }
+
     private AuthService authService() {
         AuthService authService = new AuthService(
                 userRepository,

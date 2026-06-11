@@ -15,14 +15,14 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
-import p5laris.mission.core.entity.BaseEntity;
+import p5laris.common.entity.BaseEntity;
 import p5laris.mission.domain.domain.enums.UserMemorySourceType;
 import p5laris.mission.domain.domain.enums.UserMemoryType;
 
 /**
- * 사용자의 완료 답변과 피드백에서 추출한 개인화 기억이다.
+ * ?ъ슜?먯쓽 ?꾨즺 ?듬?怨??쇰뱶諛깆뿉??異붿텧??媛쒖씤??湲곗뼲?대떎.
  *
- * 아직 vector DB를 붙이지 않았으므로 여기서는 RAG 원천 데이터를 안정적으로 쌓는 역할만 맡는다.
+ * ?꾩쭅 vector DB瑜?遺숈씠吏 ?딆븯?쇰?濡??ш린?쒕뒗 RAG ?먯쿇 ?곗씠?곕? ?덉젙?곸쑝濡??볥뒗 ??븷留?留〓뒗??
  */
 @Entity
 @Getter

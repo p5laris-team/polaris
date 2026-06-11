@@ -15,6 +15,7 @@ import p5laris.user.domain.domain.entity.User;
 import p5laris.user.domain.domain.entity.Wallet;
 import p5laris.user.domain.domain.repository.UserRepository;
 import p5laris.user.domain.domain.repository.WalletRepository;
+import p5laris.user.domain.exception.UserErrorCode;
 import p5laris.user.domain.exception.UserException;
 
 import java.net.URLEncoder;
@@ -109,7 +110,7 @@ public class AuthService {
     @Transactional
     public RefreshResult refreshToken(String refreshToken) {
         User user = userRepository.findByRefreshToken(refreshToken)
-                .orElseThrow(() -> new RuntimeException("Invalid refresh token"));
+                .orElseThrow(() -> new UserException(UserErrorCode.INVALID_REFRESH_TOKEN));
 
         String newAccessToken = jwtProvider.generateAccessToken(user.getId());
         String newRefreshToken = jwtProvider.generateRefreshToken(user.getId());

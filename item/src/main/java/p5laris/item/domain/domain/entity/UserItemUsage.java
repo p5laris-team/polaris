@@ -2,15 +2,15 @@ package p5laris.item.domain.domain.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
-import p5laris.item.core.entity.BaseEntity;
+import p5laris.common.entity.BaseEntity;
 
 /**
- * 아이템 사용 이력 엔티티.
+ * ?꾩씠???ъ슜 ?대젰 ?뷀떚??
  *
- * character 모듈에서 돌봄 액션(FEED / SLEEP / PLAY) 시 소모성(CONSUMABLE) 아이템을 사용할 때마다
- * item 모듈의 UseItem gRPC API를 통해 이 테이블에 이력이 기록된다.
+ * character 紐⑤뱢?먯꽌 ?뚮큵 ?≪뀡(FEED / SLEEP / PLAY) ???뚮え??CONSUMABLE) ?꾩씠?쒖쓣 ?ъ슜???뚮쭏??
+ * item 紐⑤뱢??UseItem gRPC API瑜??듯빐 ???뚯씠釉붿뿉 ?대젰??湲곕줉?쒕떎.
  *
- * idempotencyKey: 동일 요청이 네트워크 재시도 등으로 중복 도달해도 한 번만 처리되도록 보장한다.
+ * idempotencyKey: ?숈씪 ?붿껌???ㅽ듃?뚰겕 ?ъ떆???깆쑝濡?以묐났 ?꾨떖?대룄 ??踰덈쭔 泥섎━?섎룄濡?蹂댁옣?쒕떎.
  */
 @Entity
 @Table(name = "item_usage_histories")
@@ -24,38 +24,38 @@ public class UserItemUsage extends BaseEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    /** 아이템을 사용한 유저 ID */
+    /** ?꾩씠?쒖쓣 ?ъ슜???좎? ID */
     @Column(name = "user_id", nullable = false)
     private Long userId;
 
-    /** 사용된 UserItem 행 */
+    /** ?ъ슜??UserItem ??*/
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_item_id", nullable = false)
     private UserItem userItem;
 
-    /** 사용된 아이템 ID (편의 컬럼 — JOIN 없이 조회 가능) */
+    /** ?ъ슜???꾩씠??ID (?몄쓽 而щ읆 ??JOIN ?놁씠 議고쉶 媛?? */
     @Column(name = "item_id", nullable = false)
     private Long itemId;
 
-    /** 사용 수량 (MVP = 1) */
+    /** ?ъ슜 ?섎웾 (MVP = 1) */
     @Column(nullable = false)
     @Builder.Default
     private int quantity = 1;
 
     /**
-     * 어떤 컨텍스트에서 사용됐는지 (예: "CARE_ACTION").
-     * 향후 다양한 도메인에서 아이템을 사용할 때 확장 포인트로 활용한다.
+     * ?대뼡 而⑦뀓?ㅽ듃?먯꽌 ?ъ슜?먮뒗吏 (?? "CARE_ACTION").
+     * ?ν썑 ?ㅼ뼇???꾨찓?몄뿉???꾩씠?쒖쓣 ?ъ슜?????뺤옣 ?ъ씤?몃줈 ?쒖슜?쒕떎.
      */
     @Column(name = "ref_type", length = 50)
     private String refType;
 
-    /** 해당 컨텍스트 PK (예: care_log_id) */
+    /** ?대떦 而⑦뀓?ㅽ듃 PK (?? care_log_id) */
     @Column(name = "ref_id")
     private Long refId;
 
     /**
-     * 멱등키: gRPC 클라이언트(character 모듈)가 생성해 전달한다.
-     * UNIQUE 제약으로 DB 레벨에서 중복 삽입을 방지한다.
+     * 硫깅벑?? gRPC ?대씪?댁뼵??character 紐⑤뱢)媛 ?앹꽦???꾨떖?쒕떎.
+     * UNIQUE ?쒖빟?쇰줈 DB ?덈꺼?먯꽌 以묐났 ?쎌엯??諛⑹??쒕떎.
      */
     @Column(name = "idempotency_key", length = 100, unique = true)
     private String idempotencyKey;

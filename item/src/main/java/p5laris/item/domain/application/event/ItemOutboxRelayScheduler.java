@@ -8,11 +8,13 @@ import com.p5laris.proto.eventlog.v1.EventLogServiceGrpc;
 import com.p5laris.proto.eventlog.v1.RecordEventLogRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import p5laris.common.outbox.OutboxBackoffPolicy;
 import net.devh.boot.grpc.client.inject.GrpcClient;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import p5laris.item.domain.domain.entity.OutboxEvent;
 import p5laris.item.domain.domain.repository.OutboxEventRepository;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -32,6 +34,7 @@ public class ItemOutboxRelayScheduler {
     private final OutboxEventRepository outboxEventRepository;
     private final ObjectMapper objectMapper;
     private final MeterRegistry meterRegistry;
+    private final TransactionTemplate transactionTemplate;
 
     @PostConstruct
     public void init() {
@@ -49,7 +52,6 @@ public class ItemOutboxRelayScheduler {
     private static final int MAX_ATTEMPTS = 5;
 
     @Scheduled(fixedDelayString = "5000")
-    @Transactional
     public void processOutboxEvents() {
         List<OutboxEvent> pendingEvents = outboxEventRepository.findPendingEvents(
                 LocalDateTime.now(),
@@ -61,58 +63,88 @@ public class ItemOutboxRelayScheduler {
         }
 
         for (OutboxEvent pendingEvent : pendingEvents) {
+            OutboxEventClaimResult claimResult = claimEvent(pendingEvent.getId());
+            if (claimResult == null) {
+                continue;
+            }
+
+            String aggregateType = claimResult.aggregateType();
+            String payload = claimResult.payload();
+            String idempotencyKey = claimResult.idempotencyKey();
+
             try {
-                // 비관적 락 획득 및 최신 상태 조회
-                OutboxEvent outboxEvent = outboxEventRepository.findByIdForUpdate(pendingEvent.getId())
-                        .orElse(null);
-
-                if (outboxEvent == null) {
-                    continue;
-                }
-
-                // 최신 상태 재검증 (이미 다른 서버가 발송했거나 발송 중인 경우 건너뜀)
-                if (!"PENDING".equals(outboxEvent.getStatus())) {
-                    continue;
-                }
-
-                // 재시도 대기 시각이 아직 지나지 않은 경우 건너뜀 (타 서버가 처리 실패 후 대기 중인 경우)
-                if (outboxEvent.getNextAttemptAt() != null && outboxEvent.getNextAttemptAt().isAfter(LocalDateTime.now())) {
-                    continue;
-                }
-
-                // 상태를 PROCESSING으로 변경하여 락 효과
-                outboxEvent.processing();
-                outboxEventRepository.saveAndFlush(outboxEvent);
-
-                if ("ITEM_EVENT_LOG".equals(outboxEvent.getAggregateType())) {
-                    ItemEventLogEvent event = objectMapper.readValue(outboxEvent.getPayload(), ItemEventLogEvent.class);
-                    eventLogStub.recordEventLog(toRequest(event, outboxEvent.getIdempotencyKey()));
+                if ("ITEM_EVENT_LOG".equals(aggregateType)) {
+                    ItemEventLogEvent event = objectMapper.readValue(payload, ItemEventLogEvent.class);
+                    eventLogStub.recordEventLog(toRequest(event, idempotencyKey));
                 }
                 
-                outboxEvent.success();
-                outboxEventRepository.saveAndFlush(outboxEvent);
-                log.debug("Outbox event succeeded. id={}", outboxEvent.getId());
-
+                markSuccess(pendingEvent.getId());
+                
                 meterRegistry.counter("outbox.events.processed",
                         "status", "SUCCESS",
-                        "aggregate_type", outboxEvent.getAggregateType()
+                        "aggregate_type", aggregateType
                 ).increment();
                 
             } catch (Exception e) {
-                log.error("Outbox event failed. id={}, type={}", pendingEvent.getId(), pendingEvent.getAggregateType(), e);
+                log.error("Outbox event failed. id={}, type={}", pendingEvent.getId(), aggregateType, e);
                 
-                // 락이 잡힌 최신 엔티티의 attemptCount를 기준으로 갱신
-                OutboxEvent outboxEvent = outboxEventRepository.findByIdForUpdate(pendingEvent.getId()).orElse(pendingEvent);
-                LocalDateTime nextAttempt = LocalDateTime.now().plusMinutes((long) Math.pow(2, outboxEvent.getAttemptCount()));
-                outboxEvent.fail(e.getMessage(), nextAttempt, MAX_ATTEMPTS);
-                outboxEventRepository.saveAndFlush(outboxEvent);
+                markFailure(pendingEvent.getId(), e.getMessage());
 
                 meterRegistry.counter("outbox.events.processed",
                         "status", "FAILURE",
-                        "aggregate_type", pendingEvent.getAggregateType()
+                        "aggregate_type", aggregateType
                 ).increment();
             }
         }
+    }
+
+    private record OutboxEventClaimResult(String aggregateType, String payload, String idempotencyKey) {}
+
+    private OutboxEventClaimResult claimEvent(Long eventId) {
+        return transactionTemplate.execute(status -> {
+            OutboxEvent outboxEvent = outboxEventRepository.findByIdForUpdate(eventId)
+                    .orElse(null);
+
+            if (outboxEvent == null) {
+                return null;
+            }
+
+            if (!"PENDING".equals(outboxEvent.getStatus())) {
+                return null;
+            }
+
+            if (outboxEvent.getNextAttemptAt() != null && outboxEvent.getNextAttemptAt().isAfter(LocalDateTime.now())) {
+                return null;
+            }
+
+            outboxEvent.processing();
+            outboxEventRepository.saveAndFlush(outboxEvent);
+            return new OutboxEventClaimResult(
+                    outboxEvent.getAggregateType(),
+                    outboxEvent.getPayload(),
+                    outboxEvent.getIdempotencyKey()
+            );
+        });
+    }
+
+    private void markSuccess(Long eventId) {
+        transactionTemplate.executeWithoutResult(status -> {
+            OutboxEvent outboxEvent = outboxEventRepository.findByIdForUpdate(eventId)
+                    .orElseThrow(() -> new IllegalStateException("Outbox event not found: " + eventId));
+            outboxEvent.success();
+            outboxEventRepository.saveAndFlush(outboxEvent);
+            log.debug("Outbox event succeeded. id={}", eventId);
+        });
+    }
+
+    private void markFailure(Long eventId, String errorMessage) {
+        transactionTemplate.executeWithoutResult(status -> {
+            OutboxEvent outboxEvent = outboxEventRepository.findByIdForUpdate(eventId)
+                    .orElseThrow(() -> new IllegalStateException("Outbox event not found: " + eventId));
+            LocalDateTime nextAttempt = OutboxBackoffPolicy.nextAttemptAt(LocalDateTime.now(), outboxEvent.getAttemptCount() + 1);
+            outboxEvent.fail(errorMessage, nextAttempt, MAX_ATTEMPTS);
+            outboxEventRepository.saveAndFlush(outboxEvent);
+        });
     }
 
     @Scheduled(cron = "0 0 2 * * *") // 매일 새벽 2시

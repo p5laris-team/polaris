@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import p5laris.common.outbox.OutboxBackoffPolicy;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -33,7 +34,6 @@ public class MissionCharacterExpDispatcher {
 
     private final MissionOutboxEventRepository missionOutboxEventRepository;
     private final CharacterExpClient characterExpClient;
-    private final MissionRewardBackoffPolicy missionRewardBackoffPolicy;
     private final MissionRewardOutboxProperties missionRewardOutboxProperties;
     private final TransactionTemplate transactionTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -195,7 +195,7 @@ public class MissionCharacterExpDispatcher {
             int nextAttemptCount = outbox.getAttemptCount() + 1;
             outbox.recordFailure(
                     errorMessage,
-                    missionRewardBackoffPolicy.nextAttemptAt(now, nextAttemptCount),
+                    OutboxBackoffPolicy.nextAttemptAt(now, nextAttemptCount, missionRewardOutboxProperties.getRetryInitialDelaySeconds(), missionRewardOutboxProperties.getRetryMaxDelaySeconds()),
                     missionRewardOutboxProperties.getMaxAttempts()
             );
         });

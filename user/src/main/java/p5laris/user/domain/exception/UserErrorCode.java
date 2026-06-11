@@ -14,7 +14,8 @@ public enum UserErrorCode implements ErrorCode {
     ALREADY_ATTENDED("USER-004", "이미 출석하셨습니다."),
     EARN_AMOUNT_MUST_BE_POSITIVE("USER-005", "보상은 반드시 0 이상입니다."),
     STAR_PIECE_NOT_ENOUGH("USER-006", "별조각이 부족합니다."),
-    INVALID_WEATHER_REGION("USER-007", "지원하지 않는 날씨 권역입니다.");
+    INVALID_WEATHER_REGION("USER-007", "지원하지 않는 날씨 권역입니다."),
+    INVALID_REFRESH_TOKEN("USER-008", "유효하지 않은 리프레시 토큰입니다.");
 
     private final String code;
     private final String message;

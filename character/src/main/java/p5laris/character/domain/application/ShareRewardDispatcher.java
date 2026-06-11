@@ -3,6 +3,7 @@ package p5laris.character.domain.application;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import p5laris.common.outbox.OutboxBackoffPolicy;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -36,7 +37,6 @@ public class ShareRewardDispatcher {
     private final ShareLogRepository shareLogRepository;
     private final ShareRewardWalletClient shareRewardWalletClient;
     private final NotificationPushClient notificationPushClient;
-    private final ShareRewardBackoffPolicy shareRewardBackoffPolicy;
     private final ShareRewardOutboxProperties properties;
     private final TransactionTemplate transactionTemplate;
     private final ObjectMapper objectMapper;
@@ -203,7 +203,7 @@ public class ShareRewardDispatcher {
             int nextAttemptCount = outbox.getAttemptCount() + 1;
             outbox.recordFailure(
                     errorMessage,
-                    shareRewardBackoffPolicy.nextAttemptAt(now, nextAttemptCount),
+                    OutboxBackoffPolicy.nextAttemptAt(now, nextAttemptCount, properties.getRetryInitialDelaySeconds(), properties.getRetryMaxDelaySeconds()),
                     properties.getMaxAttempts()
             );
         });

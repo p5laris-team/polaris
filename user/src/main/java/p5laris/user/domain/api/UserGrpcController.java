@@ -72,6 +72,11 @@ public class UserGrpcController extends UserServiceGrpc.UserServiceImplBase {
                     
             responseObserver.onNext(response);
             responseObserver.onCompleted();
+        } catch (UserException e) {
+            log.warn("사용자 인증 gRPC 처리 실패(검증 오류). operation={}, errorCode={}, message={}", "구글 로그인", e.getErrorCode().getCode(), e.getMessage());
+            responseObserver.onError(Status.UNAUTHENTICATED
+                    .withDescription(AUTHENTICATION_ERROR_DESCRIPTION)
+                    .asRuntimeException());
         } catch (Exception e) {
             log.warn("사용자 인증 gRPC 처리 실패. operation={}", "구글 로그인", e);
             responseObserver.onError(Status.UNAUTHENTICATED
@@ -92,6 +97,11 @@ public class UserGrpcController extends UserServiceGrpc.UserServiceImplBase {
                     
             responseObserver.onNext(response);
             responseObserver.onCompleted();
+        } catch (UserException e) {
+            log.warn("사용자 인증 gRPC 처리 실패(검증 오류). operation={}, errorCode={}, message={}", "토큰 재발급", e.getErrorCode().getCode(), e.getMessage());
+            responseObserver.onError(Status.UNAUTHENTICATED
+                    .withDescription(AUTHENTICATION_ERROR_DESCRIPTION)
+                    .asRuntimeException());
         } catch (Exception e) {
             log.warn("사용자 인증 gRPC 처리 실패. operation={}", "토큰 재발급", e);
             responseObserver.onError(Status.UNAUTHENTICATED

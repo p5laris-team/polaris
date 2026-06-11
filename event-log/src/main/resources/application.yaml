@@ -29,10 +29,14 @@ grpc:
     port: ${GRPC_SERVER_PORT}
     reflection-service-enabled: ${GRPC_REFLECTION_ENABLED:false}
 
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%thread] [traceId=%X{traceId}] %logger{36} - %msg%n"
+
 internal:
   grpc-auth:
     enabled: ${INTERNAL_GRPC_AUTH_ENABLED:true}
-    token: ${INTERNAL_GRPC_AUTH_TOKEN:}
+    token: ${INTERNAL_GRPC_AUTH_TOKEN}
 
 management:
   endpoints:
