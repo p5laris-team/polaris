@@ -3,6 +3,7 @@
 springBoot = "3.5.14"
 springBootAi = "4.0.6"
 springDependencyManagement = "1.1.7"
+asciidoctor = "4.0.4"
 
 # gRPC
 grpc = "1.70.0"
@@ -65,3 +66,4 @@ junit-bom = { group = "org.junit", name = "junit-bom", version.ref = "junitBom" 
 spring-boot = { id = "org.springframework.boot", version.ref = "springBoot" }
 spring-boot-ai = { id = "org.springframework.boot", version.ref = "springBootAi" }
 dependency-management = { id = "io.spring.dependency-management", version.ref = "springDependencyManagement" }
+asciidoctor-convert = { id = "org.asciidoctor.jvm.convert", version.ref = "asciidoctor" }
