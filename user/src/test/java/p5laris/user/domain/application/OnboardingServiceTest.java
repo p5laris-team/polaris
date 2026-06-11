@@ -14,6 +14,13 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(properties = {
+        "spring.datasource.url=jdbc:h2:mem:onboarding;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE",
+        "spring.datasource.driver-class-name=org.h2.Driver",
+        "spring.datasource.username=sa",
+        "spring.datasource.password=",
+        "spring.jpa.hibernate.ddl-auto=create-drop",
+        "spring.flyway.enabled=false",
+        "grpc.server.port=0",
         "grpc.client.character.address=static://localhost:19091",
         "grpc.client.item.address=static://localhost:19092",
         "grpc.client.mission.address=static://localhost:19093",
