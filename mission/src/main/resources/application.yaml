@@ -95,6 +95,7 @@ mission:
     enabled: ${MISSION_RAG_ENABLED}
     embedding-model: ${MISSION_RAG_EMBEDDING_MODEL}
     embedding-dimension: ${MISSION_RAG_EMBEDDING_DIMENSION}
+    query-embedding-deadline-ms: ${MISSION_RAG_QUERY_EMBEDDING_DEADLINE_MS:1000}
     top-k: ${MISSION_RAG_TOP_K}
     similarity-threshold: ${MISSION_RAG_SIMILARITY_THRESHOLD}
     fallback-to-recent-memory: ${MISSION_RAG_FALLBACK_TO_RECENT_MEMORY}
@@ -104,6 +105,7 @@ mission:
     initial-delay-ms: ${MISSION_MEMORY_EMBEDDING_INITIAL_DELAY_MS}
     batch-size: ${MISSION_MEMORY_EMBEDDING_BATCH_SIZE}
     max-attempts: ${MISSION_MEMORY_EMBEDDING_MAX_ATTEMPTS}
+    embedding-deadline-ms: ${MISSION_MEMORY_EMBEDDING_DEADLINE_MS:3000}
     processing-timeout-seconds: ${MISSION_MEMORY_EMBEDDING_PROCESSING_TIMEOUT_SECONDS}
     retry-initial-delay-seconds: ${MISSION_MEMORY_EMBEDDING_RETRY_INITIAL_DELAY_SECONDS}
     retry-max-delay-seconds: ${MISSION_MEMORY_EMBEDDING_RETRY_MAX_DELAY_SECONDS}
