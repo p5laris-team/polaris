@@ -2,7 +2,6 @@ package p5laris.ai.domain.domain.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EntityListeners;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
@@ -14,10 +13,9 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
-import org.springframework.data.annotation.CreatedDate;
-import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 import p5laris.ai.domain.domain.enums.AiErrorType;
 import p5laris.ai.domain.domain.enums.AiGenerationStatus;
+import p5laris.common.entity.BaseTimeEntity;
 
 import java.time.LocalDateTime;
 
@@ -30,9 +28,8 @@ import java.time.LocalDateTime;
 @Entity
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@EntityListeners(AuditingEntityListener.class)
 @Table(name = "ai_mission_generations")
-public class AiMissionGeneration {
+public class AiMissionGeneration extends BaseTimeEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -77,10 +74,6 @@ public class AiMissionGeneration {
     @Enumerated(EnumType.STRING)
     @Column(name = "error_type", length = 50)
     private AiErrorType errorType;
-
-    @CreatedDate
-    @Column(name = "created_at", updatable = false)
-    private LocalDateTime createdAt;
 
     // JPA Entity를 외부에서 마음대로 조립하지 않도록 정적 팩토리로 생성 경로를 제한한다.
     public static AiMissionGeneration create(

@@ -89,7 +89,7 @@ grpc:
 internal:
   grpc-auth:
     enabled: ${INTERNAL_GRPC_AUTH_ENABLED:true}
-    token: ${INTERNAL_GRPC_AUTH_TOKEN:}
+    token: ${INTERNAL_GRPC_AUTH_TOKEN}
 
 ai:
   provider:

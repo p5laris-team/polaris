@@ -12,15 +12,15 @@ import jakarta.persistence.UniqueConstraint;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import p5laris.mission.core.entity.BaseEntity;
+import p5laris.common.entity.BaseEntity;
 import p5laris.mission.domain.domain.enums.MissionFeedbackReaction;
 import p5laris.mission.domain.domain.enums.MissionFeedbackReasonCode;
 import p5laris.mission.domain.domain.enums.MissionFeedbackType;
 
 /**
- * 사용자가 미션을 거절하거나 완료 후 남긴 선택 피드백을 저장한다.
+ * ?ъ슜?먭? 誘몄뀡??嫄곗젅?섍굅???꾨즺 ???④릿 ?좏깮 ?쇰뱶諛깆쓣 ??ν븳??
  *
- * 이 데이터는 즉시 보상 조건이 아니라 이후 자율 미션/RAG 개인화에 사용할 입력 신호다.
+ * ???곗씠?곕뒗 利됱떆 蹂댁긽 議곌굔???꾨땲???댄썑 ?먯쑉 誘몄뀡/RAG 媛쒖씤?붿뿉 ?ъ슜???낅젰 ?좏샇??
  */
 @Entity
 @Getter

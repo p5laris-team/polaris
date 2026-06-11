@@ -13,13 +13,13 @@ java {
 }
 
 dependencies {
-    api 'io.grpc:grpc-stub:1.63.0'
-    api 'io.grpc:grpc-protobuf:1.63.0'
-    api 'com.google.protobuf:protobuf-java:3.25.3'
-    api 'org.slf4j:slf4j-api:2.0.17'
+    api libs.grpc.stub
+    api libs.grpc.protobuf
+    api libs.protobuf.java
+    api libs.slf4j.api
 
-    compileOnly 'org.apache.tomcat:annotations-api:6.0.53'
-    testImplementation platform('org.junit:junit-bom:5.10.0')
+    compileOnly libs.tomcat.annotations
+    testImplementation platform(libs.junit.bom)
     testImplementation 'org.junit.jupiter:junit-jupiter'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }

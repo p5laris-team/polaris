@@ -5,7 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
-import p5laris.mission.domain.application.memory.EmbeddingVectorUtils;
+import p5laris.common.utils.EmbeddingVectorUtils;
 import p5laris.mission.domain.application.memory.UserMemoryEmbeddingJob;
 import p5laris.mission.domain.application.memory.UserMemoryRagHit;
 import p5laris.mission.domain.domain.entity.UserMemory;
@@ -20,9 +20,9 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * pgvector 컬럼을 다루는 JDBC repository다.
+ * pgvector 而щ읆???ㅻ（??JDBC repository??
  *
- * Hibernate에 vector 타입 매핑을 추가하지 않고 SQL을 명시해, 저장/검색 정책을 좁은 영역에 가둔다.
+ * Hibernate??vector ???留ㅽ븨??異붽??섏? ?딄퀬 SQL??紐낆떆?? ???寃???뺤콉??醫곸? ?곸뿭??媛?붾떎.
  */
 @Repository
 @RequiredArgsConstructor
