@@ -5,7 +5,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import p5laris.ai.domain.application.memory.CharacterTalkDiarySummary;
 import p5laris.ai.domain.application.memory.CharacterTalkMemoryHit;
-import p5laris.ai.domain.application.memory.EmbeddingVectorUtils;
+import p5laris.common.utils.EmbeddingVectorUtils;
 import p5laris.ai.domain.domain.enums.CharacterTalkMemoryType;
 
 import java.sql.ResultSet;
@@ -15,9 +15,9 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 별친구 대화 장기 기억의 pgvector 저장/검색 repository다.
+ * 蹂꾩튇援?????κ린 湲곗뼲??pgvector ???寃??repository??
  *
- * Hibernate vector 매핑을 전역으로 늘리지 않고, vector SQL은 이 클래스 안에만 가둔다.
+ * Hibernate vector 留ㅽ븨???꾩뿭?쇰줈 ?섎━吏 ?딄퀬, vector SQL? ???대옒???덉뿉留?媛?붾떎.
  */
 @Repository
 @RequiredArgsConstructor

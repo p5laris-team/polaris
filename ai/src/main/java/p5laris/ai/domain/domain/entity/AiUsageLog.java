@@ -2,7 +2,6 @@ package p5laris.ai.domain.domain.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EntityListeners;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
@@ -12,10 +11,9 @@ import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.springframework.data.annotation.CreatedDate;
-import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 import p5laris.ai.domain.domain.enums.AiErrorType;
 import p5laris.ai.domain.domain.enums.AiUsageStatus;
+import p5laris.common.entity.BaseTimeEntity;
 
 import java.time.LocalDateTime;
 
@@ -28,9 +26,8 @@ import java.time.LocalDateTime;
 @Entity
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@EntityListeners(AuditingEntityListener.class)
 @Table(name = "ai_usage_logs")
-public class AiUsageLog {
+public class AiUsageLog extends BaseTimeEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -64,10 +61,6 @@ public class AiUsageLog {
     @Enumerated(EnumType.STRING)
     @Column(name = "error_type", length = 50)
     private AiErrorType errorType;
-
-    @CreatedDate
-    @Column(name = "created_at", updatable = false)
-    private LocalDateTime createdAt;
 
     // rule-based generator는 token 사용량이 없으므로 0으로 저장한다.
     public static AiUsageLog create(

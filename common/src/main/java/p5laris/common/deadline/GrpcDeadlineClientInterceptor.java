@@ -8,8 +8,11 @@ import io.grpc.MethodDescriptor;
 import java.util.concurrent.TimeUnit;
 
 /**
- * gRPC 클라이언트 호출 시 deadline(제한시간)이 설정되어 있지 않은 경우,
- * 설정된 기본 제한시간을 적용하여 스레드 무한 대기 현상을 방지합니다.
+ * gRPC 클라이언트 호출 시 별도의 deadline(제한시간)이 설정되어 있지 않은 경우,
+ * 설정된 기본 제한시간을 강제 주입하여 네트워크 지연 시 스레드 무한 대기 및 행(Hang) 현상을 방지하는 클라이언트 인터셉터입니다.
+ * 
+ * 특히 EventLogService나 AiService처럼 무거운 연산이 발생할 가능성이 있는 일부 gRPC 서비스의 호출에
+ * 타이트한 기본 제한시간(기본 1.0초)을 적용하여 연계 장애를 차단하도록 `:common` 모듈로 통합 및 자동 적용하고 있습니다.
  */
 public class GrpcDeadlineClientInterceptor implements ClientInterceptor {
 

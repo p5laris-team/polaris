@@ -12,12 +12,8 @@ import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.springframework.data.annotation.CreatedDate;
-import org.springframework.data.annotation.LastModifiedDate;
-import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 import p5laris.ai.domain.domain.enums.PromptCategory;
-
-import java.time.LocalDateTime;
+import p5laris.common.entity.BaseEntity;
 
 /**
  * AI 프롬프트 템플릿을 DB에서 버전 관리하기 위한 엔티티다.
@@ -27,9 +23,8 @@ import java.time.LocalDateTime;
 @Entity
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@EntityListeners(AuditingEntityListener.class)
 @Table(name = "prompt_templates")
-public class PromptTemplate {
+public class PromptTemplate extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -50,12 +45,4 @@ public class PromptTemplate {
 
     @Column(nullable = false)
     private boolean active;
-
-    @CreatedDate
-    @Column(name = "created_at", updatable = false)
-    private LocalDateTime createdAt;
-
-    @LastModifiedDate
-    @Column(name = "updated_at")
-    private LocalDateTime updatedAt;
 }

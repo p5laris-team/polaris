@@ -32,6 +32,9 @@ class OutboxRelaySchedulerTest {
     @Mock
     private com.p5laris.proto.notification.v1.NotificationServiceGrpc.NotificationServiceBlockingStub notificationStub;
 
+    @Mock
+    private org.springframework.transaction.support.TransactionTemplate transactionTemplate;
+
     private SimpleMeterRegistry meterRegistry;
     private OutboxRelayScheduler scheduler;
 
@@ -40,10 +43,22 @@ class OutboxRelaySchedulerTest {
         meterRegistry = new SimpleMeterRegistry();
         ObjectMapper objectMapper = new ObjectMapper()
                 .registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
+        
+        lenient().when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+            org.springframework.transaction.support.TransactionCallback<?> callback = invocation.getArgument(0);
+            return callback.doInTransaction(null);
+        });
+        lenient().doAnswer(invocation -> {
+            java.util.function.Consumer<org.springframework.transaction.TransactionStatus> callback = invocation.getArgument(0);
+            callback.accept(null);
+            return null;
+        }).when(transactionTemplate).executeWithoutResult(any());
+
         scheduler = new OutboxRelayScheduler(
                 outboxEventRepository,
                 objectMapper,
-                meterRegistry
+                meterRegistry,
+                transactionTemplate
         );
         ReflectionTestUtils.setField(scheduler, "eventLogStub", eventLogStub);
         ReflectionTestUtils.setField(scheduler, "notificationStub", notificationStub);

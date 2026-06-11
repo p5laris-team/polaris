@@ -2,12 +2,12 @@ package p5laris.item.domain.domain.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
-import p5laris.item.core.entity.BaseEntity;
+import p5laris.common.entity.BaseEntity;
 
 /**
- * 아이템 구매 이력 엔티티.
+ * ?꾩씠??援щℓ ?대젰 ?뷀떚??
  *
- * idempotencyKey: 동일 요청이 네트워크 재시도 등으로 중복 도달해도 한 번만 처리되도록 보장한다.
+ * idempotencyKey: ?숈씪 ?붿껌???ㅽ듃?뚰겕 ?ъ떆???깆쑝濡?以묐났 ?꾨떖?대룄 ??踰덈쭔 泥섎━?섎룄濡?蹂댁옣?쒕떎.
  */
 @Entity
 @Table(name = "item_purchase_histories")

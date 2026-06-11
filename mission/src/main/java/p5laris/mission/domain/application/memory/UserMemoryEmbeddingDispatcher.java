@@ -2,6 +2,8 @@ package p5laris.mission.domain.application.memory;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import p5laris.common.outbox.OutboxBackoffPolicy;
+import p5laris.common.utils.EmbeddingVectorUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import p5laris.mission.domain.infrastructure.config.MissionMemoryEmbeddingProperties;
@@ -30,7 +32,6 @@ public class UserMemoryEmbeddingDispatcher {
 
     private final UserMemoryEmbeddingJdbcRepository userMemoryEmbeddingJdbcRepository;
     private final AiTextEmbeddingClient aiTextEmbeddingClient;
-    private final MissionMemoryEmbeddingBackoffPolicy backoffPolicy;
     private final MissionMemoryEmbeddingProperties embeddingProperties;
     private final MissionRagProperties ragProperties;
     private final TransactionTemplate transactionTemplate;
@@ -121,7 +122,7 @@ public class UserMemoryEmbeddingDispatcher {
             userMemoryEmbeddingJdbcRepository.recordFailure(
                     job.id(),
                     errorMessage,
-                    backoffPolicy.nextAttemptAt(now, nextAttemptCount),
+                    OutboxBackoffPolicy.nextAttemptAt(now, nextAttemptCount, embeddingProperties.getRetryInitialDelaySeconds(), embeddingProperties.getRetryMaxDelaySeconds()),
                     embeddingProperties.getMaxAttempts()
             );
         });
