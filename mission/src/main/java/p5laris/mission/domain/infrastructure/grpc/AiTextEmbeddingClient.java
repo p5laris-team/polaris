@@ -9,6 +9,7 @@ import net.devh.boot.grpc.client.inject.GrpcClient;
 import org.springframework.stereotype.Component;
 
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 
 /**
  * mission 모듈에서 ai 모듈의 text embedding gRPC를 호출하는 adapter다.
@@ -23,8 +24,16 @@ public class AiTextEmbeddingClient {
     private AiServiceGrpc.AiServiceBlockingStub aiStub;
 
     public Optional<AiTextEmbeddingResult> generateTextEmbedding(AiTextEmbeddingRequest request) {
+        return generateTextEmbedding(request, 0L);
+    }
+
+    public Optional<AiTextEmbeddingResult> generateTextEmbedding(AiTextEmbeddingRequest request, long deadlineMs) {
         try {
-            GenerateTextEmbeddingResponse response = aiStub.generateTextEmbedding(
+            AiServiceGrpc.AiServiceBlockingStub deadlineAwareStub = deadlineMs > 0
+                    ? aiStub.withDeadlineAfter(deadlineMs, TimeUnit.MILLISECONDS)
+                    : aiStub;
+
+            GenerateTextEmbeddingResponse response = deadlineAwareStub.generateTextEmbedding(
                     GenerateTextEmbeddingRequest.newBuilder()
                             .setUserId(request.userId())
                             .setText(request.text())

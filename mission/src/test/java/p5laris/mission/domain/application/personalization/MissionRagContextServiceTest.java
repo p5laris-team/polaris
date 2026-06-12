@@ -18,7 +18,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class MissionRagContextServiceTest {
@@ -35,7 +40,7 @@ class MissionRagContextServiceTest {
 
     @Test
     void RAG_검색_결과를_recentMissionContext에_추가한다() {
-        when(aiTextEmbeddingClient.generateTextEmbedding(any()))
+        when(aiTextEmbeddingClient.generateTextEmbedding(any(), anyLong()))
                 .thenReturn(Optional.of(new AiTextEmbeddingResult(
                         "gemini-embedding-001",
                         3,
@@ -66,11 +71,12 @@ class MissionRagContextServiceTest {
                 .contains("\"ragMemories\"")
                 .contains("\"type\":\"MISSION_REJECTION\"")
                 .contains("\"reasonCode\":\"TOO_HARD\"");
+        verify(aiTextEmbeddingClient).generateTextEmbedding(any(), eq(1_000L));
     }
 
     @Test
     void RAG_검색_결과가_없으면_빈_ragMemories를_명시한다() {
-        when(aiTextEmbeddingClient.generateTextEmbedding(any()))
+        when(aiTextEmbeddingClient.generateTextEmbedding(any(), anyLong()))
                 .thenReturn(Optional.of(new AiTextEmbeddingResult(
                         "gemini-embedding-001",
                         3,
@@ -95,7 +101,7 @@ class MissionRagContextServiceTest {
 
     @Test
     void RAG_검색이_실패하면_기존_context를_그대로_반환한다() {
-        when(aiTextEmbeddingClient.generateTextEmbedding(any()))
+        when(aiTextEmbeddingClient.generateTextEmbedding(any(), anyLong()))
                 .thenReturn(Optional.empty());
         String original = "{\"memoryPolicy\":{\"available\":false},\"userMemories\":[]}";
 
@@ -106,6 +112,67 @@ class MissionRagContextServiceTest {
         );
 
         assertThat(result).isEqualTo(original);
+        verify(userMemoryEmbeddingJdbcRepository, never())
+                .searchSimilar(any(), any(), anyInt(), any(), anyInt(), anyDouble());
+    }
+
+    @Test
+    void RAG가_비활성화되면_embedding_client를_호출하지_않는다() {
+        missionRagProperties.setEnabled(false);
+        String original = "{\"memoryPolicy\":{\"available\":false},\"userMemories\":[]}";
+
+        String result = service.enrich(
+                1001L,
+                new MissionRagQuery(1001L, 10L, "가벼운 스트레칭", "3분 동안 몸을 풀어보세요.", "BODY_CARE", "NORMAL"),
+                original
+        );
+
+        assertThat(result).isEqualTo(original);
+        verifyNoInteractions(aiTextEmbeddingClient, userMemoryEmbeddingJdbcRepository);
+    }
+
+    @Test
+    void embedding_model이_정책과_다르면_검색하지_않고_context를_유지한다() {
+        when(aiTextEmbeddingClient.generateTextEmbedding(any(), anyLong()))
+                .thenReturn(Optional.of(new AiTextEmbeddingResult(
+                        "other-model",
+                        3,
+                        List.of(3.0f, 4.0f, 0.0f),
+                        "request"
+                )));
+        String original = "{\"memoryPolicy\":{\"available\":false},\"userMemories\":[]}";
+
+        String result = service.enrich(
+                1001L,
+                new MissionRagQuery(1001L, 10L, "가벼운 스트레칭", "3분 동안 몸을 풀어보세요.", "BODY_CARE", "NORMAL"),
+                original
+        );
+
+        assertThat(result).isEqualTo(original);
+        verify(userMemoryEmbeddingJdbcRepository, never())
+                .searchSimilar(any(), any(), anyInt(), any(), anyInt(), anyDouble());
+    }
+
+    @Test
+    void embedding_dimension이_정책과_다르면_검색하지_않고_context를_유지한다() {
+        when(aiTextEmbeddingClient.generateTextEmbedding(any(), anyLong()))
+                .thenReturn(Optional.of(new AiTextEmbeddingResult(
+                        "gemini-embedding-001",
+                        4,
+                        List.of(3.0f, 4.0f, 0.0f, 0.0f),
+                        "request"
+                )));
+        String original = "{\"memoryPolicy\":{\"available\":false},\"userMemories\":[]}";
+
+        String result = service.enrich(
+                1001L,
+                new MissionRagQuery(1001L, 10L, "가벼운 스트레칭", "3분 동안 몸을 풀어보세요.", "BODY_CARE", "NORMAL"),
+                original
+        );
+
+        assertThat(result).isEqualTo(original);
+        verify(userMemoryEmbeddingJdbcRepository, never())
+                .searchSimilar(any(), any(), anyInt(), any(), anyInt(), anyDouble());
     }
 
     private MissionRagProperties ragProperties() {

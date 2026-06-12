@@ -79,6 +79,7 @@ public class OutboxRelayScheduler {
                             .setTitle(event.title())
                             .setBody(event.body())
                             .setNotificationType(com.p5laris.proto.notification.v1.NotificationType.valueOf(event.notificationType()))
+                            .setIdempotencyKey(idempotencyKey)
                             .build();
                     notificationStub.sendPushNotification(req);
                 }
