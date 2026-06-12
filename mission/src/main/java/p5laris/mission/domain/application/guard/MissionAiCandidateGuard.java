@@ -141,6 +141,10 @@ public class MissionAiCandidateGuard {
             return Optional.of(AiMissionCandidateRejectionReason.BLOCKED_CATEGORY);
         }
 
+        boolean fallbackCategoryBlocked = fallbackCategory != null && blockedCategories.contains(fallbackCategory);
+        if (!fallbackCategoryBlocked && generatedCategory != fallbackCategory) {
+            return Optional.of(AiMissionCandidateRejectionReason.CATEGORY_CHANGED_WITHOUT_POLICY_REASON);
+        }
         return Optional.empty();
     }
 

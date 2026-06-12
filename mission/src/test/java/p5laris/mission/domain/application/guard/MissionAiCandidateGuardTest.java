@@ -29,16 +29,15 @@ class MissionAiCandidateGuardTest {
     }
 
     @Test
-    void fallback_카테고리와_달라도_시간대에_허용된_AI_카테고리는_확정한다() {
+    void fallback_카테고리가_허용되는데_AI가_다른_카테고리를_주면_거절한다() {
         AiMissionCandidateGuardResult result = guard.validate(request(
                 MissionCategoryType.BASIC_ROUTINE,
                 candidate("REST_RECOVERY", "EASY")
         ));
 
-        assertThat(result.accepted()).isTrue();
-        assertThat(result.candidate()).hasValueSatisfying(candidate ->
-                assertThat(candidate.category()).isEqualTo(MissionCategoryType.REST_RECOVERY)
-        );
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.rejectionReason())
+                .contains(AiMissionCandidateRejectionReason.CATEGORY_CHANGED_WITHOUT_POLICY_REASON);
     }
 
     @Test
