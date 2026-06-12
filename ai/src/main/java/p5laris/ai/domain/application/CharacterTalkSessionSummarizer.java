@@ -7,13 +7,18 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import p5laris.ai.domain.application.generator.AiChatClient;
 import p5laris.ai.domain.application.memory.CharacterTalkSessionSummary;
+import p5laris.ai.domain.application.prompt.PromptTemplateService;
+import p5laris.ai.domain.application.prompt.RenderedPrompt;
 import p5laris.ai.domain.domain.entity.CharacterTalkMessage;
 import p5laris.ai.domain.domain.entity.CharacterTalkSession;
 import p5laris.ai.domain.domain.enums.CharacterTalkMessageRole;
+import p5laris.ai.domain.domain.enums.PromptCategory;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -27,6 +32,7 @@ public class CharacterTalkSessionSummarizer {
 
     private final AiChatClient aiChatClient;
     private final ObjectMapper objectMapper;
+    private final PromptTemplateService promptTemplateService;
 
     public CharacterTalkSessionSummary summarize(
             CharacterTalkSession session,
@@ -39,7 +45,8 @@ public class CharacterTalkSessionSummarizer {
 
         CharacterTalkSessionSummary fallback = fallbackSummary(orderedMessages);
         try {
-            String response = aiChatClient.call(systemPrompt(), userPrompt(session, orderedMessages));
+            RenderedPrompt prompt = prompt(session, orderedMessages);
+            String response = aiChatClient.call(prompt.systemPrompt(), prompt.userPrompt());
             CharacterTalkSessionSummary aiSummary = parse(response);
             return new CharacterTalkSessionSummary(
                     choose(aiSummary.contextSummary(), fallback.contextSummary(), CONTEXT_SUMMARY_MAX_LENGTH),
@@ -50,6 +57,22 @@ public class CharacterTalkSessionSummarizer {
                     session.getSessionId(), e.getClass().getSimpleName());
             return fallback;
         }
+    }
+
+    private RenderedPrompt prompt(CharacterTalkSession session, List<CharacterTalkMessage> messages) {
+        return promptTemplateService.render(
+                PromptCategory.CHARACTER_TALK_SUMMARY,
+                promptVariables(session, messages),
+                new RenderedPrompt(systemPrompt(), userPrompt(session, messages))
+        );
+    }
+
+    private Map<String, Object> promptVariables(CharacterTalkSession session, List<CharacterTalkMessage> messages) {
+        Map<String, Object> variables = new LinkedHashMap<>();
+        variables.put("characterType", normalizeText(session.getCharacterType()));
+        variables.put("messages", promptMessagesText(messages));
+        variables.put("sessionId", normalizeText(session.getSessionId()));
+        return variables;
     }
 
     private CharacterTalkSessionSummary parse(String response) throws Exception {
@@ -91,6 +114,21 @@ public class CharacterTalkSessionSummarizer {
                 {"contextSummary":"사용자는 최근 피로와 업무 부담을 이야기했고, 별친구는 휴식과 감정 정리를 권했다.","diaryText":"오늘 나는 별친구와 요즘 느끼는 피로에 대해 이야기했다. 별친구는 내가 잠깐 숨을 고를 수 있도록 차분히 곁을 지켜 주었다."}
                 """);
         return builder.toString();
+    }
+
+    private String promptMessagesText(List<CharacterTalkMessage> messages) {
+        StringBuilder builder = new StringBuilder();
+        for (CharacterTalkMessage message : promptMessages(messages)) {
+            builder
+                    .append("- ")
+                    .append(message.getSequence())
+                    .append(". ")
+                    .append(message.getRole() == CharacterTalkMessageRole.USER ? "사용자" : "별친구")
+                    .append(": ")
+                    .append(trimMessage(message.getContent(), 280))
+                    .append('\n');
+        }
+        return builder.toString().trim();
     }
 
     private CharacterTalkSessionSummary fallbackSummary(List<CharacterTalkMessage> messages) {
