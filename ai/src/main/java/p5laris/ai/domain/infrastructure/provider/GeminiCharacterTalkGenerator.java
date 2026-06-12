@@ -8,12 +8,17 @@ import p5laris.ai.domain.application.generator.AiChatStreamChunk;
 import p5laris.ai.domain.application.generator.AiChatClient;
 import p5laris.ai.domain.application.generator.AiTokenUsage;
 import p5laris.ai.domain.application.generator.ExternalCharacterTalkGenerator;
+import p5laris.ai.domain.application.prompt.PromptTemplateService;
+import p5laris.ai.domain.application.prompt.RenderedPrompt;
 import p5laris.ai.domain.domain.enums.AiErrorType;
 import p5laris.ai.domain.domain.enums.AiProviderType;
+import p5laris.ai.domain.domain.enums.PromptCategory;
 import p5laris.ai.domain.exception.FallbackRequiredException;
 import p5laris.ai.domain.infrastructure.config.AiCharacterTalkProperties;
 import p5laris.ai.domain.infrastructure.tool.CharacterTalkToolsFactory;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
@@ -33,6 +38,7 @@ public class GeminiCharacterTalkGenerator implements ExternalCharacterTalkGenera
     private final AiChatClient aiChatClient;
     private final AiCharacterTalkProperties properties;
     private final CharacterTalkToolsFactory characterTalkToolsFactory;
+    private final PromptTemplateService promptTemplateService;
 
     @Override
     public AiProviderType providerType() {
@@ -43,9 +49,10 @@ public class GeminiCharacterTalkGenerator implements ExternalCharacterTalkGenera
     public AiTokenUsage stream(CharacterTalkGenerationCommand command, Consumer<String> chunkConsumer) {
         try {
             TokenUsageCollector usageCollector = new TokenUsageCollector();
+            RenderedPrompt prompt = prompt(command);
             aiChatClient.streamPlainTextWithToolsAndUsage(
-                            systemPrompt(),
-                            userPrompt(command),
+                            prompt.systemPrompt(),
+                            prompt.userPrompt(),
                             characterTalkToolsFactory.create(command)
                     )
                     .toIterable()
@@ -81,6 +88,29 @@ public class GeminiCharacterTalkGenerator implements ExternalCharacterTalkGenera
             return AiErrorType.TIMEOUT;
         }
         return AiErrorType.PROVIDER_ERROR;
+    }
+
+    private RenderedPrompt prompt(CharacterTalkGenerationCommand command) {
+        return promptTemplateService.render(
+                PromptCategory.CHARACTER_TALK,
+                promptVariables(command),
+                new RenderedPrompt(systemPrompt(), userPrompt(command))
+        );
+    }
+
+    private Map<String, Object> promptVariables(CharacterTalkGenerationCommand command) {
+        Map<String, Object> variables = new LinkedHashMap<>();
+        variables.put("maxReplyLength", properties.normalizedMaxReplyLength());
+        variables.put("characterType", safeText(command.characterType()));
+        variables.put("characterName", safeText(command.characterName()));
+        variables.put("interactionType", safeText(command.interactionType()));
+        variables.put("timeContext", timeContext());
+        variables.put("fallbackContextJson", safeText(command.characterContextJson()));
+        variables.put("conversationHistoryJson", safeText(command.conversationHistoryJson()));
+        variables.put("longTermMemoryContextJson", safeText(command.memoryContextJson()));
+        variables.put("userMessage", safeText(command.userMessage()));
+        variables.put("requestId", safeText(command.requestId()));
+        return variables;
     }
 
     private String systemPrompt() {

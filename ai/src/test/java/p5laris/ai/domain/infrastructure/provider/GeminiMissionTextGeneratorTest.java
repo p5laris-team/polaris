@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import p5laris.ai.domain.application.dto.MissionTextCandidate;
 import p5laris.ai.domain.application.dto.MissionTextGenerationCommand;
 import p5laris.ai.domain.application.generator.AiChatClient;
+import p5laris.ai.domain.application.prompt.PromptTemplateService;
 import p5laris.ai.domain.domain.enums.AiErrorType;
 import p5laris.ai.domain.exception.FallbackRequiredException;
 
@@ -14,6 +15,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class GeminiMissionTextGeneratorTest {
+
+    private static final PromptTemplateService FALLBACK_PROMPTS = (category, variables, fallback) -> fallback;
 
     @Test
     void Gemini_JSON_응답을_미션_문구_candidate로_변환한다() {
@@ -29,7 +32,8 @@ class GeminiMissionTextGeneratorTest {
                           "difficulty": "EASY"
                         }
                         """),
-                new ObjectMapper()
+                new ObjectMapper(),
+                FALLBACK_PROMPTS
         );
 
         MissionTextCandidate candidate = generator.generate(validCommand());
@@ -62,7 +66,8 @@ class GeminiMissionTextGeneratorTest {
                         }
                         ```
                         """),
-                new ObjectMapper()
+                new ObjectMapper(),
+                FALLBACK_PROMPTS
         );
 
         MissionTextCandidate candidate = generator.generate(validCommand());
@@ -74,7 +79,8 @@ class GeminiMissionTextGeneratorTest {
     void Gemini_응답이_JSON이_아니면_fallback_대상으로_분류한다() {
         GeminiMissionTextGenerator generator = new GeminiMissionTextGenerator(
                 new StubAiChatClient("미안하지만 JSON은 안 줄래요."),
-                new ObjectMapper()
+                new ObjectMapper(),
+                FALLBACK_PROMPTS
         );
 
         assertThatThrownBy(() -> generator.generate(validCommand()))
@@ -89,7 +95,8 @@ class GeminiMissionTextGeneratorTest {
                 (systemPrompt, userPrompt) -> {
                     throw new RuntimeException("request timeout");
                 },
-                new ObjectMapper()
+                new ObjectMapper(),
+                FALLBACK_PROMPTS
         );
 
         assertThatThrownBy(() -> generator.generate(validCommand()))
@@ -111,7 +118,11 @@ class GeminiMissionTextGeneratorTest {
                   "difficulty": "EASY"
                 }
                 """);
-        GeminiMissionTextGenerator generator = new GeminiMissionTextGenerator(chatClient, new ObjectMapper());
+        GeminiMissionTextGenerator generator = new GeminiMissionTextGenerator(
+                chatClient,
+                new ObjectMapper(),
+                FALLBACK_PROMPTS
+        );
 
         generator.generate(validCommand());
 

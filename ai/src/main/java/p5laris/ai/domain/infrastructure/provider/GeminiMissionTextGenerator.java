@@ -9,11 +9,16 @@ import p5laris.ai.domain.application.dto.MissionTextCandidate;
 import p5laris.ai.domain.application.dto.MissionTextGenerationCommand;
 import p5laris.ai.domain.application.generator.AiChatClient;
 import p5laris.ai.domain.application.generator.ExternalMissionTextGenerator;
+import p5laris.ai.domain.application.prompt.PromptTemplateService;
+import p5laris.ai.domain.application.prompt.RenderedPrompt;
 import p5laris.ai.domain.domain.enums.AiErrorType;
 import p5laris.ai.domain.domain.enums.AiProviderType;
+import p5laris.ai.domain.domain.enums.PromptCategory;
 import p5laris.ai.domain.exception.FallbackRequiredException;
 
+import java.util.LinkedHashMap;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * Gemini에게 개인화 기반 자율 미션 후보 생성을 요청하는 provider 구현체다.
@@ -27,6 +32,7 @@ public class GeminiMissionTextGenerator implements ExternalMissionTextGenerator 
 
     private final AiChatClient aiChatClient;
     private final ObjectMapper objectMapper;
+    private final PromptTemplateService promptTemplateService;
 
     @Override
     public AiProviderType providerType() {
@@ -36,7 +42,8 @@ public class GeminiMissionTextGenerator implements ExternalMissionTextGenerator 
     @Override
     public MissionTextCandidate generate(MissionTextGenerationCommand command) {
         try {
-            String content = aiChatClient.call(systemPrompt(), userPrompt(command));
+            RenderedPrompt prompt = prompt(command);
+            String content = aiChatClient.call(prompt.systemPrompt(), prompt.userPrompt());
             return parseCandidate(content, command);
         } catch (FallbackRequiredException e) {
             throw e;
@@ -109,6 +116,31 @@ public class GeminiMissionTextGenerator implements ExternalMissionTextGenerator 
             return AiErrorType.TIMEOUT;
         }
         return AiErrorType.PROVIDER_ERROR;
+    }
+
+    private RenderedPrompt prompt(MissionTextGenerationCommand command) {
+        return promptTemplateService.render(
+                PromptCategory.MISSION_GENERATION,
+                promptVariables(command),
+                new RenderedPrompt(systemPrompt(), userPrompt(command))
+        );
+    }
+
+    private Map<String, Object> promptVariables(MissionTextGenerationCommand command) {
+        Map<String, Object> variables = new LinkedHashMap<>();
+        variables.put("characterType", safeText(command.characterType()));
+        variables.put("characterName", safeText(command.characterName()));
+        variables.put("baseTitle", safeText(command.baseTitle()));
+        variables.put("baseDescription", safeText(command.baseDescription()));
+        variables.put("category", safeText(command.category()));
+        variables.put("difficulty", safeText(command.difficulty()));
+        variables.put("fallbackCharacterMessage", safeText(command.fallbackCharacterMessage()));
+        variables.put("fallbackQuestion", safeText(command.fallbackQuestion()));
+        variables.put("fallbackCompletionResponse", safeText(command.fallbackCompletionResponse()));
+        variables.put("onboardingContextJson", safeText(command.onboardingContextJson()));
+        variables.put("recentMissionContextJson", safeText(command.recentMissionContextJson()));
+        variables.put("requestId", safeText(command.requestId()));
+        return variables;
     }
 
     private String systemPrompt() {
