@@ -82,7 +82,13 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @SpringBootTest(properties = {
+        "server.port=0",
         "grpc.server.port=0",
+        "grpc.client.user.address=static://localhost:9091",
+        "grpc.client.character.address=static://localhost:9092",
+        "grpc.client.item.address=static://localhost:9093",
+        "grpc.client.ai.address=static://localhost:9094",
+        "grpc.client.event-log.address=static://localhost:9095",
         "grpc.client.notification.address=static://localhost:9098",
         "spring.data.redis.host=localhost",
         "spring.data.redis.port=6379",
