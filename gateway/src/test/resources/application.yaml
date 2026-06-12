@@ -1,0 +1,41 @@
+server:
+  port: 0
+
+spring:
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+grpc:
+  server:
+    port: 0
+  client:
+    user:
+      address: static://localhost:19091
+      negotiationType: plaintext
+    character:
+      address: static://localhost:19092
+      negotiationType: plaintext
+    item:
+      address: static://localhost:19093
+      negotiationType: plaintext
+    mission:
+      address: static://localhost:19094
+      negotiationType: plaintext
+    ai:
+      address: static://localhost:19095
+      negotiationType: plaintext
+    notification:
+      address: static://localhost:19096
+      negotiationType: plaintext
+
+internal:
+  grpc-auth:
+    enabled: true
+    token: PUBLIC-TEST-VALUE-NOT-FOR-AUTHENTICATION
+
+jwt:
+  secret: PUBLIC-TEST-VALUE-NOT-A-REAL-JWT-SECRET-000000
+  access-expiration-ms: 3600000
+  refresh-expiration-ms: 1209600000
