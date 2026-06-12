@@ -46,8 +46,12 @@ tasks.named('test') {
     outputs.dir(file('build/generated-snippets'))
 }
 
+tasks.named('coverageTest') {
+    outputs.dir(file('build/generated-snippets'))
+}
+
 tasks.named('asciidoctor') {
-    dependsOn(tasks.named('test'))
+    dependsOn(tasks.named('coverageTest'))
     inputs.dir(file('build/generated-snippets'))
     attributes 'snippets': file('build/generated-snippets')
     outputDir = file("$rootDir/docs/api")

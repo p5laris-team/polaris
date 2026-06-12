@@ -1,6 +1,7 @@
 plugins {
     id "dev.nx.gradle.project-graph" version "0.1.20"
     id 'java'
+    id 'jacoco'
 //    id 'org.springframework.boot' version '3.5.14' apply false
 //    id 'io.spring.dependency-management' version '1.1.7' apply false
     id 'com.google.protobuf' version '0.9.4' apply false
@@ -16,7 +17,101 @@ allprojects {
 }
 
 subprojects {
+    apply plugin: 'jacoco'
+
     tasks.withType(JavaCompile).configureEach {
         options.encoding = 'UTF-8'
+    }
+
+    jacoco {
+        toolVersion = '0.8.13'
+    }
+
+    tasks.withType(Test).configureEach {
+        useJUnitPlatform()
+    }
+
+    tasks.register('coverageTest', Test) {
+        group = 'verification'
+        description = 'Runs tests used for JaCoCo coverage without external-infrastructure context smoke tests.'
+        testClassesDirs = sourceSets.test.output.classesDirs
+        classpath = sourceSets.test.runtimeClasspath
+        useJUnitPlatform()
+        exclude '**/*ApplicationTests.class'
+    }
+
+    plugins.withId('java') {
+        tasks.named('jacocoTestReport') {
+            enabled = false
+        }
+
+        tasks.named('jacocoTestCoverageVerification') {
+            enabled = false
+        }
+    }
+}
+
+def coverageProjects = subprojects
+def reportExcludes = [
+        '**/proto/**',
+        '**/*Proto.class',
+        '**/*Grpc.class',
+        '**/*Grpc$*.class'
+]
+def verificationExcludes = reportExcludes + [
+        '**/*Application.class',
+        '**/config/**',
+        '**/api/**',
+        '**/dto/**'
+]
+
+gradle.projectsEvaluated {
+    def sourceDirectories = files(coverageProjects.collect {
+        it.sourceSets.main.allSource.srcDirs
+    })
+    def reportClassDirectories = files(coverageProjects.collect {
+        it.sourceSets.main.output.asFileTree.matching {
+            exclude reportExcludes
+        }
+    })
+    def verificationClassDirectories = files(coverageProjects.collect {
+        it.sourceSets.main.output.asFileTree.matching {
+            exclude verificationExcludes
+        }
+    })
+    def executionDataFiles = files(coverageProjects.collect {
+        it.fileTree(it.layout.buildDirectory.dir('jacoco')) {
+            include 'coverageTest.exec'
+        }
+    })
+
+    tasks.named('jacocoTestReport', JacocoReport) {
+        dependsOn coverageProjects.collect { "${it.path}:coverageTest" }
+        sourceDirectories.setFrom(sourceDirectories)
+        classDirectories.setFrom(reportClassDirectories)
+        executionData.setFrom(executionDataFiles)
+
+        reports {
+            html.required = true
+            xml.required = true
+            csv.required = false
+        }
+    }
+
+    tasks.named('jacocoTestCoverageVerification', JacocoCoverageVerification) {
+        dependsOn tasks.named('jacocoTestReport')
+        sourceDirectories.setFrom(sourceDirectories)
+        classDirectories.setFrom(verificationClassDirectories)
+        executionData.setFrom(executionDataFiles)
+
+        violationRules {
+            rule {
+                limit {
+                    counter = 'LINE'
+                    value = 'COVEREDRATIO'
+                    minimum = 0.60
+                }
+            }
+        }
     }
 }

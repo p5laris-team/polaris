@@ -14,6 +14,16 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(properties = {
+        "server.port=0",
+        "spring.datasource.url=jdbc:h2:mem:onboarding;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE",
+        "spring.datasource.driver-class-name=org.h2.Driver",
+        "spring.datasource.username=sa",
+        "spring.datasource.password=",
+        "spring.jpa.hibernate.ddl-auto=create-drop",
+        "spring.flyway.enabled=false",
+        "spring.data.redis.host=localhost",
+        "spring.data.redis.port=6379",
+        "grpc.server.port=0",
         "grpc.client.character.address=static://localhost:19091",
         "grpc.client.item.address=static://localhost:19092",
         "grpc.client.mission.address=static://localhost:19093",
@@ -21,7 +31,12 @@ import static org.assertj.core.api.Assertions.assertThat;
         "grpc.client.event-log.address=static://localhost:19095",
         "grpc.client.notification.address=static://localhost:19096",
         "internal.grpc-auth.enabled=true",
-        "internal.grpc-auth.token=test-internal-grpc-token"
+        "internal.grpc-auth.token=test-internal-grpc-token",
+        "jwt.secret=test-jwt-secret-test-jwt-secret-test-jwt-secret",
+        "jwt.access-expiration-ms=3600000",
+        "jwt.refresh-expiration-ms=1209600000",
+        "oauth.google.client-id=test-client-id",
+        "oauth.google.client-secret=test-client-secret"
 })
 class OnboardingServiceTest {
 
