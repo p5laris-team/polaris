@@ -1,5 +1,6 @@
 <img src="docs/images/Polaris-Banner.png" width="100%" alt="Polaris Banner">
 <br /><br />
+
 <div align="center">
   <h1 style="border-bottom: none; font-size: 2.5em; font-weight: bold;">
     <img src="docs/images/logomark.png" width="50" alt="Logo" style="vertical-align: middle; margin-right: 10px;"> Polaris (별친구)
