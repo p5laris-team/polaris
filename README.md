@@ -77,7 +77,7 @@
 ## 🧩 Architecture
 
 <p align="center">
-  <img src="" width="100%" alt="(Architecture 이미지 들어갈 자리)">
+  <img src="" width="100%" alt="Architecture">
 </p>
 
 ---
@@ -183,18 +183,18 @@
 ## 🖼 API 명세서
 
 <p align="center">
-  <img src="" width="100%" alt="(API 명세서 이미지 들어갈 자리)">
+  <img src="docs/images/API.png" width="100%" alt="API 명세서">
 </p>
 
 보다 자세한 API 명세서는
-[📎백엔드 API 명세서](docs/sa-docs/03_API_Specification.md) 에서 확인할 수 있습니다.
+[📎백엔드 API 명세서](docs/sa-docs/01-API-spec.md) 에서 확인할 수 있습니다.
 
 ---
 
 ## 🗄 ERD Diagram
 
 <p align="center">
-  <img src="" width="100%" alt="(ERD 이미지 들어갈 자리)">
+  <img src="" width="100%" alt="ERD">
 </p>
 
 ---
@@ -203,32 +203,24 @@
 
 ```text
 src/
-├── 📂 gateway            # REST API 진입점, JWT 글로벌 검증, gRPC 클라이언트 라우팅
-├── 📂 user               # 회원 프로필, 온보딩, 지갑(별조각), 출석 기록 관리
-│   ├── 📂 core           # 인증/인가 인터페이스 및 공통 비즈니스 예외 처리
-│   ├── 📂 domain         # 비즈니스 핵심 영역 (엔티티, 애플리케이션 로직)
-│   │   ├── 📂 api        # 외부에서 호출하는 gRPC Controller 엔드포인트
-│   │   ├── 📂 application# 서비스 로직 (Auth, Attendance, Wallet 등) 및 Event Listener
-│   │   ├── 📂 entity     # JPA 엔티티 (User, Wallet, OutboxEvent 등)
-│   │   └── 📂 repository # 데이터 베이스 접근 계층 (Spring Data JPA)
-│   ├── 📂 infrastructure # Google OAuth 연동 등 외부 API 구체 구현체
-│   └── 📂 resources      # application.yaml 및 Flyway DB 마이그레이션 스크립트
-├── 📂 character          # 캐릭터 상태, 돌봄 액션 기록, 스킨 장착, SNS 공유 정보
-├── 📂 mission            # 유저의 데일리 미션 상태 머신 및 완료 트랜잭션 관리
-├── 📂 item               # 상점 인벤토리 및 소모성 아이템 사용 로직
-├── 📂 ai                 # Google Gemini 연동, 미션 프롬프트, 챗 스트리밍, 벡터 임베딩
-├── 📂 notification       # FCM 토큰 발급 및 시스템/개별 푸시 알림 발송
-├── 📂 event-log          # 로그 통합 적재 서버 (Elasticsearch 연동 등 대비)
-├── 📂 proto              # MSA 간 통신을 위한 Protocol Buffers 인터페이스 정의
-└── 📂 common             # 공통 Error Handler, Response DTO, 유틸리티 함수
+├── 📂 gateway              # REST API 진입점, JWT 글로벌 검증, gRPC 클라이언트 라우팅
+├── 📂 user                 # 회원 프로필, 온보딩, 지갑(별조각), 출석 기록 관리
+│   ├── 📂 core             # 인증/인가 인터페이스 및 공통 비즈니스 예외 처리
+│   ├── 📂 domain           # 비즈니스 핵심 영역 (엔티티, 애플리케이션 로직)
+│   │   ├── 📂 api          # 외부에서 호출하는 gRPC Controller 엔드포인트
+│   │   ├── 📂 application  # 서비스 로직 (Auth, Attendance, Wallet 등) 및 Event Listener
+│   │   ├── 📂 entity       # JPA 엔티티 (User, Wallet, OutboxEvent 등)
+│   │   └── 📂 repository   # 데이터 베이스 접근 계층 (Spring Data JPA)
+│   ├── 📂 infrastructure   # Google OAuth 연동 등 외부 API 구체 구현체
+│   └── 📂 resources        # application.yaml 및 Flyway DB 마이그레이션 스크립트
+├── 📂 character            # 캐릭터 상태, 돌봄 액션 기록, 스킨 장착, SNS 공유 정보
+├── 📂 mission              # 유저의 데일리 미션 상태 머신 및 완료 트랜잭션 관리
+├── 📂 item                 # 상점 인벤토리 및 소모성 아이템 사용 로직
+├── 📂 ai                   # Google Gemini 연동, 미션 프롬프트, 챗 스트리밍, 벡터 임베딩
+├── 📂 notification         # FCM 토큰 발급 및 시스템/개별 푸시 알림 발송
+├── 📂 event-log            # 로그 통합 적재 서버 (Elasticsearch 연동 등 대비)
+├── 📂 proto                # MSA 간 통신을 위한 Protocol Buffers 인터페이스 정의
+└── 📂 common               # 공통 Error Handler, Response DTO, 유틸리티 함수
 ```
-
----
-
-## 🚨 Trouble Shooting
-
-👉 [분산 환경에서의 정합성 보장과 Outbox Pattern 활용](docs/troubleshooting/Outbox-Pattern.md) <br>
-👉 [MSA 도입에 따른 서비스 간 통신 병목 및 gRPC 전환기](docs/troubleshooting/gRPC-Migration.md) <br>
-👉 [LLM 응답 지연 해결을 위한 SSE(Server-Sent Events) 스트리밍 적용](docs/troubleshooting/SSE-Streaming.md) <br>
 
 ---
