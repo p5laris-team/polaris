@@ -9,7 +9,9 @@ import org.springframework.stereotype.Service;
 import p5laris.ai.domain.application.dto.MissionTextCandidate;
 import p5laris.ai.domain.application.dto.MissionTextGenerationCommand;
 import p5laris.ai.domain.application.dto.MissionTextGenerationResult;
+import p5laris.ai.domain.application.generator.AiTokenUsage;
 import p5laris.ai.domain.application.generator.MissionTextGenerator;
+import p5laris.ai.domain.application.generator.MissionTextGenerationOutput;
 import p5laris.ai.domain.domain.entity.AiMissionGeneration;
 import p5laris.ai.domain.domain.entity.PromptTemplate;
 import p5laris.ai.domain.domain.enums.AiErrorType;
@@ -84,9 +86,12 @@ public class AiMissionTextService {
         AiUsageStatus usageStatus;
         boolean fallbackUsed;
         AiErrorType errorType = null;
+        AiTokenUsage tokenUsage = AiTokenUsage.empty();
 
         try {
-            candidate = missionTextGenerator.generate(command);
+            MissionTextGenerationOutput generationOutput = missionTextGenerator.generateWithUsage(command);
+            candidate = generationOutput.candidate();
+            tokenUsage = generationOutput.tokenUsage();
             missionTextValidationPolicy.validate(candidate, command.characterType());
             status = AiGenerationStatus.SUCCESS;
             usageStatus = AiUsageStatus.SUCCESS;
@@ -111,6 +116,7 @@ public class AiMissionTextService {
                 usageStatus,
                 fallbackUsed,
                 startedAt,
+                tokenUsage,
                 errorType
         );
 
@@ -208,6 +214,7 @@ public class AiMissionTextService {
             AiUsageStatus usageStatus,
             boolean fallbackUsed,
             long startedAt,
+            AiTokenUsage tokenUsage,
             AiErrorType errorType
     ) {
         try {
@@ -223,6 +230,7 @@ public class AiMissionTextService {
                     aiProviderProperties.getType(),
                     aiProviderProperties.resolvedModel(),
                     elapsedMillis(startedAt),
+                    tokenUsage,
                     errorType
             );
         } catch (DataIntegrityViolationException e) {

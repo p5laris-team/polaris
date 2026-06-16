@@ -8,7 +8,9 @@ import org.springframework.stereotype.Component;
 import p5laris.ai.domain.application.dto.MissionTextCandidate;
 import p5laris.ai.domain.application.dto.MissionTextGenerationCommand;
 import p5laris.ai.domain.application.generator.AiChatClient;
+import p5laris.ai.domain.application.generator.AiChatResponse;
 import p5laris.ai.domain.application.generator.ExternalMissionTextGenerator;
+import p5laris.ai.domain.application.generator.MissionTextGenerationOutput;
 import p5laris.ai.domain.application.prompt.PromptTemplateService;
 import p5laris.ai.domain.application.prompt.RenderedPrompt;
 import p5laris.ai.domain.domain.enums.AiErrorType;
@@ -41,10 +43,18 @@ public class GeminiMissionTextGenerator implements ExternalMissionTextGenerator 
 
     @Override
     public MissionTextCandidate generate(MissionTextGenerationCommand command) {
+        return generateWithUsage(command).candidate();
+    }
+
+    @Override
+    public MissionTextGenerationOutput generateWithUsage(MissionTextGenerationCommand command) {
         try {
             RenderedPrompt prompt = prompt(command);
-            String content = aiChatClient.call(prompt.systemPrompt(), prompt.userPrompt());
-            return parseCandidate(content, command);
+            AiChatResponse response = aiChatClient.callWithUsage(prompt.systemPrompt(), prompt.userPrompt());
+            return new MissionTextGenerationOutput(
+                    parseCandidate(response.content(), command),
+                    response.tokenUsage()
+            );
         } catch (FallbackRequiredException e) {
             throw e;
         } catch (Exception e) {
