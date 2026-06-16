@@ -4,7 +4,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import p5laris.ai.domain.application.dto.MissionTextCandidate;
 import p5laris.ai.domain.application.dto.MissionTextGenerationCommand;
+import p5laris.ai.domain.application.generator.AiChatResponse;
 import p5laris.ai.domain.application.generator.AiChatClient;
+import p5laris.ai.domain.application.generator.AiTokenUsage;
+import p5laris.ai.domain.application.generator.MissionTextGenerationOutput;
 import p5laris.ai.domain.application.prompt.PromptTemplateService;
 import p5laris.ai.domain.domain.enums.AiErrorType;
 import p5laris.ai.domain.exception.FallbackRequiredException;
@@ -48,6 +51,32 @@ class GeminiMissionTextGeneratorTest {
         assertThat(candidate.completionCharacterResponse()).contains("작은 시작");
         assertThat(candidate.category()).isEqualTo("BASIC_ROUTINE");
         assertThat(candidate.difficulty()).isEqualTo("EASY");
+    }
+
+    @Test
+    void Gemini_응답의_token_usage를_함께_반환한다() {
+        GeminiMissionTextGenerator generator = new GeminiMissionTextGenerator(
+                new StubAiChatClient("""
+                        {
+                          "title": "물 한 컵 마시기",
+                          "description": "지금 자리에서 물 한 컵을 천천히 마셔보세요.",
+                          "characterMessage": "무... 무무... (해석: 물 한 컵, 나랑 한 번만 해보자.)",
+                          "completionQuestion": "마시고 나서 어땠어?",
+                          "completionCharacterResponse": "잘했어. 작은 시작을 기억할게.",
+                          "category": "BASIC_ROUTINE",
+                          "difficulty": "EASY"
+                        }
+                        """, new AiTokenUsage(123, 45, 168)),
+                new ObjectMapper(),
+                FALLBACK_PROMPTS
+        );
+
+        MissionTextGenerationOutput output = generator.generateWithUsage(validCommand());
+
+        assertThat(output.candidate().title()).isEqualTo("물 한 컵 마시기");
+        assertThat(output.tokenUsage().promptTokens()).isEqualTo(123);
+        assertThat(output.tokenUsage().completionTokens()).isEqualTo(45);
+        assertThat(output.tokenUsage().totalTokens()).isEqualTo(168);
     }
 
     @Test
@@ -232,11 +261,20 @@ class GeminiMissionTextGeneratorTest {
         );
     }
 
-    private record StubAiChatClient(String content) implements AiChatClient {
+    private record StubAiChatClient(String content, AiTokenUsage tokenUsage) implements AiChatClient {
+
+        private StubAiChatClient(String content) {
+            this(content, AiTokenUsage.empty());
+        }
 
         @Override
         public String call(String systemPrompt, String userPrompt) {
             return content;
+        }
+
+        @Override
+        public AiChatResponse callWithUsage(String systemPrompt, String userPrompt) {
+            return new AiChatResponse(content, tokenUsage);
         }
     }
 
