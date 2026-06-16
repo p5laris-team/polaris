@@ -1,5 +1,6 @@
 <img src="docs/images/Polaris-Banner.png" width="100%" alt="Polaris Banner">
 <br /><br />
+
 <div align="center">
   <h1 style="border-bottom: none; font-size: 2.5em; font-weight: bold;">
     <img src="docs/images/logomark.png" width="50" alt="Logo" style="vertical-align: middle; margin-right: 10px;"> Polaris (별친구)
@@ -66,9 +67,8 @@
 | 박현지 | 팀원 | Gemini 프롬프트 엔지니어링, SSE 스트리밍, 미션 상태 머신                       |
 | 강태훈 | 팀원 | 캐릭터 관리, 캐릭터 카드 공유, 배너 광고                                    |
 
-<br>
 
-### [📎프로젝트 브로셔 바로가기](https://www.notion.so/)
+### [📎프로젝트 브로셔 바로가기](https://app.notion.com/p/37cad743b3ce8066847ec69e802c7af9)
 
 ---
 
@@ -80,7 +80,10 @@
 ## 🧩 Architecture
 
 <p align="center">
-  <img src="" width="80%" alt="(Architecture 이미지 들어갈 자리)">
+  <img src="docs/images/architecture-2.png" width="80%" alt="Architecture 이미지">
+</p>
+<p align="center">
+  <img src="docs/images/architecture-1.png" width="80%" alt="Architecture 이미지">
 </p>
 
 ---
@@ -207,7 +210,7 @@
 ## 🗺 User Flow
 
 <p align="center">
-  <img src="docs/images/polaris_user_flow.png" width="80%" alt="Polaris User Flow">
+  <img src="docs/images/user-flow.png" width="80%" alt="Polaris User Flow">
 </p>
 
 ---
