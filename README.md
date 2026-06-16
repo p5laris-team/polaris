@@ -1,14 +1,17 @@
-<img src="docs/images/polaris-banner.png" width="100%" alt="Polaris Banner">
-  <br /><br />
-
+<img src="docs/images/Polaris-Banner.png" width="100%" alt="Polaris Banner">
+<br /><br />
 <div align="center">
   <h1 style="border-bottom: none; font-size: 2.5em; font-weight: bold;">
-    <img src="docs/images/logomark.png" width="50" alt="Logo" style="vertical-align: middle; margin-right: 10px;"> Polaris
+    <img src="docs/images/logomark.png" width="50" alt="Logo" style="vertical-align: middle; margin-right: 10px;"> Polaris (별친구)
   </h1>
   <p style="color: #8b949e; font-size: 1.2em; letter-spacing: 2px;">
     <b>AI CHARACTER ROUTINE MAKER</b>
   </p>
   <br />
+  <a href="https://p5laris.life/" target="_blank">
+    <img src="https://img.shields.io/badge/🚀_Service_Link-https%3A%2F%2Fp5laris.life%2F-4facfe?style=flat-square" alt="Service URL">
+  </a>
+  <br /><br />
   <hr style="background: linear-gradient(to right, transparent, #30363d, transparent); height: 1px; border: none;" />
   <br />
 </div>
@@ -77,8 +80,26 @@
 ## 🧩 Architecture
 
 <p align="center">
-  <img src="" width="100%" alt="Architecture">
+  <img src="" width="80%" alt="(Architecture 이미지 들어갈 자리)">
 </p>
+
+---
+
+## 📊 Monitoring Dashboard
+
+#### 1. 애플리케이션 모니터링
+<p align="center">
+  <img src="docs/images/application-monitoring.png" width="80%" alt="(애플리케이션 모니터링 대시보드 캡쳐 이미지)">
+</p>
+
+> **시스템 안정성 확보:** JVM 메트릭, gRPC 트래픽 통계, 시스템 자원(CPU/Memory) 등을 한눈에 파악하기 위해 Spring Boot Actuator, Micrometer, 그리고 Prometheus를 연동하여 Grafana 대시보드로 시각화했습니다.
+
+#### 2. 유저 행동 분석 (Event Log) 모니터링
+<p align="center">
+  <img src="docs/images/eventlog-monitoring.png" width="80%" alt="(유저 행동 분석 대시보드 캡쳐 이미지)">
+</p>
+
+> **데이터 기반 인사이트:** `event-log` 모듈로 비동기 수집된 유저의 주요 행동(미션 완료, 상점 아이템 구매 등) 데이터를 시각화하여, 유저 리텐션과 비즈니스 트렌드를 실시간으로 추적할 수 있는 환경을 구축했습니다.
 
 ---
 
@@ -86,33 +107,38 @@
 
 #### 🖥️ Backend Stack
 <p align="left">
-  <img src="https://img.shields.io/badge/Java%2021-ED8B00?style=for-the-badge&logo=openjdk&logoColor=white">
-  <img src="https://img.shields.io/badge/Spring%20Boot%203.x-6DB33F?style=for-the-badge&logo=springboot&logoColor=white">
-  <img src="https://img.shields.io/badge/Spring%20Data%20JPA-6DB33F?style=for-the-badge&logo=spring&logoColor=white">
-  <img src="https://img.shields.io/badge/gRPC-244C5A?style=for-the-badge&logo=grpc&logoColor=white">
+  <img src="https://img.shields.io/badge/Java%2021-ED8B00?style=flat-square&logo=openjdk&logoColor=white">
+  <img src="https://img.shields.io/badge/Spring%20Boot%203.x-6DB33F?style=flat-square&logo=springboot&logoColor=white">
+  <img src="https://img.shields.io/badge/Spring%20Data%20JPA-6DB33F?style=flat-square&logo=spring&logoColor=white">
+  <img src="https://img.shields.io/badge/gRPC-244C5A?style=flat-square&logo=grpc&logoColor=white">
+  <img src="https://img.shields.io/badge/Lombok-red?style=flat-square&logo=lombok&logoColor=white">
 </p>
 
 #### 💾 Data & Infrastructure
 <p align="left">
-  <img src="https://img.shields.io/badge/PostgreSQL-4169E1?style=for-the-badge&logo=postgresql&logoColor=white">
-  <img src="https://img.shields.io/badge/pgvector-336791?style=for-the-badge&logo=postgresql&logoColor=white">
-  <img src="https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white">
-  <img src="https://img.shields.io/badge/AWS%20S3-569A31?style=for-the-badge&logo=amazons3&logoColor=white">
+  <img src="https://img.shields.io/badge/PostgreSQL-4169E1?style=flat-square&logo=postgresql&logoColor=white">
+  <img src="https://img.shields.io/badge/pgvector-336791?style=flat-square&logo=postgresql&logoColor=white">
+  <img src="https://img.shields.io/badge/Redis-DC382D?style=flat-square&logo=redis&logoColor=white">
+  <img src="https://img.shields.io/badge/Flyway-CC0200?style=flat-square&logo=flyway&logoColor=white">
+  <img src="https://img.shields.io/badge/AWS%20S3-569A31?style=flat-square&logo=amazons3&logoColor=white">
 </p>
 
 #### 🤖 AI & External API
 <p align="left">
-  <img src="https://img.shields.io/badge/Google%20Gemini-4285F4?style=for-the-badge&logo=google&logoColor=white">
-  <img src="https://img.shields.io/badge/FCM-FFCA28?style=for-the-badge&logo=firebase&logoColor=white">
+  <img src="https://img.shields.io/badge/Google%20Gemini-4285F4?style=flat-square&logo=google&logoColor=white">
+  <img src="https://img.shields.io/badge/FCM-FFCA28?style=flat-square&logo=firebase&logoColor=white">
 </p>
 
-#### 🧪 Quality & DevOps
+#### 🧪 Quality, DevOps & Monitoring
 <p align="left">
-  <img src="https://img.shields.io/badge/Nx%20Monorepo-143055?style=for-the-badge&logo=nx&logoColor=white">
-  <img src="https://img.shields.io/badge/Gradle-02303A?style=for-the-badge&logo=gradle&logoColor=white">
-  <img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white">
-  <img src="https://img.shields.io/badge/Prometheus-E6522C?style=for-the-badge&logo=prometheus&logoColor=white">
-  <img src="https://img.shields.io/badge/Grafana-F46800?style=for-the-badge&logo=grafana&logoColor=white">
+  <img src="https://img.shields.io/badge/Nx%20Monorepo-143055?style=flat-square&logo=nx&logoColor=white">
+  <img src="https://img.shields.io/badge/Gradle-02303A?style=flat-square&logo=gradle&logoColor=white">
+  <img src="https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white">
+  <img src="https://img.shields.io/badge/Spring%20Boot%20Actuator-6DB33F?style=flat-square&logo=spring&logoColor=white">
+  <img src="https://img.shields.io/badge/Micrometer-2B96D6?style=flat-square">
+  <img src="https://img.shields.io/badge/Prometheus-E6522C?style=flat-square&logo=prometheus&logoColor=white">
+  <img src="https://img.shields.io/badge/Grafana-F46800?style=flat-square&logo=grafana&logoColor=white">
+  <img src="https://img.shields.io/badge/H2%20Database-4479A1?style=flat-square">
 </p>
 
 ---
@@ -140,6 +166,12 @@
 #### ◻ **Flyway (DB Migration)**
 > 마이크로서비스별 독립적인 데이터베이스 스키마(PostgreSQL)의 형상 관리를 위해 Flyway를 도입하여, CI/CD 파이프라인에서 스크립트 기반 자동 마이그레이션이 이루어지도록 구축했습니다.
 
+#### ◻ **Nx Monorepo 스마트 배포 (Affected Deploy)**
+> 여러 마이크로서비스가 공존하는 모노레포 환경의 빌드 지연을 막기 위해, GitHub Actions CI/CD 파이프라인에서 Nx의 의존성 그래프를 분석하여 **코드 변경이 발생한(Affected) 모듈만 선택적으로 빌드 및 배포**하도록 파이프라인을 최적화했습니다.
+
+#### ◻ **JaCoCo 품질 게이트 (Coverage Gate)**
+> 코드 안정성을 시스템적으로 강제하기 위해 JaCoCo를 도입하여 **테스트 커버리지 60% 미만 시 CI 빌드가 자동 실패**하도록 설정했습니다. 이를 통해 반드시 테스트 코드가 수반된 기능만 배포되도록 견고한 개발 환경을 구축했습니다.
+
 ---
 
 ## 🚀 주요 기능
@@ -164,10 +196,10 @@
 - **이미지 생성:** S3 Presigned URL을 발급받아 미션 완료 증명 카드를 SNS로 렌더링 후 공유
 - **스마트 알림:** 방해금지 시간 설정에 연동되는 FCM 기반 맞춤형 푸시 메시지 발송
 
-### 🌦️ 개인화 및 컨텍스트 (Personalization)
+#### 🌦️ 개인화 및 컨텍스트 (Personalization)
 - **날씨/지역 연동:** 유저가 설정한 날씨 권역 정보(`WeatherRegionCode`)를 바탕으로, 비가 오는 날엔 실내 활동을 제안하는 등 환경 맞춤형 특수 루틴 제안
 
-### 📜 행동 분석 로깅 (Event Logging)
+#### 📜 행동 분석 로깅 (Event Logging)
 - **통합 로그 적재:** 미션 완료, 상점 구매 등 유저의 주요 행동 이벤트를 도메인 로직과 분리하여 비동기로 수집하고, `event-log` 모듈로 적재하여 향후 유저 리텐션 분석 및 지표 추출 기반 마련
 
 ---
@@ -183,7 +215,7 @@
 ## 🖼 API 명세서
 
 <p align="center">
-  <img src="docs/images/API.png" width="100%" alt="API 명세서">
+  <img src="docs/images/API.png" width="80%" alt="API 명세서">
 </p>
 
 보다 자세한 API 명세서는
@@ -194,7 +226,7 @@
 ## 🗄 ERD Diagram
 
 <p align="center">
-  <img src="docs/images/ERD.png" width="100%" alt="ERD">
+  <img src="docs/images/ERD.png" width="80%" alt="ERD">
 </p>
 
 보다 자세한 ERD는
