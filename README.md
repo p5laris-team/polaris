@@ -80,7 +80,10 @@
 ## 🧩 Architecture
 
 <p align="center">
-  <img src="" width="80%" alt="(Architecture 이미지 들어갈 자리)">
+  <img src="docs/images/architecture-2.png" width="80%" alt="Architecture 이미지">
+</p>
+<p align="center">
+  <img src="docs/images/architecture-1.png" width="80%" alt="Architecture 이미지">
 </p>
 
 ---
@@ -207,7 +210,7 @@
 ## 🗺 User Flow
 
 <p align="center">
-  <img src="docs/images/polaris_user_flow.png" width="80%" alt="Polaris User Flow">
+  <img src="docs/images/user-flow.png" width="80%" alt="Polaris User Flow">
 </p>
 
 ---
