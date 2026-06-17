@@ -5,7 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
-import p5laris.mission.domain.application.memory.EmbeddingVectorUtils;
+import p5laris.common.utils.EmbeddingVectorUtils;
 import p5laris.mission.domain.application.memory.UserMemoryEmbeddingJob;
 import p5laris.mission.domain.application.memory.UserMemoryRagHit;
 import p5laris.mission.domain.domain.entity.UserMemory;
@@ -17,12 +17,11 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
 
 /**
- * pgvector 컬럼을 다루는 JDBC repository다.
+ * pgvector 컬럼을 명시 SQL로 다루는 JDBC repository다.
  *
- * Hibernate에 vector 타입 매핑을 추가하지 않고 SQL을 명시해, 저장/검색 정책을 좁은 영역에 가둔다.
+ * Hibernate vector 매핑을 추가하지 않고 저장, 검색, row claim 쿼리를 직접 제어한다.
  */
 @Repository
 @RequiredArgsConstructor
@@ -67,41 +66,35 @@ public class UserMemoryEmbeddingJdbcRepository {
         );
     }
 
-    public List<Long> findDispatchableIds(LocalDateTime now, int batchSize) {
-        return jdbcTemplate.queryForList("""
-                        SELECT id
-                        FROM user_memory_embeddings
-                        WHERE (
-                            status = ?
-                            AND next_attempt_at <= ?
-                        ) OR (
-                            status = ?
-                            AND next_attempt_at <= ?
+    public List<UserMemoryEmbeddingJob> claimDue(LocalDateTime now, int batchSize, LocalDateTime lockExpiresAt) {
+        return jdbcTemplate.query("""
+                        WITH picked AS (
+                            SELECT e.id
+                            FROM user_memory_embeddings e
+                            WHERE e.status IN (?, ?)
+                              AND e.next_attempt_at <= ?
+                            ORDER BY e.next_attempt_at ASC, e.id ASC
+                            FOR UPDATE SKIP LOCKED
+                            LIMIT ?
+                        ),
+                        claimed AS (
+                            UPDATE user_memory_embeddings e
+                            SET status = ?,
+                                next_attempt_at = ?,
+                                updated_at = CURRENT_TIMESTAMP
+                            FROM picked
+                            WHERE e.id = picked.id
+                            RETURNING e.id, e.user_memory_id, e.user_id, e.attempt_count
                         )
-                        ORDER BY next_attempt_at ASC, id ASC
-                        LIMIT ?
-                        """,
-                Long.class,
-                UserMemoryEmbeddingStatus.PENDING.name(),
-                now,
-                UserMemoryEmbeddingStatus.PROCESSING.name(),
-                now,
-                Math.max(1, batchSize)
-        );
-    }
-
-    public Optional<UserMemoryEmbeddingJob> findJobForUpdate(Long id) {
-        List<UserMemoryEmbeddingJob> jobs = jdbcTemplate.query("""
                         SELECT
-                            e.id,
-                            e.user_memory_id,
-                            e.user_id,
-                            e.attempt_count,
+                            c.id,
+                            c.user_memory_id,
+                            c.user_id,
+                            c.attempt_count,
                             m.content
-                        FROM user_memory_embeddings e
-                        JOIN user_memories m ON m.id = e.user_memory_id
-                        WHERE e.id = ?
-                        FOR UPDATE OF e
+                        FROM claimed c
+                        JOIN user_memories m ON m.id = c.user_memory_id
+                        ORDER BY c.id ASC
                         """,
                 (rs, rowNum) -> new UserMemoryEmbeddingJob(
                         rs.getLong("id"),
@@ -110,42 +103,12 @@ public class UserMemoryEmbeddingJdbcRepository {
                         rs.getString("content"),
                         rs.getInt("attempt_count")
                 ),
-                id
-        );
-        return jobs.stream().findFirst();
-    }
-
-    public boolean canClaim(Long id, LocalDateTime now) {
-        Integer count = jdbcTemplate.queryForObject("""
-                        SELECT COUNT(*)
-                        FROM user_memory_embeddings
-                        WHERE id = ?
-                          AND (
-                              status = ?
-                              OR status = ?
-                          )
-                          AND next_attempt_at <= ?
-                        """,
-                Integer.class,
-                id,
                 UserMemoryEmbeddingStatus.PENDING.name(),
                 UserMemoryEmbeddingStatus.PROCESSING.name(),
-                now
-        );
-        return count != null && count > 0;
-    }
-
-    public void markProcessing(Long id, LocalDateTime lockExpiresAt) {
-        jdbcTemplate.update("""
-                        UPDATE user_memory_embeddings
-                        SET status = ?,
-                            next_attempt_at = ?,
-                            updated_at = CURRENT_TIMESTAMP
-                        WHERE id = ?
-                        """,
+                now,
+                Math.max(1, batchSize),
                 UserMemoryEmbeddingStatus.PROCESSING.name(),
-                lockExpiresAt,
-                id
+                lockExpiresAt
         );
     }
 

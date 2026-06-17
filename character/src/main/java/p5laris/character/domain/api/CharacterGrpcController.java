@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import net.devh.boot.grpc.server.service.GrpcService;
 import p5laris.character.domain.application.CharacterService;
 import p5laris.character.domain.application.ShareService;
+import p5laris.character.domain.application.dto.CharacterTalkContextResponse;
 
 @GrpcService
 @RequiredArgsConstructor
@@ -26,8 +27,8 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
     }
 
     /**
-     * Get character types (API spec 4.1).
-     * Returns active character types sorted by sort_order ascending.
+     * 캐릭터 타입 목록을 조회한다.
+     * 활성화된 캐릭터 타입을 sort_order 오름차순으로 내려준다.
      */
     @Override
     public void getCharacterTypes(GetCharacterTypesRequest request,
@@ -53,7 +54,7 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
     }
 
     /**
-     * Get character assets (API spec 4.2).
+     * 캐릭터 타입별 상태 에셋을 조회한다.
      */
     @Override
     public void getCharacterAssets(GetCharacterAssetsRequest request,
@@ -76,7 +77,7 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
     }
 
     /**
-     * Create a user character (API spec 4.3).
+     * 유저 캐릭터를 생성한다.
      */
     @Override
     public void createCharacter(CreateCharacterRequest request,
@@ -97,6 +98,7 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
                         .setEnergy(result.states().energy())
                         .setAffection(result.states().affection())
                         .build())
+                .setGrowth(toProtoGrowth(result.growth()))
                 .setCreatedAt(result.createdAt().toString())
                 .build();
 
@@ -105,7 +107,7 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
     }
 
     /**
-     * Get my character (API spec 4.4).
+     * 유저의 활성 캐릭터를 조회한다.
      */
     @Override
     public void getMyCharacter(GetMyCharacterRequest request,
@@ -125,6 +127,7 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
                         .build())
                 .setCurrentAssetUrl(result.currentAssetUrl() != null ? result.currentAssetUrl() : "")
                 .putAllAssetUrls(result.assetUrls() != null ? result.assetUrls() : java.util.Map.of())
+                .setGrowth(toProtoGrowth(result.growth()))
                 .build();
 
         responseObserver.onNext(response);
@@ -132,7 +135,7 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
     }
 
     /**
-     * Update character name (API spec 4.5).
+     * 캐릭터 이름을 수정한다.
      */
     @Override
     public void updateCharacterName(UpdateCharacterNameRequest request,
@@ -154,7 +157,7 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
     }
 
     /**
-     * Get character status (API spec 4.6).
+     * 캐릭터 상태 수치와 라벨을 조회한다.
      */
     @Override
     public void getCharacterStatus(GetCharacterStatusRequest request,
@@ -178,6 +181,7 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
                         .setLabel(result.states().affection().label())
                         .setGrade(result.states().affection().grade())
                         .build())
+                .setGrowth(toProtoGrowth(result.growth()))
                 .build();
 
         responseObserver.onNext(response);
@@ -185,7 +189,7 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
     }
 
     /**
-     * Perform care action (API spec 4.7).
+     * 캐릭터 돌봄 활동을 수행한다.
      */
     @Override
     public void performCareAction(PerformCareActionRequest request,
@@ -214,6 +218,10 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
                         .setEnergy(result.afterStates().energy())
                         .setAffection(result.afterStates().affection())
                         .build())
+                .setBeforeGrowth(toProtoGrowth(result.beforeGrowth()))
+                .setAfterGrowth(toProtoGrowth(result.afterGrowth()))
+                .setExpGained(result.expGained())
+                .setLevelUp(result.levelUp())
                 .setCharacterMessage(result.characterMessage())
                 .build();
 
@@ -222,7 +230,131 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
     }
 
     /**
-     * Equip skin on character (API spec 4.8).
+     * 외부 도메인 이벤트 기준으로 캐릭터 경험치를 지급한다.
+     */
+    @Override
+    public void grantCharacterExp(GrantCharacterExpRequest request,
+                                  StreamObserver<GrantCharacterExpResponse> responseObserver) {
+        var result = characterService.grantCharacterExp(
+                request.getUserId(),
+                request.getCharacterId(),
+                request.getSourceType(),
+                request.getSourceId(),
+                request.getExpAmount(),
+                request.getIdempotencyKey()
+        );
+
+        GrantCharacterExpResponse response = GrantCharacterExpResponse.newBuilder()
+                .setCharacterId(result.characterId())
+                .setExpGained(result.expGained())
+                .setBeforeGrowth(toProtoGrowth(result.beforeGrowth()))
+                .setAfterGrowth(toProtoGrowth(result.afterGrowth()))
+                .setLevelUp(result.levelUp())
+                .setAlreadyProcessed(result.alreadyProcessed())
+                .build();
+
+        responseObserver.onNext(response);
+        responseObserver.onCompleted();
+    }
+
+    /**
+     * 캐릭터 터치/상태 트리거에 맞는 대사와 기억 조각을 조회한다.
+     */
+    @Override
+    public void interactWithCharacter(InteractWithCharacterRequest request,
+                                      StreamObserver<InteractWithCharacterResponse> responseObserver) {
+        var result = characterService.interactWithCharacter(
+                request.getCharacterId(),
+                request.getUserId(),
+                request.getInteractionType()
+        );
+
+        InteractWithCharacterResponse.Builder response = InteractWithCharacterResponse.newBuilder()
+                .setCharacterId(result.characterId())
+                .setCharacterTypeCode(result.characterTypeCode())
+                .setLevel(result.level())
+                .setFragmentType(result.fragmentType())
+                .setTriggerType(result.triggerType())
+                .setMessage(result.message())
+                .setInterpretation(result.interpretation())
+                .setMemoryUnlocked(result.memoryUnlocked())
+                .setAlreadyUnlocked(result.alreadyUnlocked());
+
+        if (result.memory() != null) {
+            response.setMemory(CharacterStoryMemory.newBuilder()
+                    .setMemoryKey(result.memory().memoryKey())
+                    .setTitle(result.memory().title())
+                    .setStoryText(result.memory().storyText())
+                    .build());
+        }
+
+        responseObserver.onNext(response.build());
+        responseObserver.onCompleted();
+    }
+
+    /**
+     * 별친구 대화 prompt에 넣을 캐릭터 context를 조회한다.
+     */
+    @Override
+    public void getCharacterTalkContext(GetCharacterTalkContextRequest request,
+                                        StreamObserver<GetCharacterTalkContextResponse> responseObserver) {
+        var result = characterService.getCharacterTalkContext(
+                request.getCharacterId(),
+                request.getUserId(),
+                request.getMemoryLimit()
+        );
+
+        GetCharacterTalkContextResponse response = GetCharacterTalkContextResponse.newBuilder()
+                .setCharacterId(result.characterId())
+                .setCharacterTypeCode(result.characterTypeCode())
+                .setCharacterName(result.characterName())
+                .setHunger(toProtoStateDetail(result.hunger()))
+                .setEnergy(toProtoStateDetail(result.energy()))
+                .setAffection(toProtoStateDetail(result.affection()))
+                .setGrowth(toProtoGrowth(result.growth()))
+                .addAllMemories(result.memories().stream()
+                        .map(memory -> CharacterStoryMemory.newBuilder()
+                                .setMemoryKey(memory.memoryKey())
+                                .setTitle(memory.title())
+                                .setStoryText(memory.storyText())
+                                .setFragmentType(memory.fragmentType())
+                                .setUnlockedLevel(memory.unlockedLevel())
+                                .setUnlockedAt(memory.unlockedAt())
+                                .build())
+                        .toList())
+                .setStoryProgress(toProtoStoryProgress(result.storyProgress()))
+                .build();
+
+        responseObserver.onNext(response);
+        responseObserver.onCompleted();
+    }
+
+    private CharacterStoryProgress toProtoStoryProgress(CharacterTalkContextResponse.StoryProgress progress) {
+        if (progress == null) {
+            return CharacterStoryProgress.newBuilder().build();
+        }
+
+        CharacterStoryProgress.Builder builder = CharacterStoryProgress.newBuilder()
+                .setUnlockedMemoryCount(progress.unlockedMemoryCount())
+                .setTotalMemoryCount(progress.totalMemoryCount())
+                .setAllUnlocked(progress.allUnlocked());
+
+        if (progress.nextMemoryHint() != null) {
+            builder.setNextMemoryHint(toProtoUnlockHint(progress.nextMemoryHint()));
+        }
+
+        return builder.build();
+    }
+
+    private CharacterStoryUnlockHint toProtoUnlockHint(CharacterTalkContextResponse.UnlockHint hint) {
+        return CharacterStoryUnlockHint.newBuilder()
+                .setRequiredLevel(hint.requiredLevel())
+                .setHintMessage(hint.hintMessage())
+                .build();
+    }
+
+    /**
+     * 캐릭터 스킨을 장착하거나 해제한다. (API 명세 4.8)
      */
     @Override
     public void equipSkin(EquipSkinRequest request,
@@ -243,7 +375,7 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
         responseObserver.onCompleted();
     }
 
-    // ---------- Share APIs (§9) ----------
+    // ---------- 공유 API (§9) ----------
 
     @Override
     public void createShareCard(CreateShareCardRequest request,
@@ -331,6 +463,37 @@ public class CharacterGrpcController extends CharacterServiceGrpc.CharacterServi
                 .build());
         responseObserver.onCompleted();
     }
+
+    private CharacterGrowth toProtoGrowth(p5laris.character.domain.application.dto.CharacterGrowthResponse growth) {
+        if (growth == null) {
+            return CharacterGrowth.getDefaultInstance();
+        }
+        return CharacterGrowth.newBuilder()
+                .setLevel(growth.level())
+                .setExp(growth.exp())
+                .setCurrentLevelExp(growth.currentLevelExp())
+                .setNextLevelExp(growth.nextLevelExp())
+                .setExpToNextLevel(growth.expToNextLevel())
+                .setProgressPercent(growth.progressPercent())
+                .setGrowthStage(growth.growthStage())
+                .setGrowthStageLabel(growth.growthStageLabel())
+                .setMaxLevel(growth.maxLevel())
+                .build();
+    }
+
+    private CharacterStateDetail toProtoStateDetail(
+            p5laris.character.domain.application.dto.CharacterTalkContextResponse.StateDetail stateDetail
+    ) {
+        if (stateDetail == null) {
+            return CharacterStateDetail.getDefaultInstance();
+        }
+        return CharacterStateDetail.newBuilder()
+                .setValue(stateDetail.value())
+                .setLabel(stateDetail.label())
+                .setGrade(stateDetail.grade())
+                .build();
+    }
+
     @Override
     public void getSharePresignedUrl(com.p5laris.proto.character.v1.GetSharePresignedUrlRequest request,
                                      io.grpc.stub.StreamObserver<com.p5laris.proto.character.v1.GetSharePresignedUrlResponse> responseObserver) {

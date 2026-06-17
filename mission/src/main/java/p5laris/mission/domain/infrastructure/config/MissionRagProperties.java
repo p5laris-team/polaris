@@ -15,6 +15,7 @@ public class MissionRagProperties {
     private boolean enabled;
     private String embeddingModel;
     private int embeddingDimension;
+    private long queryEmbeddingDeadlineMs;
     private int topK;
     private double similarityThreshold;
     private boolean fallbackToRecentMemory;
@@ -44,6 +45,17 @@ public class MissionRagProperties {
 
     public void setEmbeddingDimension(int embeddingDimension) {
         this.embeddingDimension = embeddingDimension;
+    }
+
+    public long getQueryEmbeddingDeadlineMs() {
+        if (queryEmbeddingDeadlineMs <= 0) {
+            return 1_000L;
+        }
+        return queryEmbeddingDeadlineMs;
+    }
+
+    public void setQueryEmbeddingDeadlineMs(long queryEmbeddingDeadlineMs) {
+        this.queryEmbeddingDeadlineMs = queryEmbeddingDeadlineMs;
     }
 
     public int getTopK() {

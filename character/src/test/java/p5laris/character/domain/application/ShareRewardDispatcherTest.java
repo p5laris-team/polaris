@@ -21,6 +21,7 @@ import p5laris.character.domain.infrastructure.config.ShareRewardOutboxPropertie
 import p5laris.character.domain.infrastructure.grpc.NotificationPushClient;
 import p5laris.character.domain.infrastructure.grpc.ShareRewardWalletClient;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -37,6 +38,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.lenient;
 
 @ExtendWith(MockitoExtension.class)
 class ShareRewardDispatcherTest {
@@ -55,8 +57,7 @@ class ShareRewardDispatcherTest {
     @Mock
     private NotificationPushClient notificationPushClient;
 
-    @Mock
-    private ShareRewardBackoffPolicy shareRewardBackoffPolicy;
+
 
     @Mock
     private ShareRewardOutboxProperties properties;
@@ -64,30 +65,41 @@ class ShareRewardDispatcherTest {
     @Mock
     private TransactionTemplate transactionTemplate;
 
+    private SimpleMeterRegistry meterRegistry;
     private ShareRewardDispatcher dispatcher;
 
     @BeforeEach
     void setUp() {
+        meterRegistry = new SimpleMeterRegistry();
         dispatcher = new ShareRewardDispatcher(
                 characterOutboxEventRepository,
                 shareLogRepository,
                 shareRewardWalletClient,
                 notificationPushClient,
-                shareRewardBackoffPolicy,
                 properties,
                 transactionTemplate,
                 new ObjectMapper(),
-                Clock.fixed(Instant.parse("2026-06-01T15:00:00Z"), ZoneId.of("Asia/Seoul"))
+                Clock.fixed(Instant.parse("2026-06-01T15:00:00Z"), ZoneId.of("Asia/Seoul")),
+                meterRegistry
         );
-        when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+        lenient().when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
             TransactionCallback<?> callback = invocation.getArgument(0);
             return callback.doInTransaction(null);
         });
-        doAnswer(invocation -> {
+        lenient().doAnswer(invocation -> {
             Consumer<TransactionStatus> callback = invocation.getArgument(0);
             callback.accept(null);
             return null;
         }).when(transactionTemplate).executeWithoutResult(any());
+        dispatcher.init();
+    }
+
+    @Test
+    void gauge_pending_count_is_registered_correctly() {
+        when(characterOutboxEventRepository.countByStatus(CharacterOutboxEventStatus.PENDING)).thenReturn(8L);
+
+        double count = meterRegistry.find("outbox.pending.count").gauge().value();
+        assertThat(count).isEqualTo(8.0);
     }
 
     @Test
@@ -106,6 +118,13 @@ class ShareRewardDispatcherTest {
         assertThat(shareLog.isRewardPaid()).isTrue();
         assertThat(outbox.getStatus()).isEqualTo(CharacterOutboxEventStatus.SUCCEEDED);
         verify(notificationPushClient).sendShareRewardCompletedNotification(1L, 900L, 10);
+
+        // Counter 검증
+        var counter = meterRegistry.find("outbox.events.processed").counter();
+        assertThat(counter).isNotNull();
+        assertThat(counter.count()).isEqualTo(1.0);
+        assertThat(counter.getId().getTag("status")).isEqualTo("SUCCESS");
+        assertThat(counter.getId().getTag("aggregate_type")).isEqualTo("SHARE_LOG");
     }
 
     @Test

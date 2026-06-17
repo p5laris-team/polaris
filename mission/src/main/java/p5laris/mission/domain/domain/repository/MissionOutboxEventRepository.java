@@ -54,4 +54,6 @@ public interface MissionOutboxEventRepository extends JpaRepository<MissionOutbo
             @Param("now") LocalDateTime now,
             Pageable pageable
     );
+
+    long countByStatus(MissionOutboxEventStatus status);
 }

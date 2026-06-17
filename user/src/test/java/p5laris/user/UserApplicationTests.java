@@ -18,7 +18,9 @@ import org.springframework.boot.test.context.SpringBootTest;
         "jwt.access-expiration-ms=3600000",
         "jwt.refresh-expiration-ms=1209600000",
         "oauth.google.client-id=test-client-id",
-        "oauth.google.client-secret=test-client-secret"
+        "oauth.google.client-secret=test-client-secret",
+        "internal.grpc-auth.enabled=true",
+        "internal.grpc-auth.token=test-internal-grpc-token"
 })
 class UserApplicationTests {
 

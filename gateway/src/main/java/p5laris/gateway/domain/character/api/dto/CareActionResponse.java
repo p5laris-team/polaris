@@ -14,6 +14,10 @@ public record CareActionResponse(
         Consumed consumed,
         States beforeStates,
         States afterStates,
+        CharacterGrowthResponse beforeGrowth,
+        CharacterGrowthResponse afterGrowth,
+        int expGained,
+        boolean levelUp,
         String characterMessage
 ) {
     @Builder

@@ -67,10 +67,10 @@ public class OutboxEvent {
         this.lastErrorMessage = null;
     }
 
-    public void fail(String errorMessage, LocalDateTime nextAttemptAt) {
-        this.status = "FAILED";
+    public void fail(String errorMessage, LocalDateTime nextAttemptAt, int maxAttempts) {
         this.lastErrorMessage = errorMessage;
         this.attemptCount++;
+        this.status = this.attemptCount >= maxAttempts ? "FAILED" : "PENDING";
         this.nextAttemptAt = nextAttemptAt;
     }
 }

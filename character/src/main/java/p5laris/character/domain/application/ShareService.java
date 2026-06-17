@@ -31,11 +31,10 @@ import java.util.Locale;
 import java.util.UUID;
 
 /**
- * Share service handling §9 share APIs.
+ * 공유 카드와 공유 이벤트 API를 처리하는 서비스다.
  *
- * ShareCard / ShareLog entities live in the character module.
- * Wallet reward (star piece) is handled via:
- * TODO [Wallet Domain Integration]: call wallet service to credit star pieces on share reward.
+ * ShareCard / ShareLog 엔티티는 캐릭터 모듈에서 관리한다.
+ * 공유 보상 별조각은 지갑 모듈 gRPC와 character outbox 재처리 흐름으로 지급한다.
  */
 @Slf4j
 @Service
@@ -62,7 +61,7 @@ public class ShareService {
     @Value("${app.public-base-url}")
     private String publicBaseUrl;
 
-    // ---------- §9.1 CreateShareCard ----------
+    // ---------- 공유 카드 생성 ----------
 
     @Transactional
     public ShareCardResult createShareCard(Long userId, Long characterId, String headline, String imageUrl) {
@@ -106,11 +105,11 @@ public class ShareService {
                 });
     }
 
-    // ---------- §9.2 GetShareCard ----------
+    // ---------- 공유 카드 상세 조회 ----------
 
     /**
-     * Returns share card detail for the owner.
-     * API spec 9.2 GET /api/share/v1/share-cards/{shareCardId}
+     * 소유자 기준으로 공유 카드 상세 정보를 조회한다.
+     * API 명세 9.2 GET /api/share/v1/share-cards/{shareCardId}
      */
     @Transactional(readOnly = true)
     public ShareCardDetailResult getShareCard(Long shareCardId, Long userId) {
@@ -130,15 +129,14 @@ public class ShareService {
                 buildShareUrl(extractShareId(card.getShareUrl())));
     }
 
-    // ---------- §9.3 CreateShareEvent ----------
+    // ---------- 공유 이벤트 기록 ----------
 
     /**
-     * Records a share event. Awards daily star piece reward (once per day, idempotency-keyed).
-     * API spec 9.3 POST /api/share/v1/share-events
+     * 공유 이벤트를 기록하고 하루 1회 공유 보상을 멱등 키 기준으로 처리한다.
+     * API 명세 9.3 POST /api/share/v1/share-events
      *
-     * Wallet credit:
-     * TODO [Wallet Domain Integration]: call wallet service to credit rewardStarPiece if rewardPaid=true.
-     * Currently rewardPaid is determined and stored, but no actual credit is made.
+     * 지갑 지급은 같은 트랜잭션에 묶지 않고 outbox 발행 뒤 즉시 시도하거나 재처리한다.
+     * 보상 지급 실패는 공유 실패로 보지 않고 rewardStatus=PENDING/FAILED로 분리한다.
      */
     public ShareEventResult createShareEvent(Long userId, Long shareCardId,
                                              String platform, String shareType,
@@ -193,11 +191,11 @@ public class ShareService {
             throw new CharacterException(CharacterErrorCode.NOT_SHARE_CARD_OWNER);
         }
 
-        // Check daily reward eligibility (AGENTS.md §20.5)
+        // 하루 1회 공유 보상 지급 가능 여부를 확인한다. (AGENTS.md §20.5)
         LocalDate today = LocalDate.now(SHARE_DATE_ZONE);
         String rewardIdempotencyKey = buildDailyShareRewardIdempotencyKey(userId, today);
 
-        // Idempotency for daily reward: return previously recorded reward log if exists.
+        // 이미 기록된 일일 보상 로그가 있으면 기존 지급 상태를 그대로 재사용한다.
         var existingRewardLog = shareLogRepository.findByIdempotencyKey(rewardIdempotencyKey);
         if (existingRewardLog.isPresent()) {
             ShareLog log = existingRewardLog.get();
@@ -256,11 +254,6 @@ public class ShareService {
                 LocalDateTime.now(SHARE_DATE_ZONE)
         );
         characterOutboxEventRepository.saveAndFlush(outbox);
-        // TODO [Wallet Domain Integration]: if rewardPaid, call walletService.credit(userId, rewardAmount).
-        // Example (uncomment after wallet domain is ready):
-        // if (rewardPaid) {
-        //     walletService.credit(userId, rewardAmount, "SHARE_REWARD");
-        // }
 
         eventPublisher.publishEvent(p5laris.character.domain.application.event.ShareEventLogEvent.shareCompleted(shareLog));
 
@@ -273,11 +266,11 @@ public class ShareService {
         );
     }
 
-    // ---------- §9.4 GetShareLink (Public) ----------
+    // ---------- §9.4 공유 링크 공개 조회 ----------
 
     /**
-     * Returns public share card info by shareId (no auth required).
-     * API spec 9.4 GET /api/share/v1/share-links/{shareId}
+     * 인증 없이 shareId로 공개 공유 카드 정보를 조회한다.
+     * API 명세 9.4 GET /api/share/v1/share-links/{shareId}
      */
     @Transactional(readOnly = true)
     public ShareLinkResult getShareLink(String shareId) {
@@ -296,19 +289,19 @@ public class ShareService {
                 buildSignupUrl(shareId));
     }
 
-    // ---------- §9.5 RecordShareClick (Public) ----------
+    // ---------- §9.5 공유 링크 클릭 기록 ----------
 
     /**
-     * Records a share link click for analytics (no auth required).
-     * API spec 9.5 POST /api/share/v1/share-clicks
+     * 인증 없이 공유 링크 클릭을 기록한다.
+     * API 명세 9.5 POST /api/share/v1/share-clicks
      *
-     * MVP: simply log and return recorded=true.
-     * TODO [Analytics Integration]: persist click log to analytics store if needed.
+     * MVP에서는 운영 로그만 남기고 recorded=true를 반환한다.
+     * 이후 분석 저장소가 확정되면 클릭 로그 영속화를 별도 정책으로 붙인다.
      */
     public ShareClickResult recordShareClick(String shareId, String referrer,
                                              String utmSource, String utmMedium,
                                              String utmCampaign) {
-        log.info("Share click recorded: shareId={}, referrer={}, utm={}/{}/{}",
+        log.info("공유 링크 클릭을 기록했습니다. shareId={}, referrer={}, utm={}/{}/{}",
                 shareId, referrer, utmSource, utmMedium, utmCampaign);
         return new ShareClickResult(shareId, true);
     }
@@ -319,7 +312,7 @@ public class ShareService {
         return s3StorageService.generatePresignedUrlForShareCard(userId, extension);
     }
 
-    // ---------- Internal helper ----------
+    // ---------- 내부 헬퍼 ----------
 
     private String normalizeAndValidateHeadline(String headline) {
         String normalized = headline == null ? PLACEHOLDER_HEADLINE : headline.trim();
@@ -443,7 +436,7 @@ public class ShareService {
         }
     }
 
-    // ---------- Result records ----------
+    // ---------- 결과 record ----------
 
     public record ShareCardResult(Long shareCardId, String shareId, String imageUrl, String shareUrl) {}
     public record ShareCardDetailResult(Long shareCardId, String characterName, String imageUrl, String shareUrl) {}

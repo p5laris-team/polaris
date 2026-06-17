@@ -4,6 +4,7 @@ import com.p5laris.proto.mission.v1.CreateNextMissionResponse;
 import com.p5laris.proto.mission.v1.CompletionInputType;
 import com.p5laris.proto.mission.v1.GetCurrentMissionResponse;
 import com.p5laris.proto.mission.v1.GetTodayMissionsResponse;
+import com.p5laris.proto.mission.v1.MissionCharacterExpStatus;
 import com.p5laris.proto.mission.v1.MissionRewardStatus;
 import com.p5laris.proto.mission.v1.MissionStatus;
 import com.p5laris.proto.mission.v1.RejectMissionResponse;
@@ -15,8 +16,14 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.utility.DockerImageName;
 import p5laris.mission.domain.domain.entity.MissionCompletionAnswer;
 import p5laris.mission.domain.domain.entity.MissionFeedback;
 import p5laris.mission.domain.domain.entity.MissionOutboxEvent;
@@ -41,12 +48,17 @@ import p5laris.mission.domain.infrastructure.grpc.AiMissionTextClient;
 import p5laris.mission.domain.infrastructure.grpc.AiMissionTextRequest;
 import p5laris.mission.domain.infrastructure.grpc.AiMissionTextResult;
 import p5laris.mission.domain.infrastructure.grpc.AiTextEmbeddingClient;
+import p5laris.mission.domain.infrastructure.grpc.CharacterExpClient;
+import p5laris.mission.domain.infrastructure.grpc.CharacterExpGrantResult;
 import p5laris.mission.domain.infrastructure.grpc.CharacterProfileClient;
+import p5laris.mission.domain.infrastructure.grpc.CharacterProfileClient.CharacterProfileSnapshot;
+import p5laris.mission.domain.infrastructure.grpc.MissionCharacterGrowth;
 import p5laris.mission.domain.infrastructure.grpc.NotificationPushClient;
 import p5laris.mission.domain.infrastructure.grpc.OnboardingProfileClient;
 import p5laris.mission.domain.infrastructure.grpc.OnboardingProfileClient.OnboardingProfileSnapshot;
 import p5laris.mission.domain.infrastructure.grpc.WalletRewardClient;
 import p5laris.mission.domain.infrastructure.grpc.WalletRewardResult;
+import io.micrometer.core.instrument.MeterRegistry;
 
 import java.time.Clock;
 import java.time.LocalDate;
@@ -70,7 +82,13 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @SpringBootTest(properties = {
+        "server.port=0",
         "grpc.server.port=0",
+        "grpc.client.user.address=static://localhost:9091",
+        "grpc.client.character.address=static://localhost:9092",
+        "grpc.client.item.address=static://localhost:9093",
+        "grpc.client.ai.address=static://localhost:9094",
+        "grpc.client.event-log.address=static://localhost:9095",
         "grpc.client.notification.address=static://localhost:9098",
         "spring.data.redis.host=localhost",
         "spring.data.redis.port=6379",
@@ -112,9 +130,31 @@ import static org.mockito.Mockito.when;
         "mission.reward-outbox.processing-timeout-seconds=60",
         "mission.reward-outbox.retry-initial-delay-seconds=60",
         "mission.reward-outbox.retry-max-delay-seconds=3600",
-        "mission.reward-wallet.deadline-ms=1000"
+        "mission.reward-wallet.deadline-ms=1000",
+        "mission.character-exp.deadline-ms=1000",
+        "internal.grpc-auth.enabled=true",
+        "internal.grpc-auth.token=test-internal-grpc-token"
 })
+@Testcontainers(disabledWithoutDocker = true)
 class MissionServiceTest {
+
+    @Container
+    private static final PostgreSQLContainer<?> POSTGRES =
+            new PostgreSQLContainer<>(
+                    DockerImageName.parse("pgvector/pgvector:pg16")
+                            .asCompatibleSubstituteFor("postgres")
+            )
+                    .withDatabaseName("mission")
+                    .withUsername("mission")
+                    .withPassword("mission");
+
+    @DynamicPropertySource
+    static void configurePostgres(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
+        registry.add("spring.datasource.username", POSTGRES::getUsername);
+        registry.add("spring.datasource.password", POSTGRES::getPassword);
+        registry.add("spring.datasource.driver-class-name", POSTGRES::getDriverClassName);
+    }
 
     private static final Long USER_ID = 1001L;
     private static final Long CHARACTER_ID = 2001L;
@@ -128,6 +168,12 @@ class MissionServiceTest {
 
     @Autowired
     private MissionRewardDispatcher missionRewardDispatcher;
+
+    @Autowired
+    private MissionCharacterExpDispatcher missionCharacterExpDispatcher;
+
+    @Autowired
+    private MeterRegistry meterRegistry;
 
     @Autowired
     private UserMissionRepository userMissionRepository;
@@ -157,6 +203,9 @@ class MissionServiceTest {
     private AiTextEmbeddingClient aiTextEmbeddingClient;
 
     @MockitoBean
+    private CharacterExpClient characterExpClient;
+
+    @MockitoBean
     private CharacterProfileClient characterProfileClient;
 
     @MockitoBean
@@ -172,13 +221,26 @@ class MissionServiceTest {
         missionFeedbackRepository.deleteAll();
         missionCompletionAnswerRepository.deleteAll();
         userMissionRepository.deleteAll();
-        reset(walletRewardClient, aiMissionTextClient, aiTextEmbeddingClient, characterProfileClient, onboardingProfileClient, notificationPushClient);
+        reset(walletRewardClient, aiMissionTextClient, aiTextEmbeddingClient, characterExpClient, characterProfileClient, onboardingProfileClient, notificationPushClient);
         when(walletRewardClient.earnMissionReward(anyLong(), anyLong(), anyInt(), anyString()))
                 .thenReturn(new WalletRewardResult(110, 9001L));
         when(walletRewardClient.getWalletStarPiece(anyLong()))
                 .thenReturn(110);
-        when(characterProfileClient.findActiveCharacterTypeCode(anyLong(), anyLong()))
-                .thenReturn(Optional.of("NOVA"));
+        when(characterExpClient.grantMissionCompletionExp(anyLong(), anyLong(), anyLong(), anyInt(), anyString()))
+                .thenAnswer(invocation -> {
+                    Long characterId = invocation.getArgument(1);
+                    int expAmount = invocation.getArgument(3);
+                    return new CharacterExpGrantResult(
+                            characterId,
+                            expAmount,
+                            characterGrowth(0),
+                            characterGrowth(expAmount),
+                            false,
+                            false
+                    );
+                });
+        when(characterProfileClient.findActiveCharacterProfile(anyLong(), anyLong()))
+                .thenReturn(Optional.of(new CharacterProfileSnapshot("NOVA", "노바")));
         when(onboardingProfileClient.findProfile(anyLong()))
                 .thenReturn(Optional.empty());
         ReflectionTestUtils.setField(missionService, "clock", clock);
@@ -274,6 +336,7 @@ class MissionServiceTest {
 
     @Test
     void AI_후보가_정책을_위반하면_한_번_재요청하고_통과한_후보를_저장한다() {
+        ReflectionTestUtils.setField(missionService, "clock", fixedClockAt(2026, 5, 25, 22, 30));
         when(aiMissionTextClient.generateMissionTexts(any()))
                 .thenAnswer(invocation -> {
                     AiMissionTextRequest request = invocation.getArgument(0);
@@ -281,7 +344,7 @@ class MissionServiceTest {
                             901L,
                             "첫 번째 후보",
                             "첫 번째 후보 설명",
-                            differentCategory(request.category()),
+                            "OUTDOOR_LIGHT",
                             "EASY"
                     ));
                 })
@@ -311,24 +374,23 @@ class MissionServiceTest {
 
     @Test
     void AI_후보가_두_번_모두_정책을_위반하면_seed_template_fallback을_유지한다() {
+        ReflectionTestUtils.setField(missionService, "clock", fixedClockAt(2026, 5, 25, 22, 30));
         when(aiMissionTextClient.generateMissionTexts(any()))
                 .thenAnswer(invocation -> {
-                    AiMissionTextRequest request = invocation.getArgument(0);
                     return Optional.of(aiMissionTextResult(
                             911L,
                             "첫 번째 후보",
                             "첫 번째 후보 설명",
-                            differentCategory(request.category()),
+                            "OUTDOOR_LIGHT",
                             "EASY"
                     ));
                 })
                 .thenAnswer(invocation -> {
-                    AiMissionTextRequest request = invocation.getArgument(0);
                     return Optional.of(aiMissionTextResult(
                             912L,
                             "두 번째 후보",
                             "두 번째 후보 설명",
-                            differentCategory(request.category()),
+                            "OUTDOOR_LIGHT",
                             "EASY"
                     ));
                 });
@@ -962,6 +1024,7 @@ class MissionServiceTest {
                 .findByMissionId(created.getMission().getId())
                 .orElseThrow();
         MissionOutboxEvent savedOutbox = findRewardOutbox(created.getMission().getId());
+        MissionOutboxEvent savedCharacterExpOutbox = findCharacterExpOutbox(created.getMission().getId());
 
         assertThat(response.getMissionId()).isEqualTo(created.getMission().getId());
         assertThat(response.getStatus()).isEqualTo(MissionStatus.MISSION_STATUS_COMPLETED);
@@ -971,6 +1034,11 @@ class MissionServiceTest {
         assertThat(response.getRewardStatus()).isEqualTo(MissionRewardStatus.MISSION_REWARD_STATUS_PAID);
         assertThat(response.hasWallet()).isTrue();
         assertThat(response.getWallet().getStarPiece()).isEqualTo(110);
+        assertThat(response.hasCharacterExp()).isTrue();
+        assertThat(response.getCharacterExp().getExpAmount()).isEqualTo(10);
+        assertThat(response.getCharacterExp().getExpGained()).isEqualTo(10);
+        assertThat(response.getCharacterExp().getStatus()).isEqualTo(MissionCharacterExpStatus.MISSION_CHARACTER_EXP_STATUS_APPLIED);
+        assertThat(response.getCharacterExp().getAfterGrowth().getExp()).isEqualTo(10);
         assertThat(response.getCharacterMessage()).isNotBlank();
         assertThat(savedMission.getStatus()).isEqualTo(UserMissionStatus.COMPLETED);
         assertThat(savedMission.getCompletedAt()).isNotNull();
@@ -988,11 +1056,21 @@ class MissionServiceTest {
         assertThat(savedOutbox.getStatus()).isEqualTo(MissionOutboxEventStatus.SUCCEEDED);
         assertThat(savedOutbox.getAttemptCount()).isZero();
         assertThat(savedOutbox.getIdempotencyKey()).isEqualTo("MISSION_REWARD:" + created.getMission().getId());
+        assertThat(savedCharacterExpOutbox.getStatus()).isEqualTo(MissionOutboxEventStatus.SUCCEEDED);
+        assertThat(savedCharacterExpOutbox.getAttemptCount()).isZero();
+        assertThat(savedCharacterExpOutbox.getIdempotencyKey()).isEqualTo("MISSION_CHARACTER_EXP:" + created.getMission().getId());
         verify(walletRewardClient).earnMissionReward(
                 USER_ID,
                 created.getMission().getId(),
                 10,
                 "MISSION_REWARD:" + created.getMission().getId()
+        );
+        verify(characterExpClient).grantMissionCompletionExp(
+                USER_ID,
+                CHARACTER_ID,
+                created.getMission().getId(),
+                10,
+                "MISSION_CHARACTER_EXP:" + created.getMission().getId()
         );
         verify(notificationPushClient, never()).sendMissionRewardRecoveredNotification(
                 USER_ID,
@@ -1229,6 +1307,79 @@ class MissionServiceTest {
     }
 
     @Test
+    void 캐릭터_경험치_지급이_실패해도_미션은_COMPLETED이고_경험치는_PENDING으로_남긴다() {
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        missionService.startCompletionSession(USER_ID, created.getMission().getId());
+        when(characterExpClient.grantMissionCompletionExp(anyLong(), anyLong(), anyLong(), anyInt(), anyString()))
+                .thenThrow(new MissionException(MissionErrorCode.MISSION_CHARACTER_EXP_FAILED));
+
+        SubmitCompletionAnswerResponse response = missionService.submitCompletionAnswer(
+                USER_ID,
+                created.getMission().getId(),
+                "완료했어"
+        );
+
+        MissionOutboxEvent expOutbox = findCharacterExpOutbox(created.getMission().getId());
+        UserMission savedMission = userMissionRepository.findById(created.getMission().getId()).orElseThrow();
+
+        assertThat(response.getStatus()).isEqualTo(MissionStatus.MISSION_STATUS_COMPLETED);
+        assertThat(response.getRewardStatus()).isEqualTo(MissionRewardStatus.MISSION_REWARD_STATUS_PAID);
+        assertThat(response.hasCharacterExp()).isTrue();
+        assertThat(response.getCharacterExp().getExpAmount()).isEqualTo(10);
+        assertThat(response.getCharacterExp().getExpGained()).isZero();
+        assertThat(response.getCharacterExp().getStatus()).isEqualTo(MissionCharacterExpStatus.MISSION_CHARACTER_EXP_STATUS_PENDING);
+        assertThat(expOutbox.getStatus()).isEqualTo(MissionOutboxEventStatus.PENDING);
+        assertThat(expOutbox.getAttemptCount()).isEqualTo(1);
+        assertThat(savedMission.getStatus()).isEqualTo(UserMissionStatus.COMPLETED);
+        assertThat(savedMission.getIdempotencyKey()).isEqualTo("MISSION_REWARD:" + created.getMission().getId());
+    }
+
+    @Test
+    void 캐릭터_경험치_outbox_스케줄러는_PENDING_경험치를_같은_멱등키로_재처리한다() {
+        CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
+        missionService.startCompletionSession(USER_ID, created.getMission().getId());
+        when(characterExpClient.grantMissionCompletionExp(anyLong(), anyLong(), anyLong(), anyInt(), anyString()))
+                .thenThrow(new MissionException(MissionErrorCode.MISSION_CHARACTER_EXP_FAILED))
+                .thenAnswer(invocation -> {
+                    Long characterId = invocation.getArgument(1);
+                    int expAmount = invocation.getArgument(3);
+                    return new CharacterExpGrantResult(
+                            characterId,
+                            expAmount,
+                            characterGrowth(0),
+                            characterGrowth(expAmount),
+                            false,
+                            false
+                    );
+                });
+
+        SubmitCompletionAnswerResponse response = missionService.submitCompletionAnswer(
+                USER_ID,
+                created.getMission().getId(),
+                "완료했어"
+        );
+        assertThat(response.getCharacterExp().getStatus()).isEqualTo(MissionCharacterExpStatus.MISSION_CHARACTER_EXP_STATUS_PENDING);
+
+        MissionOutboxEvent pendingOutbox = findCharacterExpOutbox(created.getMission().getId());
+        ReflectionTestUtils.setField(pendingOutbox, "nextAttemptAt", LocalDateTime.now().minusSeconds(1));
+        missionOutboxEventRepository.saveAndFlush(pendingOutbox);
+
+        int succeededCount = missionCharacterExpDispatcher.dispatchDue(10);
+
+        MissionOutboxEvent savedOutbox = findCharacterExpOutbox(created.getMission().getId());
+        assertThat(succeededCount).isEqualTo(1);
+        assertThat(savedOutbox.getStatus()).isEqualTo(MissionOutboxEventStatus.SUCCEEDED);
+        assertThat(savedOutbox.getAttemptCount()).isEqualTo(1);
+        verify(characterExpClient, times(2)).grantMissionCompletionExp(
+                USER_ID,
+                CHARACTER_ID,
+                created.getMission().getId(),
+                10,
+                "MISSION_CHARACTER_EXP:" + created.getMission().getId()
+        );
+    }
+
+    @Test
     void 보상_outbox_스케줄러는_PENDING_보상을_같은_멱등키로_재처리한다() {
         CreateNextMissionResponse created = missionService.createNextMission(USER_ID, CHARACTER_ID, 0L);
         missionService.startCompletionSession(USER_ID, created.getMission().getId());
@@ -1304,11 +1455,29 @@ class MissionServiceTest {
                 created.getMission().getId(),
                 10
         );
+
+        // Prometheus Counter 및 Gauge 검증
+        var counter = meterRegistry.find("outbox.events.processed")
+                .tag("status", "SUCCESS")
+                .counter();
+        assertThat(counter).isNotNull();
+        assertThat(counter.count()).isPositive();
+        assertThat(counter.getId().getTag("status")).isEqualTo("SUCCESS");
+        assertThat(counter.getId().getTag("aggregate_type")).isEqualTo("MISSION");
+
+        double count = meterRegistry.find("outbox.pending.count").gauge().value();
+        assertThat(count).isGreaterThanOrEqualTo(0.0);
     }
 
     private MissionOutboxEvent findRewardOutbox(Long missionId) {
         return missionOutboxEventRepository
                 .findByIdempotencyKey("MISSION_REWARD:" + missionId)
+                .orElseThrow();
+    }
+
+    private MissionOutboxEvent findCharacterExpOutbox(Long missionId) {
+        return missionOutboxEventRepository
+                .findByIdempotencyKey("MISSION_CHARACTER_EXP:" + missionId)
                 .orElseThrow();
     }
 
@@ -1330,6 +1499,20 @@ class MissionServiceTest {
 
     private String differentCategory(String category) {
         return "BASIC_ROUTINE".equals(category) ? "REST_RECOVERY" : "BASIC_ROUTINE";
+    }
+
+    private MissionCharacterGrowth characterGrowth(int exp) {
+        return new MissionCharacterGrowth(
+                exp >= 200 ? 2 : 1,
+                exp,
+                exp >= 200 ? 200 : 0,
+                exp >= 200 ? 600 : 200,
+                exp >= 200 ? Math.max(0, 600 - exp) : Math.max(0, 200 - exp),
+                exp >= 200 ? Math.min(100, (exp - 200) * 100 / 400) : Math.min(100, exp * 100 / 200),
+                exp >= 200 ? "GROWING" : "BABY",
+                exp >= 200 ? "자라나는 별친구" : "작은 별씨",
+                false
+        );
     }
 
     private AiMissionTextResult aiMissionTextResult(

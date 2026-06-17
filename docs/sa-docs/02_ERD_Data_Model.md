@@ -1,6 +1,6 @@
 # 02_ERD_Data_Model
 
-> 기준일: 2026-06-01
+> 기준일: 2026-06-15
 > 이 문서는 현재 backend migration 기준으로 정리한다. API 응답에서 URL로 조립되는 값이 있더라도 DB에는 식별자, asset key, object key를 우선 저장한다.
 
 ---
@@ -35,7 +35,7 @@ index(created_at)
 ### 비고
 
 ```
-MVP에서는 사용자 프로필 상세값을 users에 모두 넣지 않는다.
+현재는 사용자 프로필 상세값을 users에 모두 넣지 않는다.
 온보딩 설문 기반 개인화 데이터는 onboarding_profiles에서 관리한다.
 별조각 잔액은 wallets에서 관리한다.
 ```
@@ -46,7 +46,7 @@ MVP에서는 사용자 프로필 상세값을 users에 모두 넣지 않는다.
 
 캐릭터가 선택지형 설문으로 수집한 초기 개인화 데이터를 저장한다.
 
-MVP에서는 질문 마스터 테이블을 만들지 않고, 정해진 설문 결과를 하나의 프로필 테이블에 저장한다. 질문지를 동적으로 운영하는 기능은 MVP 범위가 아니므로 `survey_questions` 같은 테이블은 만들지 않는다.
+현재는 질문 마스터 테이블을 만들지 않고, 정해진 설문 결과를 하나의 프로필 테이블에 저장한다. 질문지를 동적으로 운영하는 기능은 현재 운영 범위가 아니므로 `survey_questions` 같은 테이블은 만들지 않는다.
 
 | 컬럼 | 타입 | 설명 |
 | --- | --- | --- |
@@ -123,7 +123,7 @@ index(completed)
 
 ## 1.3 `character_types`
 
-MVP에서 제공하는 캐릭터 3종의 기본 정보를 저장한다.
+현재 제공하는 캐릭터 3종의 기본 정보를 저장한다.
 
 캐릭터는 담당 기능이 다른 존재가 아니라, 성격·말투·정서가 다른 애착형 페르소나다.
 
@@ -142,7 +142,7 @@ MVP에서 제공하는 캐릭터 3종의 기본 정보를 저장한다.
 | created_at | timestamp | 생성일 |
 | updated_at | timestamp | 수정일 |
 
-### MVP seed
+### 현재 seed
 
 | code | name | summary |
 | --- | --- | --- |
@@ -168,32 +168,11 @@ index(active, sort_order)
 
 ---
 
-## 1.3.2 `skin_assets`
-
-스킨 아이템을 장착했을 때 사용할 캐릭터별·상태별 에셋을 저장한다.
-
-| 컬럼 | 타입 | 설명 |
-| --- | --- | --- |
-| id | bigint PK | 스킨 에셋 ID |
-| item_id | bigint | 스킨 아이템 ID |
-| character_type_id | bigint FK | 캐릭터 타입 ID |
-| asset_type | varchar | IDLE / HAPPY / SLEEPY / HUNGRY / LOW_ENERGY / LONELY |
-| asset_url | text | 스킨 이미지 asset key |
-
-### 제약 / 인덱스
-
-```
-unique(item_id, character_type_id, asset_type)
-index(item_id, character_type_id)
-```
-
----
-
 ## 1.4 `user_characters`
 
 사용자가 생성한 캐릭터를 저장한다.
 
-MVP에서는 사용자가 활성 캐릭터 1개를 키우는 구조로 시작한다.
+현재는 사용자가 활성 캐릭터 1개를 키우는 구조로 시작한다.
 
 | 컬럼 | 타입          | 설명                     |
 | --- |-------------|------------------------|
@@ -208,7 +187,7 @@ MVP에서는 사용자가 활성 캐릭터 1개를 키우는 구조로 시작한
 | affection | int | 애정도, 0 ~ 100 |
 | active | boolean     | 현재 활성 캐릭터 여부           |
 | equipped_skin_id | bigint nullable | 장착한 스킨 아이템 ID |
-| last_stat_decreased_at | timestamp nullable | 마지막 자동 스탯 감소 처리 시각 |
+| last_stat_decreased_at | timestamp | 마지막 자동 스탯 감소 처리 시각 |
 | created_at | timestamp   | 생성일                    |
 | updated_at | timestamp   | 수정일                    |
 
@@ -258,7 +237,7 @@ partial unique(user_id) where active = true
 | idempotency_key | varchar unique | 돌봄 액션 중복 처리 방지 키 |
 | created_at | timestamp       | 생성일 |
 
-### MVP 돌봄 액션
+### 현재 돌봄 액션
 
 | action_type | 설명 |
 | --- | --- |
@@ -276,7 +255,99 @@ index(character_id, created_at)
 
 ---
 
-## 1.5.1 `share_cards`
+## 1.5.1 `character_exp_logs`
+
+캐릭터 경험치 지급 이력을 저장한다. 돌봄, 미션 완료, 재처리 요청이 같은 출처로 여러 번 들어와도 중복 경험치를 지급하지 않기 위한 멱등성 저장소다.
+
+| 컬럼 | 타입 | 설명 |
+| --- | --- | --- |
+| id | bigint PK | 경험치 로그 ID |
+| user_id | bigint | 사용자 ID |
+| character_id | bigint | 사용자 캐릭터 ID |
+| source_type | varchar(50) | 경험치 출처. 예: `CARE`, `MISSION_COMPLETION` |
+| source_id | bigint | 출처 도메인의 ID |
+| idempotency_key | varchar(120) unique | 경험치 지급 멱등키 |
+| exp_amount | int | 지급 경험치 |
+| before_exp | int | 지급 전 누적 경험치 |
+| after_exp | int | 지급 후 누적 경험치 |
+| before_level | int | 지급 전 레벨 |
+| after_level | int | 지급 후 레벨 |
+| created_at | timestamp | 생성일 |
+
+### 제약 / 인덱스
+
+```
+unique(idempotency_key)
+unique(source_type, source_id)
+check(exp_amount > 0)
+check(before_exp >= 0)
+check(after_exp >= 0)
+check(before_level >= 1)
+check(after_level >= 1)
+index(character_id, created_at)
+index(user_id, created_at)
+```
+
+---
+
+## 1.5.2 `character_story_fragments`
+
+캐릭터 상호작용과 별친구 대화 context에 사용할 서사 조각 seed를 저장한다.
+
+| 컬럼 | 타입 | 설명 |
+| --- | --- | --- |
+| id | bigint PK | 서사 조각 ID |
+| memory_key | varchar(120) unique | 프론트/해금 기록에서 사용하는 기억 조각 key |
+| character_type_code | varchar(30) | `MUMU`, `NOVA`, `JJORY`, `COMMON` |
+| min_level | int | 노출 가능한 최소 캐릭터 레벨 |
+| fragment_type | varchar(30) | `COMMON`, `LORE`, `EASTER_EGG` |
+| trigger_type | varchar(30) | `TAP`, `LEVEL_UP`, `LOW_HUNGER`, `LOW_ENERGY`, `LOW_AFFECTION`, `NIGHT`, `MIDNIGHT` |
+| title | varchar(80) | 기억 조각 제목 |
+| message | varchar(255) | 캐릭터 원문 대사 |
+| interpretation | varchar(500) | 화면 표시용 해석/보조 문장 |
+| story_text | text | 기억 조각 본문 |
+| sort_order | int | 정렬 순서 |
+| active | boolean | 사용 여부 |
+| created_at | timestamp | 생성일 |
+| updated_at | timestamp | 수정일 |
+
+### 제약 / 인덱스
+
+```
+unique(memory_key)
+check(character_type_code in ('MUMU', 'NOVA', 'JJORY', 'COMMON'))
+check(fragment_type in ('COMMON', 'LORE', 'EASTER_EGG'))
+check(trigger_type in ('TAP', 'LEVEL_UP', 'LOW_HUNGER', 'LOW_ENERGY', 'LOW_AFFECTION', 'NIGHT', 'MIDNIGHT'))
+index(character_type_code, trigger_type, min_level, active)
+```
+
+---
+
+## 1.5.3 `user_character_story_unlocks`
+
+사용자 캐릭터별로 해금된 LORE/EASTER_EGG 기억 조각을 저장한다.
+
+| 컬럼 | 타입 | 설명 |
+| --- | --- | --- |
+| id | bigint PK | 해금 ID |
+| user_id | bigint | 사용자 ID |
+| user_character_id | bigint FK | 사용자 캐릭터 ID |
+| story_fragment_id | bigint FK | 해금된 `character_story_fragments.id` |
+| memory_key | varchar(120) | 해금된 기억 조각 key |
+| unlocked_level | int | 해금 당시 캐릭터 레벨 |
+| unlocked_at | timestamp | 해금 시각 |
+| created_at | timestamp | 생성일 |
+
+### 제약 / 인덱스
+
+```
+unique(user_id, user_character_id, story_fragment_id)
+index(user_id, user_character_id, unlocked_at)
+```
+
+---
+
+## 1.5.4 `share_cards`
 
 내 캐릭터 공유 카드의 발급 이력을 저장한다.
 
@@ -314,7 +385,7 @@ HAVING COUNT(*) > 1;
 
 ---
 
-## 1.5.2 `share_logs`
+## 1.5.5 `share_logs`
 
 사용자의 공유 시도 이벤트 및 일일 1회 보상 수령 여부를 관리한다.
 
@@ -349,7 +420,7 @@ partial unique(user_id, share_date) where reward_paid = true
 
 ---
 
-## 1.5.3 `character_outbox_events`
+## 1.5.6 `character_outbox_events`
 
 character 모듈에서 외부 모듈 호출 또는 향후 Kafka 발행이 필요한 이벤트를 저장하는 공용 outbox 테이블이다.
 현재 공유 보상 지급 요청은 `SHARE_REWARD_REQUESTED` 이벤트로 저장하고, user wallet gRPC 지급 실패 시 스케줄러가 재처리한다.
@@ -413,9 +484,9 @@ check(star_piece >= 0)
 ### 비고
 
 ```
-별조각은 MVP에서 무료 재화다.
+별조각은 현재 무료 재화다.
 별조각은 미션 완료, 출석, 업적, SNS 공유 보상으로 획득한다.
-별조각 구매 기능은 MVP에서 구현하지 않는다.
+별조각 구매 기능은 현재 구현하지 않는다.
 Mock 구매, Mock 지급, 테스트용 결제 버튼도 만들지 않는다.
 ```
 
@@ -448,7 +519,7 @@ Mock 구매, Mock 지급, 테스트용 결제 버튼도 만들지 않는다.
 | MISSION_REWARD | 미션 완료 보상 |
 | ITEM_PURCHASE | 아이템 구매 |
 | ATTENDANCE | 출석 보상 |
-| ACHIEVEMENT | 업적 보상 (MVP 이후) |
+| ACHIEVEMENT | 업적 보상 (후속 확장) |
 | SHARE_REWARD | SNS 공유 시도 보상 |
 | CARE_ACTION | 캐릭터 돌봄 액션 별조각 사용 |
 
@@ -475,8 +546,38 @@ index(ref_type, ref_id)
 ### 비고
 
 ```
-MOCK_PURCHASE, PAYMENT_CHARGE, CASH_PURCHASE 같은 reason은 MVP enum에 넣지 않는다.
+MOCK_PURCHASE, PAYMENT_CHARGE, CASH_PURCHASE 같은 reason은 현재 enum에 넣지 않는다.
 결제 기능이 실제로 필요한 시점에 별도 migration과 정책 검토 후 추가한다.
+```
+
+---
+
+## 1.7.1 `user_outbox_events`
+
+user 모듈에서 외부 호출 또는 메시지 발행이 필요한 이벤트를 저장하는 아웃박스 테이블이다.
+
+| 컬럼 | 타입 | 설명 |
+| --- | --- | --- |
+| id | bigint PK | outbox 이벤트 ID |
+| aggregate_type | varchar | 이벤트가 속한 aggregate 타입 |
+| aggregate_id | bigint | aggregate ID |
+| event_type | varchar | 이벤트 타입 |
+| payload | jsonb | 이벤트 처리에 필요한 JSON payload |
+| idempotency_key | varchar(120) unique | 외부 호출/발행 멱등키 |
+| status | varchar | PENDING / PROCESSING / SUCCEEDED / FAILED |
+| attempt_count | int | 재시도 횟수 |
+| next_attempt_at | timestamp | 다음 처리 가능 시각 |
+| last_error_message | text nullable | 마지막 실패 메시지 |
+| created_at | timestamp | 생성일 |
+| updated_at | timestamp | 수정일 |
+
+### 제약 / 인덱스
+
+```
+unique(idempotency_key)
+check(attempt_count >= 0)
+check(status in ('PENDING', 'PROCESSING', 'SUCCEEDED', 'FAILED'))
+index(status, next_attempt_at)
 ```
 
 ---
@@ -508,7 +609,7 @@ AI가 사용할 수 없는 응답을 반환하거나 외부 provider가 실패�
 index(active, category, difficulty)
 ```
 
-### MVP seed 예시
+### 현재 seed 예시
 
 | category | base_title | reward_star_piece |
 | --- | --- | --- |
@@ -529,7 +630,7 @@ AI 미션 생성과 캐릭터 말투 변환에 사용할 프롬프트 템플릿�
 | --- | --- | --- |
 | id | bigint PK | 프롬프트 ID |
 | name | varchar | 템플릿 이름 |
-| category | varchar | MISSION_GENERATION / CHARACTER_TONE / COMPLETION_QA / FALLBACK |
+| category | varchar | MISSION_GENERATION / CHARACTER_TALK / CHARACTER_TALK_SUMMARY / CHARACTER_TONE / COMPLETION_QA / FALLBACK |
 | template | text | 프롬프트 본문 |
 | version | int | 버전 |
 | active | boolean | 활성 여부 |
@@ -836,11 +937,13 @@ check(embedding_dimension = 768)
 check(attempt_count >= 0)
 index(status, next_attempt_at, id)
 index(user_id, status)
+index(status, next_attempt_at, id) where status in ('PENDING', 'PROCESSING')
+index(user_id, status, embedding_model, embedding_dimension, user_memory_id) where embedding is not null
 ```
 
 ---
 
-## 1.13 `mission_interactions` → MVP 이후
+## 1.13 `mission_interactions` → 후속 확장
 
 미션 조회, 거절, 완료 등 사용자 반응 데이터를 저장한다.
 
@@ -855,7 +958,7 @@ index(user_id, status)
 | metadata_json | jsonb nullable | 날씨, 시간대, 캐릭터 상태 등 추가 context |
 | created_at | timestamp | 생성일 |
 
-현재 migration에는 포함하지 않았다. 조회/거절/완료 이벤트를 별도 분석 테이블로 쌓아야 할 때 MVP 이후 확장한다.
+현재 migration에는 포함하지 않았다. 조회/거절/완료 이벤트를 별도 분석 테이블로 쌓아야 할 때 후속 확장한다.
 
 ### 제약 / 인덱스
 
@@ -892,6 +995,158 @@ unique(request_id)
 index(user_id, created_at)
 index(model, created_at)
 index(status, created_at)
+```
+
+---
+
+## 1.14.1 `character_talk_sessions`
+
+별친구 대화 세션을 저장한다. 세션은 멀티턴 대화 맥락, 실제 토큰 누적량, 장기 기억 변환 여부의 기준 단위다.
+
+| 컬럼 | 타입 | 설명 |
+| --- | --- | --- |
+| id | bigint PK | 내부 세션 ID |
+| session_id | varchar(80) unique | 클라이언트와 주고받는 대화 세션 ID |
+| user_id | bigint | 사용자 ID |
+| character_id | bigint | 사용자 캐릭터 ID |
+| character_type | varchar(30) | 캐릭터 타입 코드 |
+| status | varchar(30) | ACTIVE / EXPIRED / MEMORY_READY |
+| started_at | timestamp | 세션 시작 시각 |
+| last_message_at | timestamp | 마지막 메시지 시각 |
+| expires_at | timestamp | 활성 세션 만료 시각 |
+| message_count | int | 세션 내 저장 메시지 수 |
+| total_actual_prompt_tokens | int nullable | provider가 반환한 실제 prompt token 누적값 |
+| total_actual_completion_tokens | int nullable | provider가 반환한 실제 completion token 누적값 |
+| total_actual_tokens | int nullable | provider가 반환한 실제 total token 누적값 |
+| summary_created_at | timestamp nullable | 세션 요약 memory 생성 시각 |
+| created_at | timestamp | 생성일 |
+| updated_at | timestamp | 수정일 |
+
+### 제약 / 인덱스
+
+```
+unique(session_id)
+check(status in ('ACTIVE', 'EXPIRED', 'MEMORY_READY'))
+check(message_count >= 0)
+check(total_actual_prompt_tokens >= 0)
+check(total_actual_completion_tokens >= 0)
+check(total_actual_tokens >= 0)
+index(user_id, character_id, expires_at desc)
+index(status, expires_at, id)
+```
+
+### 정책
+
+```
+세션은 사용자 + 캐릭터 단위로 격리한다.
+session_id가 유효한 ACTIVE 세션이면 같은 맥락을 이어간다.
+세션 TTL은 마지막 메시지 기준 30분이다.
+provider가 실제 usage metadata를 내려준 경우에만 actual token 컬럼을 누적한다.
+추정 token 값은 저장하지 않는다.
+```
+
+---
+
+## 1.14.2 `character_talk_messages`
+
+별친구 대화 세션 안의 사용자/assistant 메시지를 저장한다. 최근 N턴 prompt window를 만들기 위한 단기 원문 저장소다.
+
+| 컬럼 | 타입 | 설명 |
+| --- | --- | --- |
+| id | bigint PK | 메시지 ID |
+| session_id | bigint FK | `character_talk_sessions.id` |
+| user_id | bigint | 사용자 ID |
+| character_id | bigint | 사용자 캐릭터 ID |
+| role | varchar(20) | USER / ASSISTANT |
+| content | text | 메시지 원문 |
+| sequence | int | 세션 내 메시지 순번 |
+| request_id | varchar(120) | 요청 추적 ID |
+| fallback_used | boolean | assistant 응답이 fallback인지 여부 |
+| created_at | timestamp | 생성일 |
+
+### 제약 / 인덱스
+
+```
+foreign key(session_id) references character_talk_sessions(id) on delete cascade
+unique(session_id, sequence)
+check(role in ('USER', 'ASSISTANT'))
+check(sequence > 0)
+index(session_id, sequence)
+index(created_at)
+index(user_id, character_id, created_at, id)
+```
+
+### 정책
+
+```
+prompt에는 최근 6턴만 사용한다.
+원문 메시지는 단기 대화 맥락과 당일 대화 복원에 사용하며, 장기 보관하지 않고 24시간 보관 후 cleanup 대상이 된다.
+장기 기억은 원문 전체가 아니라 요약 memory로만 남긴다.
+메시지 저장 시 세션 행을 잠근 뒤 sequence를 계산해 같은 세션의 동시 요청에서도 순번을 보존한다.
+```
+
+---
+
+## 1.14.3 `character_talk_memories`
+
+만료된 별친구 대화 세션을 요약하고 embedding으로 저장한다. 사용자가 이전 대화를 물어볼 때 유사 기억 검색 context로 사용한다.
+
+| 컬럼 | 타입 | 설명 |
+| --- | --- | --- |
+| id | bigint PK | 기억 ID |
+| user_id | bigint | 사용자 ID |
+| character_id | bigint | 사용자 캐릭터 ID |
+| source_session_id | bigint FK | 요약 원본 세션 ID |
+| memory_type | varchar(30) | SESSION_SUMMARY |
+| summary | text | 세션 요약문 |
+| diary_text | text | 대화 요약 기반 일기 텍스트 |
+| embedding_model | varchar(80) | embedding 모델명 |
+| embedding_dimension | int | embedding 차원. 현재 768 |
+| embedding | vector(768) nullable | 요약문의 embedding vector |
+| last_used_at | timestamp nullable | 마지막 검색 사용 시각 |
+| created_at | timestamp | 생성일 |
+| updated_at | timestamp | 수정일 |
+
+### 제약 / 인덱스
+
+```
+foreign key(source_session_id) references character_talk_sessions(id) on delete cascade
+unique(source_session_id, memory_type)
+check(memory_type in ('SESSION_SUMMARY'))
+check(embedding_dimension = 768)
+index(user_id, character_id, created_at desc)
+```
+
+### 정책
+
+```
+embedding model은 gemini-embedding-001이다.
+vector dimension은 768로 고정한다.
+새 대화에서는 사용자 메시지와 유사한 memory를 최대 3개 검색한다.
+검색 결과가 없으면 memory context 없이 대화를 이어간다.
+```
+
+---
+
+## 1.14.4 `daily_character_talk_metrics_view`
+
+별친구 대화 세션의 일별 사용량을 조회하는 view다. 대화 세션별 토큰 누적량을 바탕으로 윈도우 크기와 비용 정책을 점검한다.
+
+| 컬럼 | 타입 | 설명 |
+| --- | --- | --- |
+| metric_date | date | 기준일 |
+| session_count | bigint | 생성된 세션 수 |
+| message_count | bigint | 저장된 메시지 수 |
+| avg_actual_tokens | numeric nullable | 실제 total token 평균 |
+| max_actual_tokens | int nullable | 실제 total token 최대값 |
+| avg_actual_prompt_tokens | numeric nullable | 실제 prompt token 평균 |
+| avg_actual_completion_tokens | numeric nullable | 실제 completion token 평균 |
+
+### 정책
+
+```
+provider가 실제 usage metadata를 내려주지 않은 세션은 token 평균 계산에서 제외될 수 있다.
+운영 대시보드는 이 view 또는 동등한 집계 쿼리를 기준으로 일별 대화량과 token 사용량을 확인한다.
 ```
 
 ---
@@ -981,7 +1236,7 @@ character 모듈이 돌봄 액션(FEED / SLEEP / PLAY) 수행 시 item 모듈의
 | user_id | bigint | 사용자 ID |
 | user_item_id | bigint FK | 사용된 보유 아이템 ID (`user_items.id` 참조) |
 | item_id | bigint FK | 사용된 아이템 ID (`items.id` 참조, 편의 컬럼) |
-| quantity | int | 사용 수량 (MVP = 1) |
+| quantity | int | 사용 수량 (현재 = 1) |
 | ref_type | varchar(50) | 사용 컨텍스트 (예: `CARE_ACTION`) |
 | ref_id | bigint | 컨텍스트 PK (예: `character_care_logs.id`) |
 | idempotency_key | varchar(100) unique nullable | 중복 사용 방지 멱등키 |
@@ -1020,6 +1275,9 @@ character 모듈이 생성하는 멱등키 형식: "care-{careLogId}-item-{itemI
 | price | int | 구매 시점 단가 |
 | star_piece | int | 총 차감 별조각 |
 | transaction_id | bigint | star_piece_transactions ID |
+| status | varchar | 구매 처리 상태 (COMPLETED, FAILED 등) |
+| attempt_count | int | 재시도 횟수 |
+| next_attempt_at | timestamp nullable | 다음 처리 시각 |
 | idempotency_key | varchar unique nullable | 구매 요청 중복 처리 방지 키 |
 | created_at | timestamp | 생성일 |
 | updated_at | timestamp | 수정일 |
@@ -1031,6 +1289,7 @@ unique(idempotency_key)
 check(quantity > 0)
 index(user_id)
 index(user_item_id)
+index(status, next_attempt_at)
 ```
 
 ### 정책
@@ -1042,8 +1301,38 @@ index(user_item_id)
 
 ---
 
+## 1.16.3 `item_outbox_events`
 
-## 1.17 `achievements`  → MVP 이후
+item 모듈에서 외부 호출 또는 메시지 발행이 필요한 이벤트를 저장하는 아웃박스 테이블이다.
+
+| 컬럼 | 타입 | 설명 |
+| --- | --- | --- |
+| id | bigint PK | outbox 이벤트 ID |
+| aggregate_type | varchar | 이벤트가 속한 aggregate 타입 |
+| aggregate_id | bigint | aggregate ID |
+| event_type | varchar | 이벤트 타입 |
+| payload | jsonb | 이벤트 처리에 필요한 JSON payload |
+| idempotency_key | varchar(120) unique | 외부 호출/발행 멱등키 |
+| status | varchar | PENDING / PROCESSING / SUCCEEDED / FAILED |
+| attempt_count | int | 재시도 횟수 |
+| next_attempt_at | timestamp | 다음 처리 가능 시각 |
+| last_error_message | text nullable | 마지막 실패 메시지 |
+| created_at | timestamp | 생성일 |
+| updated_at | timestamp | 수정일 |
+
+### 제약 / 인덱스
+
+```
+unique(idempotency_key)
+check(attempt_count >= 0)
+check(status in ('PENDING', 'PROCESSING', 'SUCCEEDED', 'FAILED'))
+index(status, next_attempt_at)
+```
+
+---
+
+
+## 1.17 `achievements`  → 후속 확장
 
 업적 마스터를 저장한다.
 
@@ -1070,7 +1359,7 @@ index(active, achievement_type)
 
 ---
 
-## 1.18 `user_achievements` → MVP 이후
+## 1.18 `user_achievements` → 후속 확장
 
 사용자별 업적 진행도를 저장한다.
 
@@ -1100,7 +1389,7 @@ index(user_id, reward_claimed)
 
 ```
 reset_cycle이 NONE이면 period_key는 'NONE' 또는 null 정책 중 하나로 통일한다.
-MVP에서는 'NONE' 문자열을 추천한다.
+현재는 'NONE' 문자열을 추천한다.
 ```
 
 ---
@@ -1144,8 +1433,15 @@ index(user_id, attendance_date)
 | is_read | boolean | 읽음 여부 |
 | read_at | timestamp nullable | 읽은 시각 |
 | push_required | boolean | FCM 푸시 발송 대상 여부 |
+| idempotency_key | varchar(255) nullable | 알림 생성 중복 방지 키 |
 | created_at | timestamp | 생성일 |
 | updated_at | timestamp | 수정일 |
+
+### 제약 / 인덱스
+
+```
+partial unique(idempotency_key) where idempotency_key is not null
+```
 
 ### 비고
 
@@ -1199,13 +1495,21 @@ FCM 푸시 발송 시도와 결과를 저장한다.
 | attempted_at | timestamp nullable | 발송 시도 시각 |
 | sent_at | timestamp nullable | 발송 성공 시각 |
 | failed_at | timestamp nullable | 발송 실패 시각 |
+| attempt_count | int | 재시도 횟수 |
+| next_attempt_at | timestamp nullable | 다음 재시도 시각 |
 | created_at | timestamp | 생성일 |
 | updated_at | timestamp | 수정일 |
+
+### 제약 / 인덱스
+
+```
+partial unique(notification_id, fcm_device_token_id) where fcm_device_token_id is not null
+partial unique(notification_id) where fcm_device_token_id is null
+```
 
 ### 비고
 
 ```
-현재 notification_push_deliveries migration에는 FK 제약과 별도 명시 인덱스를 두지 않는다.
 FCM 실패 원인 분석과 운영 추적을 위한 이력 테이블로 사용한다.
 ```
 

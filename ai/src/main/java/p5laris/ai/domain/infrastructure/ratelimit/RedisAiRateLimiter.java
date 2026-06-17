@@ -6,7 +6,6 @@ import org.springframework.data.redis.RedisSystemException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
-import p5laris.ai.domain.application.dto.MissionTextGenerationCommand;
 import p5laris.ai.domain.application.generator.AiRateLimiter;
 import p5laris.ai.domain.domain.enums.AiErrorType;
 import p5laris.ai.domain.domain.enums.AiProviderType;
@@ -69,7 +68,7 @@ public class RedisAiRateLimiter implements AiRateLimiter {
     private final Clock clock = Clock.systemUTC();
 
     @Override
-    public void checkAllowed(MissionTextGenerationCommand command, AiProviderType providerType, String model) {
+    public void checkAllowed(Long userId, AiProviderType providerType, String model) {
         if (!rateLimitProperties.isEnabled() || rateLimitProperties.isNoopBackend()) {
             return;
         }
@@ -85,7 +84,7 @@ public class RedisAiRateLimiter implements AiRateLimiter {
         try {
             Long allowed = redisTemplate.execute(
                     RATE_LIMIT_SCRIPT,
-                    List.of(providerKey(providerType, model), userKey(command.userId(), providerType)),
+                    List.of(providerKey(providerType, model), userKey(userId, providerType)),
                     String.valueOf(rateLimitProperties.getProviderRequestsPerMinute()),
                     String.valueOf(rateLimitProperties.getUserRequestsPerMinute()),
                     String.valueOf(rateLimitProperties.keyTtl().toMillis())

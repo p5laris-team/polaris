@@ -1,0 +1,56 @@
+plugins {
+    id 'java-library'
+    alias(libs.plugins.dependency.management)
+}
+
+group = 'p5laris'
+version = '0.0.1-SNAPSHOT'
+description = 'common'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+dependencyManagement {
+    imports {
+        mavenBom "org.springframework.boot:spring-boot-dependencies:3.5.14"
+    }
+}
+
+dependencies {
+    compileOnly project(':proto')
+
+    // Spring Boot & JPA dependencies
+    compileOnly 'org.springframework.boot:spring-boot-starter-data-jpa'
+    compileOnly 'org.springframework.boot:spring-boot-starter-web'
+
+    // gRPC and Tracing dependencies
+    compileOnly libs.grpc.starter.server
+    compileOnly libs.grpc.starter.client
+    compileOnly libs.grpc.stub
+    compileOnly libs.grpc.protobuf
+    compileOnly libs.slf4j.api
+
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+
+    // Test dependencies
+    testImplementation platform(libs.junit.bom)
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+    // Add main dependencies to test implementation so tests have runtime classpath access
+    testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    testImplementation 'org.springframework.boot:spring-boot-starter-web'
+    testImplementation libs.grpc.starter.server
+    testImplementation libs.grpc.starter.client
+    testImplementation libs.grpc.stub
+    testImplementation libs.grpc.protobuf
+    testImplementation libs.slf4j.api
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}

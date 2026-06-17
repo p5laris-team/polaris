@@ -17,7 +17,9 @@ import org.springframework.boot.test.context.SpringBootTest;
         "jwt.access-expiration-ms=3600000",
         "jwt.refresh-expiration-ms=1209600000",
         "app.public-base-url=https://p5laris.life",
-        "app.default-share-image-url=https://p5laris.life/assets/share-placeholder.png"
+        "app.default-share-image-url=https://p5laris.life/assets/share-placeholder.png",
+        "internal.grpc-auth.enabled=true",
+        "internal.grpc-auth.token=test-internal-grpc-token"
 })
 class GatewayApplicationTests {
 

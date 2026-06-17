@@ -17,6 +17,7 @@ public class MissionMemoryEmbeddingProperties {
     private long initialDelayMs;
     private int batchSize;
     private int maxAttempts;
+    private long embeddingDeadlineMs;
     private long processingTimeoutSeconds;
     private long retryInitialDelaySeconds;
     private long retryMaxDelaySeconds;
@@ -59,6 +60,17 @@ public class MissionMemoryEmbeddingProperties {
 
     public void setMaxAttempts(int maxAttempts) {
         this.maxAttempts = maxAttempts;
+    }
+
+    public long getEmbeddingDeadlineMs() {
+        if (embeddingDeadlineMs <= 0) {
+            return 3_000L;
+        }
+        return embeddingDeadlineMs;
+    }
+
+    public void setEmbeddingDeadlineMs(long embeddingDeadlineMs) {
+        this.embeddingDeadlineMs = embeddingDeadlineMs;
     }
 
     public long getProcessingTimeoutSeconds() {

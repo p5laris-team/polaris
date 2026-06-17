@@ -25,7 +25,7 @@ public class ShareRewardRecoveryScheduler {
 
         int succeededCount = shareRewardDispatcher.dispatchDue(properties.getBatchSize());
         if (succeededCount > 0) {
-            log.info("Share reward outbox recovery completed. succeededCount={}", succeededCount);
+            log.info("공유 보상 outbox 재처리를 완료했습니다. succeededCount={}", succeededCount);
         }
     }
 }
