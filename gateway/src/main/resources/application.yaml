@@ -49,14 +49,10 @@ management:
   endpoints:
     web:
       exposure:
-#        include: health,info,prometheus
         include: health,prometheus
   endpoint:
     health:
       show-details: never
-#  health:
-#    db:
-#      enabled: true
 
 jwt:
   secret: ${JWT_SECRET}
