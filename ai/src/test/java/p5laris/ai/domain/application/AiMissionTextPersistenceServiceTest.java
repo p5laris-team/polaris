@@ -1,5 +1,6 @@
 package p5laris.ai.domain.application;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -10,6 +11,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 import p5laris.ai.domain.application.dto.MissionTextGenerationCommand;
 import p5laris.ai.domain.application.event.AiEventLogEvent;
+import p5laris.ai.domain.application.generator.AiTokenUsage;
 import p5laris.ai.domain.domain.entity.AiMissionGeneration;
 import p5laris.ai.domain.domain.entity.AiUsageLog;
 import p5laris.ai.domain.domain.entity.PromptTemplate;
@@ -38,14 +40,18 @@ class AiMissionTextPersistenceServiceTest {
     @Mock
     private ApplicationEventPublisher eventPublisher;
 
+    private SimpleMeterRegistry meterRegistry;
+
     private AiMissionTextPersistenceService persistenceService;
 
     @BeforeEach
     void setUp() {
+        meterRegistry = new SimpleMeterRegistry();
         persistenceService = new AiMissionTextPersistenceService(
                 aiMissionGenerationRepository,
                 aiUsageLogRepository,
-                eventPublisher
+                eventPublisher,
+                meterRegistry
         );
     }
 
@@ -70,6 +76,7 @@ class AiMissionTextPersistenceServiceTest {
                 "gemini",
                 "gemini-2.5-flash",
                 120,
+                AiTokenUsage.empty(),
                 AiErrorType.PROVIDER_ERROR
         );
 
@@ -88,6 +95,9 @@ class AiMissionTextPersistenceServiceTest {
         assertThat(usageLog.getStatus()).isEqualTo(AiUsageStatus.FALLBACK);
         assertThat(usageLog.getErrorType()).isEqualTo(AiErrorType.PROVIDER_ERROR);
         assertThat(usageLog.getLatencyMs()).isEqualTo(120);
+        assertThat(usageLog.getPromptTokens()).isZero();
+        assertThat(usageLog.getCompletionTokens()).isZero();
+        assertThat(usageLog.getTotalTokens()).isZero();
 
         AiEventLogEvent event = eventCaptor.getValue();
         assertThat(event.eventType()).isEqualTo("AI_FALLBACK_USED");
@@ -101,6 +111,15 @@ class AiMissionTextPersistenceServiceTest {
                 .containsEntry("usageStatus", AiUsageStatus.FALLBACK)
                 .containsEntry("errorType", AiErrorType.PROVIDER_ERROR)
                 .containsEntry("latencyMs", 120);
+
+        // Prometheus Counter 검증
+        var counter = meterRegistry.find("ai.generation.requests").counter();
+        assertThat(counter).isNotNull();
+        assertThat(counter.count()).isEqualTo(1.0);
+        assertThat(counter.getId().getTag("status")).isEqualTo("FALLBACK");
+        assertThat(counter.getId().getTag("fallback")).isEqualTo("true");
+        assertThat(counter.getId().getTag("error_type")).isEqualTo("PROVIDER_ERROR");
+        assertThat(counter.getId().getTag("model")).isEqualTo("gemini-2.5-flash");
     }
 
     @Test
@@ -120,11 +139,27 @@ class AiMissionTextPersistenceServiceTest {
                 "local",
                 "local-tone-v1",
                 12,
+                new AiTokenUsage(11, 7, 18),
                 null
         );
 
-        verify(aiUsageLogRepository).save(any(AiUsageLog.class));
+        ArgumentCaptor<AiUsageLog> usageCaptor = ArgumentCaptor.forClass(AiUsageLog.class);
+        verify(aiUsageLogRepository).save(usageCaptor.capture());
         verify(eventPublisher, never()).publishEvent(any());
+
+        AiUsageLog usageLog = usageCaptor.getValue();
+        assertThat(usageLog.getPromptTokens()).isEqualTo(11);
+        assertThat(usageLog.getCompletionTokens()).isEqualTo(7);
+        assertThat(usageLog.getTotalTokens()).isEqualTo(18);
+
+        // Prometheus Counter 검증
+        var counter = meterRegistry.find("ai.generation.requests").counter();
+        assertThat(counter).isNotNull();
+        assertThat(counter.count()).isEqualTo(1.0);
+        assertThat(counter.getId().getTag("status")).isEqualTo("SUCCESS");
+        assertThat(counter.getId().getTag("fallback")).isEqualTo("false");
+        assertThat(counter.getId().getTag("error_type")).isEqualTo("NONE");
+        assertThat(counter.getId().getTag("model")).isEqualTo("local-tone-v1");
     }
 
     private MissionTextGenerationCommand command() {
@@ -132,6 +167,7 @@ class AiMissionTextPersistenceServiceTest {
                 1001L,
                 2001L,
                 "NOVA",
+                "노바",
                 3001L,
                 "물 한 컵 마시기",
                 "지금 자리에서 물 한 컵을 천천히 마셔보세요.",

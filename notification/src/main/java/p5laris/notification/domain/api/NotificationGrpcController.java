@@ -159,24 +159,16 @@ public class NotificationGrpcController extends NotificationServiceGrpc.Notifica
         }
     }
 
-    // 다른 모듈의 요청을 받아 FCM 푸시 알림을 비동기로 발송한다.
+    // 다른 모듈의 요청을 받아 알림과 푸시 발송 대상을 기록한 뒤 FCM 발송을 비동기로 예약한다.
     @Override
     public void sendPushNotification(
             com.p5laris.proto.notification.v1.SendPushNotificationRequest request,
             StreamObserver<com.p5laris.proto.notification.v1.SendPushNotificationResponse> responseObserver
     ) {
         try {
-            // DB에 알림 이력 먼저 생성 및 저장 (동기)
             p5laris.notification.domain.domain.entity.Notification notification = notificationService.createNotification(request);
 
-            // 비동기로 FCM 발송 이력 기록 및 실제 푸시 발송
-            fcmSenderService.sendPushNotification(
-                    notification.getId(),
-                    request.getUserId(),
-                    request.getTitle(),
-                    request.getBody(),
-                    notification.getNotificationType()
-            );
+            fcmSenderService.dispatchPendingDeliveries(notification.getId());
 
             responseObserver.onNext(com.p5laris.proto.notification.v1.SendPushNotificationResponse.newBuilder()
                     .setSuccess(true)

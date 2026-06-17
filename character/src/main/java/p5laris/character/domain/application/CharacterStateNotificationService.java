@@ -70,7 +70,7 @@ public class CharacterStateNotificationService {
         }
 
         if (character.getUserId() == null || character.getId() == null) {
-            log.warn("Skipping character state notification because userId or characterId is missing. userId={}, characterId={}",
+            log.warn("userId 또는 characterId가 없어 캐릭터 상태 알림 요청을 건너뜁니다. userId={}, characterId={}",
                     character.getUserId(), character.getId());
             return Optional.empty();
         }
@@ -93,7 +93,7 @@ public class CharacterStateNotificationService {
             );
             return true;
         } catch (Exception e) {
-            log.warn("Character state notification request failed. userId={}, characterId={}, mood={}",
+            log.warn("캐릭터 상태 알림 요청에 실패했습니다. userId={}, characterId={}, mood={}",
                     command.userId(), command.characterId(), command.mood(), e);
             return false;
         }

@@ -18,6 +18,7 @@ public class NotificationPushClient {
 
     private static final String DEFAULT_CHARACTER_NAME = "별친구";
     private static final String SHARE_REWARD_TITLE = "공유 보상 지급 완료";
+    private static final String SHARE_REWARD_COMPLETED_IDEMPOTENCY_PREFIX = "SHARE_REWARD_COMPLETED:";
 
     @GrpcClient("notification")
     private NotificationServiceGrpc.NotificationServiceBlockingStub notificationStub;
@@ -62,6 +63,7 @@ public class NotificationPushClient {
                         .setNotificationType(NotificationType.NOTIFICATION_TYPE_SHARE)
                         .setTargetType(TargetType.TARGET_TYPE_SHARE)
                         .setTargetId(shareLogId)
+                        .setIdempotencyKey(SHARE_REWARD_COMPLETED_IDEMPOTENCY_PREFIX + shareLogId)
                         .build()
         );
     }

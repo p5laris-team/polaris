@@ -1,12 +1,19 @@
 package p5laris.gateway.domain.character.api;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import p5laris.gateway.domain.character.api.dto.CharacterTalkDiariesResponse;
+import p5laris.gateway.domain.character.api.dto.CharacterTalkMessagesResponse;
 import p5laris.gateway.domain.character.api.dto.CharacterTypesResponse;
 import p5laris.gateway.domain.character.infrastructure.grpc.CharacterGatewayService;
 import p5laris.gateway.global.common.ApiResponse;
+
+import java.time.LocalDate;
 
 @RestController
 @RequestMapping("/api/character")
@@ -89,6 +96,58 @@ public class CharacterController {
             @org.springframework.web.bind.annotation.RequestHeader("Idempotency-Key") String idempotencyKey,
             @org.springframework.web.bind.annotation.RequestBody p5laris.gateway.domain.character.api.dto.CareActionRequest request) {
         return ApiResponse.success(characterGatewayService.performCareAction(characterId, userId, idempotencyKey, request));
+    }
+
+    /**
+     * 캐릭터 터치/상태 트리거에 맞는 대사와 기억 조각을 조회한다.
+     * POST /api/character/v1/characters/{characterId}/interactions
+     */
+    @org.springframework.web.bind.annotation.PostMapping("/v1/characters/{characterId}/interactions")
+    public ApiResponse<p5laris.gateway.domain.character.api.dto.CharacterInteractionResponse> interactWithCharacter(
+            @org.springframework.web.bind.annotation.PathVariable Long characterId,
+            @p5laris.gateway.global.auth.LoginUserId Long userId,
+            @org.springframework.web.bind.annotation.RequestBody p5laris.gateway.domain.character.api.dto.CharacterInteractionRequest request) {
+        return ApiResponse.success(characterGatewayService.interactWithCharacter(characterId, userId, request));
+    }
+
+    /**
+     * 별친구에게 말을 걸고 SSE로 답변을 조금씩 내려준다.
+     * POST /api/character/v1/characters/{characterId}/talk/stream
+     */
+    @org.springframework.web.bind.annotation.PostMapping(
+            value = "/v1/characters/{characterId}/talk/stream",
+            produces = MediaType.TEXT_EVENT_STREAM_VALUE
+    )
+    public org.springframework.web.servlet.mvc.method.annotation.SseEmitter streamCharacterTalk(
+            @org.springframework.web.bind.annotation.PathVariable Long characterId,
+            @p5laris.gateway.global.auth.LoginUserId Long userId,
+            @org.springframework.web.bind.annotation.RequestBody p5laris.gateway.domain.character.api.dto.CharacterTalkStreamRequest request) {
+        return characterGatewayService.streamCharacterTalk(characterId, userId, request);
+    }
+
+    /**
+     * 특정 날짜의 별친구 대화 원문을 조회한다.
+     * GET /api/character/v1/characters/{characterId}/talk/messages
+     */
+    @GetMapping("/v1/characters/{characterId}/talk/messages")
+    public ApiResponse<CharacterTalkMessagesResponse> getCharacterTalkMessages(
+            @org.springframework.web.bind.annotation.PathVariable Long characterId,
+            @p5laris.gateway.global.auth.LoginUserId Long userId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        return ApiResponse.success(characterGatewayService.getCharacterTalkMessages(characterId, userId, date));
+    }
+
+    /**
+     * 날짜 범위의 별친구 대화 요약 기록을 조회한다.
+     * GET /api/character/v1/characters/{characterId}/talk/diaries
+     */
+    @GetMapping("/v1/characters/{characterId}/talk/diaries")
+    public ApiResponse<CharacterTalkDiariesResponse> getCharacterTalkDiaries(
+            @org.springframework.web.bind.annotation.PathVariable Long characterId,
+            @p5laris.gateway.global.auth.LoginUserId Long userId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return ApiResponse.success(characterGatewayService.getCharacterTalkDiaries(characterId, userId, from, to));
     }
 
     /**

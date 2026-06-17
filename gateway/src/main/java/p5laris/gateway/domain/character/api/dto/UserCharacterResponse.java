@@ -10,6 +10,7 @@ public record UserCharacterResponse(
         String characterTypeCode,
         boolean active,
         States states,
+        CharacterGrowthResponse growth,
         Instant createdAt
 ) {
     @Builder

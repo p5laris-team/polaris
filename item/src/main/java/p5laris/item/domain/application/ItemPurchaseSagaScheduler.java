@@ -6,12 +6,15 @@ import com.p5laris.proto.user.v1.EarnStarPieceRequest;
 import com.p5laris.proto.user.v1.WalletServiceGrpc;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import p5laris.common.outbox.OutboxBackoffPolicy;
 import net.devh.boot.grpc.client.inject.GrpcClient;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
 import p5laris.item.domain.domain.entity.UserItemPurchase;
 import p5laris.item.domain.domain.repository.UserItemPurchaseRepository;
+import p5laris.item.domain.infrastructure.config.ItemPurchaseWalletProperties;
+import java.util.concurrent.TimeUnit;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -24,6 +27,7 @@ public class ItemPurchaseSagaScheduler {
 
     private final UserItemPurchaseRepository userItemPurchaseRepository;
     private final TransactionTemplate transactionTemplate;
+    private final ItemPurchaseWalletProperties itemPurchaseWalletProperties;
 
     @GrpcClient("user")
     private WalletServiceGrpc.WalletServiceBlockingStub walletStub;
@@ -31,44 +35,49 @@ public class ItemPurchaseSagaScheduler {
     @Scheduled(fixedDelayString = "10000")
     public void recoverUnknownPurchases() {
         // 1. 에러가 나서 UNKNOWN(또는 PENDING) 상태로 멈춰있는 구매 내역 조회
-        List<UserItemPurchase> unknownPurchases = userItemPurchaseRepository.findUnknownPurchases(LocalDateTime.now());
+        // PENDING 상태의 건은 현재 실행 중인 트랜잭션과의 충돌 방지를 위해 최소 1분 이상 경과된 건만 조회
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime pendingThreshold = now.minusMinutes(1);
+        List<UserItemPurchase> unknownPurchases = userItemPurchaseRepository.findUnknownPurchases(now, pendingThreshold);
         
         for (UserItemPurchase purchase : unknownPurchases) {
             try {
                 // 2. User 서버에 결제(재화 차감)가 실제로 성공했었는지 확인
-                CheckTransactionResponse checkResponse = walletStub.checkTransaction(
+                CheckTransactionResponse checkResponse = deadlineWalletStub().checkTransaction(
                         CheckTransactionRequest.newBuilder()
                                 .setIdempotencyKey(purchase.getIdempotencyKey())
                                 .build()
                 );
                 
-                transactionTemplate.execute(status -> {
-                    UserItemPurchase p = userItemPurchaseRepository.findById(purchase.getId()).orElseThrow();
-                    
-                    if (checkResponse.getExists()) {
-                        // 3. 돈은 빠져나갔는데 아이템 지급이 안 된 상태이므로 환불 진행 (보상 트랜잭션)
-                        log.info("Found orphan purchase transaction. Refunding {} star pieces for userId={}", 
-                                p.getPrice(), p.getUserId());
-                                
-                        walletStub.earnStarPiece(
-                                EarnStarPieceRequest.newBuilder()
-                                        .setUserId(p.getUserId())
-                                        .setAmount(p.getPrice())
-                                        .setReason("REFUND_ITEM_PURCHASE")
-                                        .setRefType("ITEM")
-                                        .setRefId(p.getItemId())
-                                        .setIdempotencyKey("REFUND_" + p.getIdempotencyKey())
-                                        .build()
-                        );
-                        // 4. 내역을 환불 완료(REFUNDED)로 상태 업데이트
+                if (checkResponse.getExists()) {
+                    // 3. 돈은 빠져나갔는데 아이템 지급이 안 된 상태이므로 환불 진행 (보상 트랜잭션 - 트랜잭션 외부)
+                    log.info("Found orphan purchase transaction. Refunding {} star pieces for userId={}", 
+                            purchase.getPrice(), purchase.getUserId());
+                            
+                    deadlineWalletStub().earnStarPiece(
+                            EarnStarPieceRequest.newBuilder()
+                                    .setUserId(purchase.getUserId())
+                                    .setAmount(purchase.getPrice())
+                                    .setReason("REFUND_ITEM_PURCHASE")
+                                    .setRefType("ITEM")
+                                    .setRefId(purchase.getItemId())
+                                    .setIdempotencyKey("REFUND_" + purchase.getIdempotencyKey())
+                                    .build()
+                    );
+                    // 4. 내역을 환불 완료(REFUNDED)로 상태 업데이트 (트랜잭션 내부)
+                    transactionTemplate.execute(status -> {
+                        UserItemPurchase p = userItemPurchaseRepository.findById(purchase.getId()).orElseThrow();
                         p.updateStatus("REFUNDED");
-                    } else {
-                        // 5. 결제가 안 되었다면 실패 처리
+                        return userItemPurchaseRepository.save(p);
+                    });
+                } else {
+                    // 5. 결제가 안 되었다면 실패 처리 (트랜잭션 내부)
+                    transactionTemplate.execute(status -> {
+                        UserItemPurchase p = userItemPurchaseRepository.findById(purchase.getId()).orElseThrow();
                         p.updateStatus("FAILED");
-                    }
-                    
-                    return userItemPurchaseRepository.save(p);
-                });
+                        return userItemPurchaseRepository.save(p);
+                    });
+                }
                 
             } catch (Exception e) {
                 log.error("Failed to recover unknown purchase: {}", purchase.getId(), e);
@@ -76,11 +85,15 @@ public class ItemPurchaseSagaScheduler {
                 transactionTemplate.execute(status -> {
                     UserItemPurchase p = userItemPurchaseRepository.findById(purchase.getId()).orElseThrow();
                     int attempt = p.getAttemptCount() + 1;
-                    long backoffMinutes = (long) Math.pow(2, attempt - 1);
-                    p.updateStatusWithRetry("UNKNOWN", LocalDateTime.now().plusMinutes(backoffMinutes));
+                    LocalDateTime nextAttempt = OutboxBackoffPolicy.nextAttemptAt(LocalDateTime.now(), attempt);
+                    p.updateStatusWithRetry("UNKNOWN", nextAttempt);
                     return userItemPurchaseRepository.save(p);
                 });
             }
         }
+    }
+
+    private WalletServiceGrpc.WalletServiceBlockingStub deadlineWalletStub() {
+        return walletStub.withDeadlineAfter(itemPurchaseWalletProperties.getDeadlineMs(), TimeUnit.MILLISECONDS);
     }
 }

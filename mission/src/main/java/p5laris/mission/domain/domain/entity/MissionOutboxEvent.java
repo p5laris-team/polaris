@@ -14,16 +14,16 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
-import p5laris.mission.core.entity.BaseEntity;
+import p5laris.common.entity.BaseEntity;
 import p5laris.mission.domain.domain.enums.MissionOutboxEventStatus;
 
 import java.time.LocalDateTime;
 
 /**
- * mission 모듈에서 외부 모듈 호출 또는 향후 Kafka 발행이 필요한 이벤트를 저장하는 outbox 엔티티다.
+ * mission 紐⑤뱢?먯꽌 ?몃? 紐⑤뱢 ?몄텧 ?먮뒗 ?ν썑 Kafka 諛쒗뻾???꾩슂???대깽?몃? ??ν븯??outbox ?뷀떚?곕떎.
  *
- * 모듈별 테이블은 분리하되 aggregate/event/payload 구조는 user/item/character outbox와 맞춰
- * 나중에 브로커 릴레이로 확장하기 쉽게 둔다.
+ * 紐⑤뱢蹂??뚯씠釉붿? 遺꾨━?섎릺 aggregate/event/payload 援ъ“??user/item/character outbox? 留욎떠
+ * ?섏쨷??釉뚮줈而?由대젅?대줈 ?뺤옣?섍린 ?쎄쾶 ?붾떎.
  */
 @Entity
 @Getter
@@ -33,6 +33,7 @@ public class MissionOutboxEvent extends BaseEntity {
 
     public static final String AGGREGATE_TYPE_MISSION = "MISSION";
     public static final String EVENT_TYPE_MISSION_REWARD_REQUESTED = "MISSION_REWARD_REQUESTED";
+    public static final String EVENT_TYPE_MISSION_CHARACTER_EXP_REQUESTED = "MISSION_CHARACTER_EXP_REQUESTED";
 
     private static final int LAST_ERROR_MESSAGE_MAX_LENGTH = 500;
 
@@ -87,7 +88,25 @@ public class MissionOutboxEvent extends BaseEntity {
         return event;
     }
 
-    // PROCESSING 상태의 nextAttemptAt은 "다른 스케줄러가 다시 집을 수 있는 lock 만료 시각"으로 사용한다.
+    public static MissionOutboxEvent characterExpRequested(
+            UserMission mission,
+            JsonNode payload,
+            String idempotencyKey,
+            LocalDateTime nextAttemptAt
+    ) {
+        MissionOutboxEvent event = new MissionOutboxEvent();
+        event.aggregateType = AGGREGATE_TYPE_MISSION;
+        event.aggregateId = mission.getId();
+        event.eventType = EVENT_TYPE_MISSION_CHARACTER_EXP_REQUESTED;
+        event.payload = payload;
+        event.idempotencyKey = idempotencyKey;
+        event.status = MissionOutboxEventStatus.PENDING;
+        event.attemptCount = 0;
+        event.nextAttemptAt = nextAttemptAt;
+        return event;
+    }
+
+    // PROCESSING ?곹깭??nextAttemptAt? "?ㅻⅨ ?ㅼ?以꾨윭媛 ?ㅼ떆 吏묒쓣 ???덈뒗 lock 留뚮즺 ?쒓컖"?쇰줈 ?ъ슜?쒕떎.
     public void markProcessing(LocalDateTime lockExpiresAt) {
         this.status = MissionOutboxEventStatus.PROCESSING;
         this.nextAttemptAt = lockExpiresAt;
@@ -99,7 +118,7 @@ public class MissionOutboxEvent extends BaseEntity {
         this.lastErrorMessage = null;
     }
 
-    // 실패 횟수를 올리고 다음 재시도 시각을 기록한다. maxAttempts에 도달하면 자동 재처리 대상에서 제외한다.
+    // ?ㅽ뙣 ?잛닔瑜??щ━怨??ㅼ쓬 ?ъ떆???쒓컖??湲곕줉?쒕떎. maxAttempts???꾨떖?섎㈃ ?먮룞 ?ъ쿂由???곸뿉???쒖쇅?쒕떎.
     public void recordFailure(String errorMessage, LocalDateTime nextAttemptAt, int maxAttempts) {
         this.attemptCount++;
         this.lastErrorMessage = truncate(errorMessage);
@@ -109,7 +128,7 @@ public class MissionOutboxEvent extends BaseEntity {
                 : MissionOutboxEventStatus.PENDING;
     }
 
-    // PENDING 또는 lock이 만료된 PROCESSING row만 스케줄러가 다시 발송할 수 있다.
+    // PENDING ?먮뒗 lock??留뚮즺??PROCESSING row留??ㅼ?以꾨윭媛 ?ㅼ떆 諛쒖넚?????덈떎.
     public boolean canBeClaimed(LocalDateTime now) {
         return (status == MissionOutboxEventStatus.PENDING || status == MissionOutboxEventStatus.PROCESSING)
                 && !nextAttemptAt.isAfter(now);

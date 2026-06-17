@@ -1,8 +1,11 @@
 package p5laris.mission.domain.application;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import jakarta.annotation.PostConstruct;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import p5laris.common.outbox.OutboxBackoffPolicy;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -38,11 +41,17 @@ public class MissionRewardDispatcher {
     private final UserMissionRepository userMissionRepository;
     private final WalletRewardClient walletRewardClient;
     private final NotificationPushClient notificationPushClient;
-    private final MissionRewardBackoffPolicy missionRewardBackoffPolicy;
     private final MissionRewardOutboxProperties missionRewardOutboxProperties;
     private final TransactionTemplate transactionTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final Clock clock;
+    private final MeterRegistry meterRegistry;
+
+    @PostConstruct
+    public void init() {
+        meterRegistry.gauge("outbox.pending.count", missionOutboxEventRepository,
+                repo -> repo.countByStatus(MissionOutboxEventStatus.PENDING));
+    }
 
     public WalletRewardResult dispatchNow(Long outboxId) {
         RewardDispatchCommand command = claim(outboxId, true)
@@ -163,12 +172,30 @@ public class MissionRewardDispatcher {
             if (notifyRewardRecovered) {
                 notifyRewardRecovered(command);
             }
+
+            meterRegistry.counter("outbox.events.processed",
+                    "status", "SUCCESS",
+                    "aggregate_type", "MISSION"
+            ).increment();
+
             return result;
         } catch (MissionException e) {
             markFailed(command, e.getMessage());
+
+            meterRegistry.counter("outbox.events.processed",
+                    "status", "FAILURE",
+                    "aggregate_type", "MISSION"
+            ).increment();
+
             throw e;
         } catch (Exception e) {
             markFailed(command, e.getMessage());
+
+            meterRegistry.counter("outbox.events.processed",
+                    "status", "FAILURE",
+                    "aggregate_type", "MISSION"
+            ).increment();
+
             throw new MissionException(MissionErrorCode.MISSION_REWARD_FAILED);
         }
     }
@@ -215,7 +242,7 @@ public class MissionRewardDispatcher {
             int nextAttemptCount = outbox.getAttemptCount() + 1;
             outbox.recordFailure(
                     errorMessage,
-                    missionRewardBackoffPolicy.nextAttemptAt(now, nextAttemptCount),
+                    OutboxBackoffPolicy.nextAttemptAt(now, nextAttemptCount, missionRewardOutboxProperties.getRetryInitialDelaySeconds(), missionRewardOutboxProperties.getRetryMaxDelaySeconds()),
                     missionRewardOutboxProperties.getMaxAttempts()
             );
         });

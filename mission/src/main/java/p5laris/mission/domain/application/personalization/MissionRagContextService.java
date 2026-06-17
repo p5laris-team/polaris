@@ -6,7 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import p5laris.mission.domain.application.memory.EmbeddingVectorUtils;
+import p5laris.common.utils.EmbeddingVectorUtils;
 import p5laris.mission.domain.application.memory.UserMemoryRagHit;
 import p5laris.mission.domain.infrastructure.config.MissionRagProperties;
 import p5laris.mission.domain.infrastructure.grpc.AiTextEmbeddingClient;
@@ -22,9 +22,9 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * 기존 최근 미션 context JSON에 RAG 검색 결과를 덧붙인다.
+ * 기존 최근 미션 context JSON에 RAG 검색 결과를 추가한다.
  *
- * 검색 실패나 결과 없음은 미션 생성 실패가 아니라 개인화 품질 저하로 보고 기존 context를 그대로 반환한다.
+ * 검색 실패와 결과 없음은 미션 생성 실패가 아니라 개인화 품질 저하로 보고 기존 context를 그대로 반환한다.
  */
 @Slf4j
 @Service
@@ -55,7 +55,8 @@ public class MissionRagContextService {
                             missionRagProperties.getEmbeddingModel(),
                             missionRagProperties.getEmbeddingDimension(),
                             REQUEST_ID_PREFIX + userId + ":" + query.missionTemplateId()
-                    )
+                    ),
+                    missionRagProperties.getQueryEmbeddingDeadlineMs()
             );
 
             if (queryEmbedding.isEmpty()) {

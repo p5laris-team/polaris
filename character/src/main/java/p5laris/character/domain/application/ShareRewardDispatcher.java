@@ -3,6 +3,7 @@ package p5laris.character.domain.application;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import p5laris.common.outbox.OutboxBackoffPolicy;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -17,6 +18,8 @@ import p5laris.character.domain.infrastructure.config.ShareRewardOutboxPropertie
 import p5laris.character.domain.infrastructure.grpc.NotificationPushClient;
 import p5laris.character.domain.infrastructure.grpc.ShareRewardWalletClient;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import jakarta.annotation.PostConstruct;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -34,11 +37,17 @@ public class ShareRewardDispatcher {
     private final ShareLogRepository shareLogRepository;
     private final ShareRewardWalletClient shareRewardWalletClient;
     private final NotificationPushClient notificationPushClient;
-    private final ShareRewardBackoffPolicy shareRewardBackoffPolicy;
     private final ShareRewardOutboxProperties properties;
     private final TransactionTemplate transactionTemplate;
     private final ObjectMapper objectMapper;
     private final Clock clock;
+    private final MeterRegistry meterRegistry;
+
+    @PostConstruct
+    public void init() {
+        meterRegistry.gauge("outbox.pending.count", characterOutboxEventRepository,
+                repo -> repo.countByStatus(CharacterOutboxEventStatus.PENDING));
+    }
 
     public ShareRewardWalletClient.WalletRewardResult dispatchNow(Long outboxId) {
         RewardDispatchCommand command = claim(outboxId, true)
@@ -68,7 +77,7 @@ public class ShareRewardDispatcher {
                 requestRewardCompletedNotification(command.get());
                 succeededCount++;
             } catch (CharacterException e) {
-                log.warn("Share reward outbox dispatch failed. outboxId={}, shareLogId={}, errorCode={}",
+                log.warn("공유 보상 outbox 발행에 실패했습니다. outboxId={}, shareLogId={}, errorCode={}",
                         command.get().outboxId(), command.get().shareLogId(), e.getErrorCode().getCode());
             }
         }
@@ -83,7 +92,7 @@ public class ShareRewardDispatcher {
                     command.rewardStarPiece()
             );
         } catch (Exception e) {
-            log.warn("Share reward completion notification request failed. userId={}, shareLogId={}",
+            log.warn("공유 보상 완료 알림 요청에 실패했습니다. userId={}, shareLogId={}",
                     command.userId(), command.shareLogId(), e);
         }
     }
@@ -144,12 +153,30 @@ public class ShareRewardDispatcher {
                     command.idempotencyKey()
             );
             markSucceeded(command);
+
+            meterRegistry.counter("outbox.events.processed",
+                    "status", "SUCCESS",
+                    "aggregate_type", AGGREGATE_TYPE_SHARE_LOG
+            ).increment();
+
             return result;
         } catch (CharacterException e) {
             markFailed(command, e.getMessage());
+
+            meterRegistry.counter("outbox.events.processed",
+                    "status", "FAILURE",
+                    "aggregate_type", AGGREGATE_TYPE_SHARE_LOG
+            ).increment();
+
             throw e;
         } catch (Exception e) {
             markFailed(command, e.getMessage());
+
+            meterRegistry.counter("outbox.events.processed",
+                    "status", "FAILURE",
+                    "aggregate_type", AGGREGATE_TYPE_SHARE_LOG
+            ).increment();
+
             throw new CharacterException(CharacterErrorCode.SHARE_REWARD_FAILED);
         }
     }
@@ -176,7 +203,7 @@ public class ShareRewardDispatcher {
             int nextAttemptCount = outbox.getAttemptCount() + 1;
             outbox.recordFailure(
                     errorMessage,
-                    shareRewardBackoffPolicy.nextAttemptAt(now, nextAttemptCount),
+                    OutboxBackoffPolicy.nextAttemptAt(now, nextAttemptCount, properties.getRetryInitialDelaySeconds(), properties.getRetryMaxDelaySeconds()),
                     properties.getMaxAttempts()
             );
         });

@@ -52,7 +52,7 @@ public record ShareEventLogEvent(
         try {
             return objectMapper.writeValueAsString(properties);
         } catch (JsonProcessingException e) {
-            log.error("Failed to serialize properties to JSON", e);
+            log.error("공유 이벤트 속성을 JSON으로 직렬화하지 못했습니다.", e);
             return "{}";
         }
     }

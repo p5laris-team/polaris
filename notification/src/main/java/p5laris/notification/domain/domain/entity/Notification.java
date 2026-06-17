@@ -12,7 +12,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import p5laris.notification.core.entity.BaseEntity;
+import p5laris.common.entity.BaseEntity;
 import p5laris.notification.domain.domain.enums.NotificationTargetType;
 import p5laris.notification.domain.domain.enums.NotificationType;
 
@@ -33,6 +33,9 @@ public class Notification extends BaseEntity {
 
     @Column(name = "character_id")
     private Long characterId;
+
+    @Column(name = "idempotency_key", length = 255)
+    private String idempotencyKey;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "notification_type", nullable = false, length = 30)
@@ -64,6 +67,7 @@ public class Notification extends BaseEntity {
     public Notification(
             Long userId,
             Long characterId,
+            String idempotencyKey,
             NotificationType notificationType,
             String title,
             String message,
@@ -73,6 +77,7 @@ public class Notification extends BaseEntity {
     ) {
         this.userId = userId;
         this.characterId = characterId;
+        this.idempotencyKey = idempotencyKey;
         this.notificationType = notificationType;
         this.title = title;
         this.message = message;

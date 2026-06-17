@@ -41,3 +41,5 @@ out/
 .nx/cache
 .nx/workspace-data
 .nx/self-healing
+
+logs-local/

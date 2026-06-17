@@ -57,7 +57,7 @@ class RuleBasedMissionTextGeneratorTest {
         assertThat(text)
                 .startsWith("무")
                 .contains("(해석:")
-                .contains("무무가")
+                .doesNotContain("무무가", "무다리가", "하는 것 같", "라고 하네요", "궁금해하네요", "묻고 있어요")
                 .endsWith(")");
     }
 
@@ -70,6 +70,7 @@ class RuleBasedMissionTextGeneratorTest {
                 1001L,
                 2001L,
                 characterType,
+                "무다리",
                 missionTemplateId,
                 "물 한 컵 마시기",
                 "지금 자리에서 물 한 컵을 천천히 마셔보세요.",

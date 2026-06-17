@@ -31,9 +31,10 @@ flyway:
   validate-on-migrate: true
 
 grpc:
+  default-deadline-ms: 3000
   server:
     port: ${GRPC_SERVER_PORT}
-    reflection-service-enabled: true
+    reflection-service-enabled: ${GRPC_REFLECTION_ENABLED:false}
 
   client:
     character:
@@ -54,6 +55,15 @@ grpc:
     notification:
       address: ${NOTIFICATION_GRPC_ADDRESS}
       negotiationType: plaintext
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%thread] [traceId=%X{traceId}] %logger{36} - %msg%n"
+
+internal:
+  grpc-auth:
+    enabled: ${INTERNAL_GRPC_AUTH_ENABLED:true}
+    token: ${INTERNAL_GRPC_AUTH_TOKEN}
 
 jwt:
   secret: ${JWT_SECRET}

@@ -21,7 +21,9 @@ import org.springframework.boot.test.context.SpringBootTest;
         "cloud.aws.s3.public-domain=https://cdn.p5laris.life",
         "cloud.aws.s3.cors.enabled=false",
         "cloud.aws.s3.cors.allowed-origins=http://127.0.0.1:5173,http://localhost:5173",
-        "app.public-base-url=https://p5laris.life"
+        "app.public-base-url=https://p5laris.life",
+        "internal.grpc-auth.enabled=true",
+        "internal.grpc-auth.token=test-internal-grpc-token"
 })
 class CharacterApplicationTests {
 

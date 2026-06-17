@@ -2,6 +2,8 @@ package p5laris.mission.domain.application.memory;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import p5laris.common.outbox.OutboxBackoffPolicy;
+import p5laris.common.utils.EmbeddingVectorUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import p5laris.mission.domain.infrastructure.config.MissionMemoryEmbeddingProperties;
@@ -30,7 +32,6 @@ public class UserMemoryEmbeddingDispatcher {
 
     private final UserMemoryEmbeddingJdbcRepository userMemoryEmbeddingJdbcRepository;
     private final AiTextEmbeddingClient aiTextEmbeddingClient;
-    private final MissionMemoryEmbeddingBackoffPolicy backoffPolicy;
     private final MissionMemoryEmbeddingProperties embeddingProperties;
     private final MissionRagProperties ragProperties;
     private final TransactionTemplate transactionTemplate;
@@ -38,36 +39,21 @@ public class UserMemoryEmbeddingDispatcher {
 
     public int dispatchDue(int batchSize) {
         LocalDateTime now = LocalDateTime.now(clock);
-        List<Long> embeddingIds = userMemoryEmbeddingJdbcRepository.findDispatchableIds(now, batchSize);
+        List<UserMemoryEmbeddingJob> jobs = transactionTemplate.execute(status ->
+                userMemoryEmbeddingJdbcRepository.claimDue(
+                        now,
+                        batchSize,
+                        now.plusSeconds(embeddingProperties.getProcessingTimeoutSeconds())
+                )
+        );
 
         int succeededCount = 0;
-        for (Long embeddingId : embeddingIds) {
-            Optional<UserMemoryEmbeddingJob> job = claim(embeddingId);
-            if (job.isEmpty()) {
-                continue;
-            }
-
-            if (dispatchClaimed(job.get())) {
+        for (UserMemoryEmbeddingJob job : jobs == null ? List.<UserMemoryEmbeddingJob>of() : jobs) {
+            if (dispatchClaimed(job)) {
                 succeededCount++;
             }
         }
         return succeededCount;
-    }
-
-    private Optional<UserMemoryEmbeddingJob> claim(Long embeddingId) {
-        return transactionTemplate.execute(status -> {
-            LocalDateTime now = LocalDateTime.now(clock);
-            if (!userMemoryEmbeddingJdbcRepository.canClaim(embeddingId, now)) {
-                return Optional.empty();
-            }
-
-            Optional<UserMemoryEmbeddingJob> job = userMemoryEmbeddingJdbcRepository.findJobForUpdate(embeddingId);
-            job.ifPresent(value -> userMemoryEmbeddingJdbcRepository.markProcessing(
-                    value.id(),
-                    now.plusSeconds(embeddingProperties.getProcessingTimeoutSeconds())
-            ));
-            return job;
-        });
     }
 
     private boolean dispatchClaimed(UserMemoryEmbeddingJob job) {
@@ -78,7 +64,7 @@ public class UserMemoryEmbeddingDispatcher {
                     ragProperties.getEmbeddingModel(),
                     ragProperties.getEmbeddingDimension(),
                     REQUEST_ID_PREFIX + job.userMemoryId()
-            ));
+            ), embeddingProperties.getEmbeddingDeadlineMs());
 
             if (generated.isEmpty()) {
                 markFailed(job, "AI embedding 응답이 비어 있습니다.");
@@ -121,7 +107,7 @@ public class UserMemoryEmbeddingDispatcher {
             userMemoryEmbeddingJdbcRepository.recordFailure(
                     job.id(),
                     errorMessage,
-                    backoffPolicy.nextAttemptAt(now, nextAttemptCount),
+                    OutboxBackoffPolicy.nextAttemptAt(now, nextAttemptCount, embeddingProperties.getRetryInitialDelaySeconds(), embeddingProperties.getRetryMaxDelaySeconds()),
                     embeddingProperties.getMaxAttempts()
             );
         });

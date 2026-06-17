@@ -1,6 +1,8 @@
 package p5laris.character.domain.application;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.p5laris.proto.item.v1.GetUserItemsRequest;
 import com.p5laris.proto.item.v1.ItemServiceGrpc;
 import com.p5laris.proto.item.v1.UseItemRequest;
@@ -9,29 +11,53 @@ import io.grpc.StatusRuntimeException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.client.inject.GrpcClient;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import p5laris.character.domain.application.dto.CharacterAssetResponse;
+import p5laris.character.domain.application.dto.CharacterInteractionResponse;
+import p5laris.character.domain.application.dto.CharacterTalkContextResponse;
 import p5laris.character.domain.application.dto.CharacterTypeResponse;
+import p5laris.character.domain.application.dto.GrantCharacterExpResponse;
 import p5laris.character.domain.domain.entity.CharacterCareLog;
+import p5laris.character.domain.domain.entity.CharacterExpLog;
+import p5laris.character.domain.domain.entity.CharacterStoryFragment;
 import p5laris.character.domain.domain.entity.CharacterType;
+import p5laris.character.domain.domain.entity.UserCharacterStoryUnlock;
 import p5laris.character.domain.domain.entity.UserCharacter;
 import p5laris.character.domain.domain.enums.ActionType;
+import p5laris.character.domain.domain.enums.CharacterExpSourceType;
 import p5laris.character.domain.domain.enums.CharacterMood;
+import p5laris.character.domain.domain.enums.CharacterStoryFragmentType;
+import p5laris.character.domain.domain.enums.CharacterStoryTriggerType;
 import p5laris.character.domain.domain.enums.StatGrade;
 import p5laris.character.domain.domain.enums.StatType;
+import p5laris.character.domain.domain.policy.CharacterCareGrowthPolicy;
+import p5laris.character.domain.domain.policy.CharacterGrowthPolicy;
 import p5laris.character.domain.domain.repository.CharacterAssetRepository;
 import p5laris.character.domain.domain.repository.CharacterCareLogRepository;
+import p5laris.character.domain.domain.repository.CharacterExpLogRepository;
+import p5laris.character.domain.domain.repository.CharacterStoryFragmentRepository;
 import p5laris.character.domain.domain.repository.CharacterTypeRepository;
 
+import p5laris.character.domain.domain.repository.UserCharacterStoryUnlockRepository;
 import p5laris.character.domain.domain.repository.UserCharacterRepository;
 import p5laris.character.domain.exception.CharacterErrorCode;
 import p5laris.character.domain.exception.CharacterException;
 import p5laris.character.domain.infrastructure.config.CharacterItemGrpcProperties;
 
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
 import org.springframework.context.ApplicationEventPublisher;
@@ -43,15 +69,20 @@ import p5laris.character.domain.application.event.CharacterEventLogEvent;
 public class CharacterService {
 
     private static final int CARE_AMOUNT = 30;
+    private static final ZoneId SERVICE_ZONE = ZoneId.of("Asia/Seoul");
 
     private final CharacterTypeRepository characterTypeRepository;
     private final CharacterAssetRepository characterAssetRepository;
     private final UserCharacterRepository userCharacterRepository;
     private final CharacterCareLogRepository characterCareLogRepository;
+    private final CharacterExpLogRepository characterExpLogRepository;
+    private final CharacterStoryFragmentRepository characterStoryFragmentRepository;
+    private final UserCharacterStoryUnlockRepository userCharacterStoryUnlockRepository;
     private final S3StorageService s3StorageService;
     private final ObjectMapper objectMapper;
     private final ApplicationEventPublisher eventPublisher;
     private final CharacterItemGrpcProperties itemGrpcProperties;
+    private final TransactionTemplate transactionTemplate;
 
     @GrpcClient("item")
     private ItemServiceGrpc.ItemServiceBlockingStub itemStub;
@@ -127,6 +158,7 @@ public class CharacterService {
                         .energy(newCharacter.getEnergy())
                         .affection(newCharacter.getAffection())
                         .build())
+                .growth(buildGrowth(newCharacter))
                 .createdAt(newCharacter.getCreatedAt())
                 .build();
     }
@@ -152,6 +184,7 @@ public class CharacterService {
                         .energy(userCharacter.getEnergy())
                         .affection(userCharacter.getAffection())
                         .build())
+                .growth(buildGrowth(userCharacter))
                 .currentAssetUrl(currentAssetUrl)
                 .assetUrls(assetUrls)
                 .build();
@@ -177,7 +210,7 @@ public class CharacterService {
                 assetUrls.putAll(skinAssetUrls);
             }
         } catch (Exception e) {
-            log.error("Failed to get skin assets from item service for skinItemId: {}, characterTypeId: {}", 
+            log.error("아이템 서비스에서 스킨 에셋을 조회하지 못했습니다. skinItemId={}, characterTypeId={}",
                     equippedSkinId, characterTypeId, e);
         }
         return assetUrls;
@@ -197,7 +230,7 @@ public class CharacterService {
             CharacterMood mood = CharacterMood.fromAssetType(assetType);
             assetUrls.put(mood.responseKey(), s3StorageService.toPublicUrl(assetUrl));
         } catch (IllegalArgumentException e) {
-            log.debug("Skipping unknown character asset type: {}", assetType);
+            log.debug("알 수 없는 캐릭터 에셋 타입은 응답에서 제외합니다. assetType={}", assetType);
         }
     }
 
@@ -239,7 +272,13 @@ public class CharacterService {
                         .energy(buildStateDetail(userCharacter.getEnergy(), StatType.ENERGY))
                         .affection(buildStateDetail(userCharacter.getAffection(), StatType.AFFECTION))
                         .build())
+                .growth(buildGrowth(userCharacter))
                 .build();
+    }
+
+    private p5laris.character.domain.application.dto.CharacterGrowthResponse buildGrowth(UserCharacter userCharacter) {
+        var growth = CharacterGrowthPolicy.calculate(userCharacter.getExp());
+        return toGrowthResponse(growth);
     }
 
     private p5laris.character.domain.application.dto.CharacterStatusResponse.StateDetail buildStateDetail(
@@ -253,7 +292,6 @@ public class CharacterService {
                 .build();
     }
 
-    @Transactional
     public p5laris.character.domain.application.dto.CareActionResponse performCareAction(
             Long characterId, Long userId, String actionTypeStr, Long itemId, String idempotencyKey) {
 
@@ -266,69 +304,238 @@ public class CharacterService {
             return replayCareLog(existingLog.get());
         }
 
-        ActionType actionType = parseActionType(actionTypeStr);
-        long resolvedItemId = requirePositiveItemId(itemId);
-        UserItem careItem = findOwnedItem(userId, resolvedItemId, "CONSUMABLE");
-        validateCareItemMatchesAction(careItem, actionType);
+        CareActionResult txResult = transactionTemplate.execute(status -> {
+            ActionType actionType = parseActionType(actionTypeStr);
+            long resolvedItemId = requirePositiveItemId(itemId);
+            UserItem careItem = findOwnedItem(userId, resolvedItemId, "CONSUMABLE");
+            validateCareItemMatchesAction(careItem, actionType);
+
+            UserCharacter character = userCharacterRepository.findByIdForUpdate(characterId)
+                    .orElseThrow(() -> new CharacterException(CharacterErrorCode.CHARACTER_NOT_FOUND));
+
+            if (!character.getUserId().equals(userId)) {
+                throw new CharacterException(CharacterErrorCode.NOT_CHARACTER_OWNER);
+            }
+
+            var beforeStates = p5laris.character.domain.application.dto.CareActionResponse.States.builder()
+                    .hunger(character.getFullness())
+                    .energy(character.getEnergy())
+                    .affection(character.getAffection())
+                    .build();
+            var beforeGrowth = buildGrowth(character);
+            int earnedCountToday = countTodayEarnedCareExp(characterId, actionType);
+            int expGained = CharacterCareGrowthPolicy.calculateExpGained(actionType, earnedCountToday);
+
+            character.applyCare(actionType, CARE_AMOUNT);
+            if (expGained > 0) {
+                character.gainExp(expGained);
+            }
+
+            var afterStates = p5laris.character.domain.application.dto.CareActionResponse.States.builder()
+                    .hunger(character.getFullness())
+                    .energy(character.getEnergy())
+                    .affection(character.getAffection())
+                    .build();
+            var afterGrowth = buildGrowth(character);
+            boolean levelUp = afterGrowth.level() > beforeGrowth.level();
+
+            CharacterCareLog careLog = CharacterCareLog.builder()
+                    .userId(userId)
+                    .characterId(characterId)
+                    .itemId(resolvedItemId)
+                    .actionType(actionType)
+                    .beforeStateJson(toStateJson(beforeStates, beforeGrowth))
+                    .afterStateJson(toStateJson(afterStates, afterGrowth, expGained, levelUp))
+                    .idempotencyKey(idempotencyKey)
+                    .build();
+            CharacterCareLog savedCareLog = characterCareLogRepository.save(careLog);
+
+            return new CareActionResult(
+                    savedCareLog,
+                    actionType,
+                    resolvedItemId,
+                    beforeStates,
+                    afterStates,
+                    beforeGrowth,
+                    afterGrowth,
+                    expGained,
+                    levelUp
+            );
+        });
+
+        try {
+            deadlineItemStub().useItem(
+                    UseItemRequest.newBuilder()
+                            .setUserId(userId)
+                            .setItemId(txResult.resolvedItemId())
+                            .setQuantity(1)
+                            .setRefType("CARE_ACTION")
+                            .setRefId(txResult.savedCareLog().getId() != null ? txResult.savedCareLog().getId() : 0L)
+                            .setIdempotencyKey(idempotencyKey)
+                            .build()
+            );
+        } catch (Exception e) {
+            log.warn("돌보기 아이템 사용 gRPC 호출에 실패했습니다. userId={}, itemId={}, careLogId={}, statusCode={}, errorCode={}",
+                    userId, txResult.resolvedItemId(), txResult.savedCareLog().getId(), grpcStatusCode(e), grpcErrorCode(e), e);
+            throw mapItemFailure(e);
+        }
+
+        return p5laris.character.domain.application.dto.CareActionResponse.builder()
+                .careLogId(txResult.savedCareLog().getId())
+                .characterId(characterId)
+                .actionType(txResult.actionType().name())
+                .consumedItemId(txResult.resolvedItemId())
+                .consumedQuantity(1)
+                .beforeStates(txResult.beforeStates())
+                .afterStates(txResult.afterStates())
+                .beforeGrowth(txResult.beforeGrowth())
+                .afterGrowth(txResult.afterGrowth())
+                .expGained(txResult.expGained())
+                .levelUp(txResult.levelUp())
+                .characterMessage(characterMessage(txResult.actionType()))
+                .build();
+    }
+
+    private record CareActionResult(
+            CharacterCareLog savedCareLog,
+            ActionType actionType,
+            long resolvedItemId,
+            p5laris.character.domain.application.dto.CareActionResponse.States beforeStates,
+            p5laris.character.domain.application.dto.CareActionResponse.States afterStates,
+            p5laris.character.domain.application.dto.CharacterGrowthResponse beforeGrowth,
+            p5laris.character.domain.application.dto.CharacterGrowthResponse afterGrowth,
+            int expGained,
+            boolean levelUp
+    ) {}
+
+    @Transactional
+    public GrantCharacterExpResponse grantCharacterExp(
+            Long userId,
+            Long characterId,
+            String sourceTypeValue,
+            Long sourceId,
+            int expAmount,
+            String idempotencyKey
+    ) {
+        validateExpGrantRequest(sourceId, expAmount, idempotencyKey);
+        CharacterExpSourceType sourceType = parseExpSourceType(sourceTypeValue);
+
+        var existingByKey = characterExpLogRepository.findByIdempotencyKey(idempotencyKey);
+        if (existingByKey.isPresent()) {
+            return replayMatchingExpLog(existingByKey.get(), userId, characterId, sourceType, sourceId, idempotencyKey);
+        }
+
+        var existingBySource = characterExpLogRepository.findBySourceTypeAndSourceId(sourceType, sourceId);
+        if (existingBySource.isPresent()) {
+            return replayMatchingSourceExpLog(existingBySource.get(), userId, characterId, sourceType, sourceId);
+        }
 
         UserCharacter character = userCharacterRepository.findByIdForUpdate(characterId)
+                .orElseThrow(() -> new CharacterException(CharacterErrorCode.CHARACTER_NOT_FOUND));
+        if (!character.getUserId().equals(userId)) {
+            throw new CharacterException(CharacterErrorCode.NOT_CHARACTER_OWNER);
+        }
+
+        /*
+         * 같은 캐릭터 lock을 기다리던 중 먼저 성공한 요청이 있을 수 있으므로
+         * lock 획득 뒤 한 번 더 로그를 확인해 최종 중복 지급을 막는다.
+         */
+        existingByKey = characterExpLogRepository.findByIdempotencyKey(idempotencyKey);
+        if (existingByKey.isPresent()) {
+            return replayMatchingExpLog(existingByKey.get(), userId, characterId, sourceType, sourceId, idempotencyKey);
+        }
+        existingBySource = characterExpLogRepository.findBySourceTypeAndSourceId(sourceType, sourceId);
+        if (existingBySource.isPresent()) {
+            return replayMatchingSourceExpLog(existingBySource.get(), userId, characterId, sourceType, sourceId);
+        }
+
+        var beforeGrowth = buildGrowth(character);
+        character.gainExp(expAmount);
+        var afterGrowth = buildGrowth(character);
+        boolean levelUp = afterGrowth.level() > beforeGrowth.level();
+
+        CharacterExpLog expLog = CharacterExpLog.builder()
+                .userId(userId)
+                .characterId(characterId)
+                .sourceType(sourceType)
+                .sourceId(sourceId)
+                .idempotencyKey(idempotencyKey)
+                .expAmount(expAmount)
+                .beforeExp(beforeGrowth.exp())
+                .afterExp(afterGrowth.exp())
+                .beforeLevel(beforeGrowth.level())
+                .afterLevel(afterGrowth.level())
+                .build();
+        characterExpLogRepository.save(expLog);
+
+        return GrantCharacterExpResponse.builder()
+                .characterId(characterId)
+                .expGained(expAmount)
+                .beforeGrowth(beforeGrowth)
+                .afterGrowth(afterGrowth)
+                .levelUp(levelUp)
+                .alreadyProcessed(false)
+                .build();
+    }
+
+    @Transactional
+    public CharacterInteractionResponse interactWithCharacter(
+            Long characterId,
+            Long userId,
+            String interactionType
+    ) {
+        CharacterStoryTriggerType triggerType = CharacterStoryTriggerType.fromInteractionType(interactionType);
+        UserCharacter character = userCharacterRepository.findByIdForUpdate(characterId)
+                .orElseThrow(() -> new CharacterException(CharacterErrorCode.CHARACTER_NOT_FOUND));
+        if (!character.getUserId().equals(userId)) {
+            throw new CharacterException(CharacterErrorCode.NOT_CHARACTER_OWNER);
+        }
+
+        int level = CharacterGrowthPolicy.calculate(character.getExp()).level();
+        String characterTypeCode = character.getCharacterType().getCode();
+        List<CharacterStoryFragment> candidates = findStoryCandidates(characterTypeCode, triggerType, level);
+        if (candidates.isEmpty() && triggerType != CharacterStoryTriggerType.TAP) {
+            candidates = findStoryCandidates(characterTypeCode, CharacterStoryTriggerType.TAP, level);
+        }
+
+        Set<Long> unlockedFragmentIds = findUnlockedFragmentIds(userId, characterId, candidates);
+        CharacterStoryFragment selected = chooseRandomNewUnlockableFragment(candidates, unlockedFragmentIds);
+        if (selected != null) {
+            saveStoryUnlock(userId, characterId, level, selected);
+            return toInteractionResponse(character, level, selected, true, false);
+        }
+
+        SelectedStoryFragment seenFragment = chooseRandomSeenFragment(candidates, unlockedFragmentIds);
+        if (seenFragment != null) {
+            return toInteractionResponse(character, level, seenFragment.fragment(), false, seenFragment.alreadyUnlocked());
+        }
+
+        return fallbackInteractionResponse(character, level, triggerType);
+    }
+
+    @Transactional
+    public CharacterTalkContextResponse getCharacterTalkContext(Long characterId, Long userId, int memoryLimit) {
+        UserCharacter character = userCharacterRepository.findById(characterId)
                 .orElseThrow(() -> new CharacterException(CharacterErrorCode.CHARACTER_NOT_FOUND));
 
         if (!character.getUserId().equals(userId)) {
             throw new CharacterException(CharacterErrorCode.NOT_CHARACTER_OWNER);
         }
 
-        var beforeStates = p5laris.character.domain.application.dto.CareActionResponse.States.builder()
-                .hunger(character.getFullness())
-                .energy(character.getEnergy())
-                .affection(character.getAffection())
-                .build();
+        character.calculateTimeBasedStatDecrease();
+        String characterTypeCode = character.getCharacterType().getCode();
+        var growth = buildGrowth(character);
 
-        character.applyCare(actionType, CARE_AMOUNT);
-
-        var afterStates = p5laris.character.domain.application.dto.CareActionResponse.States.builder()
-                .hunger(character.getFullness())
-                .energy(character.getEnergy())
-                .affection(character.getAffection())
-                .build();
-
-        CharacterCareLog careLog = CharacterCareLog.builder()
-                .userId(userId)
-                .characterId(characterId)
-                .itemId(resolvedItemId)
-                .actionType(actionType)
-                .beforeStateJson(toStateJson(beforeStates))
-                .afterStateJson(toStateJson(afterStates))
-                .idempotencyKey(idempotencyKey)
-                .build();
-        CharacterCareLog savedCareLog = characterCareLogRepository.save(careLog);
-
-        try {
-            deadlineItemStub().useItem(
-                    UseItemRequest.newBuilder()
-                            .setUserId(userId)
-                            .setItemId(resolvedItemId)
-                            .setQuantity(1)
-                            .setRefType("CARE_ACTION")
-                            .setRefId(savedCareLog.getId() != null ? savedCareLog.getId() : 0L)
-                            .setIdempotencyKey(idempotencyKey)
-                            .build()
-            );
-        } catch (Exception e) {
-            log.warn("돌보기 아이템 사용 gRPC 호출에 실패했습니다. userId={}, itemId={}, careLogId={}, statusCode={}, errorCode={}",
-                    userId, resolvedItemId, savedCareLog.getId(), grpcStatusCode(e), grpcErrorCode(e), e);
-            throw mapItemFailure(e);
-        }
-
-        return p5laris.character.domain.application.dto.CareActionResponse.builder()
-                .careLogId(savedCareLog.getId())
-                .characterId(characterId)
-                .actionType(actionType.name())
-                .consumedItemId(resolvedItemId)
-                .consumedQuantity(1)
-                .beforeStates(beforeStates)
-                .afterStates(afterStates)
-                .characterMessage(characterMessage(actionType))
+        return CharacterTalkContextResponse.builder()
+                .characterId(character.getId())
+                .characterTypeCode(characterTypeCode)
+                .characterName(character.getName())
+                .hunger(buildTalkStateDetail(character.getFullness(), StatType.FULLNESS))
+                .energy(buildTalkStateDetail(character.getEnergy(), StatType.ENERGY))
+                .affection(buildTalkStateDetail(character.getAffection(), StatType.AFFECTION))
+                .growth(growth)
+                .memories(findRecentUnlockedMemories(userId, characterId, memoryLimit))
+                .storyProgress(buildStoryProgress(userId, characterId, characterTypeCode, growth.level()))
                 .build();
     }
 
@@ -343,14 +550,14 @@ public class CharacterService {
             throw new CharacterException(CharacterErrorCode.NOT_CHARACTER_OWNER);
         }
 
-        // 2. verify user owns the skin item.
+        // 스킨 장착 전 유저가 해당 스킨 아이템을 보유했는지 확인한다.
         if (itemId != null && itemId > 0) {
             try {
                 findOwnedItem(userId, itemId, "SKIN");
             } catch (CharacterException e) {
                 throw e;
             } catch (Exception e) {
-                log.error("Failed to verify skin ownership for userId: {}, itemId: {}", userId, itemId, e);
+                log.error("스킨 보유 여부를 확인하지 못했습니다. userId={}, itemId={}", userId, itemId, e);
                 throw new CharacterException(CharacterErrorCode.ITEM_SERVICE_CALL_FAILED);
             }
         }
@@ -374,6 +581,10 @@ public class CharacterService {
         try {
             var beforeNode = objectMapper.readTree(log.getBeforeStateJson());
             var afterNode = objectMapper.readTree(log.getAfterStateJson());
+            var beforeGrowth = parseGrowth(beforeNode.get("growth"));
+            var afterGrowth = parseGrowth(afterNode.get("growth"));
+            int expGained = afterNode.path("expGained").asInt(0);
+            boolean levelUp = afterNode.path("levelUp").asBoolean(false);
 
             return p5laris.character.domain.application.dto.CareActionResponse.builder()
                     .careLogId(log.getId())
@@ -381,21 +592,372 @@ public class CharacterService {
                     .actionType(log.getActionType().name())
                     .consumedItemId(log.getItemId())
                     .consumedQuantity(log.getItemId() != null ? 1 : 0)
-                    .beforeStates(p5laris.character.domain.application.dto.CareActionResponse.States.builder()
-                            .hunger(beforeNode.get("fullness").asInt())
-                            .energy(beforeNode.get("energy").asInt())
-                            .affection(beforeNode.get("affection").asInt())
-                            .build())
-                    .afterStates(p5laris.character.domain.application.dto.CareActionResponse.States.builder()
-                            .hunger(afterNode.get("fullness").asInt())
-                            .energy(afterNode.get("energy").asInt())
-                            .affection(afterNode.get("affection").asInt())
-                            .build())
+                    .beforeStates(parseStates(beforeNode))
+                    .afterStates(parseStates(afterNode))
+                    .beforeGrowth(beforeGrowth)
+                    .afterGrowth(afterGrowth)
+                    .expGained(expGained)
+                    .levelUp(levelUp)
                     .characterMessage(characterMessage(log.getActionType()))
                     .build();
         } catch (Exception e) {
-            throw new RuntimeException("Failed to parse cached care log state", e);
+            throw new RuntimeException("저장된 돌봄 로그 상태를 파싱하지 못했습니다.", e);
         }
+    }
+
+    private List<CharacterStoryFragment> findStoryCandidates(
+            String characterTypeCode,
+            CharacterStoryTriggerType triggerType,
+            int level
+    ) {
+        List<String> characterTypeCodes = List.of(characterTypeCode, CharacterStoryFragment.COMMON_CHARACTER_TYPE_CODE);
+        return characterStoryFragmentRepository
+                .findByActiveTrueAndCharacterTypeCodeInAndTriggerTypeAndMinLevelLessThanEqualOrderBySortOrderAscIdAsc(
+                        characterTypeCodes,
+                        triggerType,
+                        level
+                )
+                .stream()
+                .filter(fragment -> fragment.forCharacter(characterTypeCode))
+                .filter(fragment -> fragment.forCurrentLevel(level))
+                .sorted(storyFragmentPriority(characterTypeCode))
+                .toList();
+    }
+
+    private List<CharacterTalkContextResponse.Memory> findRecentUnlockedMemories(
+            Long userId,
+            Long characterId,
+            int requestedLimit
+    ) {
+        int limit = Math.max(0, Math.min(requestedLimit, 10));
+        if (limit == 0) {
+            return List.of();
+        }
+
+        List<UserCharacterStoryUnlock> unlocks = userCharacterStoryUnlockRepository
+                .findByUserIdAndUserCharacterIdOrderByUnlockedAtDesc(
+                        userId,
+                        characterId,
+                        PageRequest.of(0, limit)
+                );
+        if (unlocks.isEmpty()) {
+            return List.of();
+        }
+
+        List<Long> fragmentIds = unlocks.stream()
+                .map(UserCharacterStoryUnlock::getStoryFragmentId)
+                .toList();
+        Map<Long, CharacterStoryFragment> fragmentsById = new LinkedHashMap<>();
+        characterStoryFragmentRepository.findAllById(fragmentIds)
+                .forEach(fragment -> fragmentsById.put(fragment.getId(), fragment));
+
+        return unlocks.stream()
+                .map(unlock -> toTalkMemory(unlock, fragmentsById.get(unlock.getStoryFragmentId())))
+                .filter(memory -> memory != null)
+                .toList();
+    }
+
+    private CharacterTalkContextResponse.Memory toTalkMemory(
+            UserCharacterStoryUnlock unlock,
+            CharacterStoryFragment fragment
+    ) {
+        if (fragment == null) {
+            return null;
+        }
+
+        return CharacterTalkContextResponse.Memory.builder()
+                .memoryKey(fragment.getMemoryKey())
+                .title(fragment.getTitle())
+                .storyText(fragment.getStoryText())
+                .fragmentType(fragment.getFragmentType().name())
+                .unlockedLevel(unlock.getUnlockedLevel())
+                .unlockedAt(toIsoInstant(unlock.getUnlockedAt()))
+                .build();
+    }
+
+    private CharacterTalkContextResponse.StoryProgress buildStoryProgress(
+            Long userId,
+            Long characterId,
+            String characterTypeCode,
+            int currentLevel
+    ) {
+        List<String> characterTypeCodes = storyCharacterTypeCodes(characterTypeCode);
+        List<CharacterStoryFragmentType> unlockableTypes = unlockableStoryTypes();
+        int totalCount = Math.toIntExact(characterStoryFragmentRepository
+                .countByActiveTrueAndCharacterTypeCodeInAndFragmentTypeIn(characterTypeCodes, unlockableTypes));
+        int unlockedCount = Math.min(
+                Math.toIntExact(userCharacterStoryUnlockRepository.countByUserIdAndUserCharacterId(userId, characterId)),
+                totalCount
+        );
+
+        return CharacterTalkContextResponse.StoryProgress.builder()
+                .unlockedMemoryCount(unlockedCount)
+                .totalMemoryCount(totalCount)
+                .allUnlocked(totalCount > 0 && unlockedCount >= totalCount)
+                .nextMemoryHint(findNextMemoryHint(userId, characterId, characterTypeCodes, unlockableTypes, currentLevel))
+                .build();
+    }
+
+    private CharacterTalkContextResponse.UnlockHint findNextMemoryHint(
+            Long userId,
+            Long characterId,
+            List<String> characterTypeCodes,
+            List<CharacterStoryFragmentType> unlockableTypes,
+            int currentLevel
+    ) {
+        List<CharacterStoryFragment> candidates = characterStoryFragmentRepository
+                .findByActiveTrueAndCharacterTypeCodeInAndFragmentTypeInOrderByMinLevelAscSortOrderAscIdAsc(
+                        characterTypeCodes,
+                        unlockableTypes
+                )
+                .stream()
+                .filter(fragment -> fragment.forCharacter(characterTypeCodes.get(0)))
+                .toList();
+        if (candidates.isEmpty()) {
+            return null;
+        }
+
+        Set<Long> unlockedFragmentIds = findUnlockedFragmentIds(userId, characterId, candidates);
+        CharacterStoryFragment next = candidates.stream()
+                .filter(fragment -> fragment.getId() != null)
+                .filter(fragment -> !unlockedFragmentIds.contains(fragment.getId()))
+                .findFirst()
+                .orElse(null);
+        if (next == null) {
+            return null;
+        }
+
+        int requiredLevel = Math.max(currentLevel, next.getMinLevel());
+        return CharacterTalkContextResponse.UnlockHint.builder()
+                .requiredLevel(requiredLevel)
+                .hintMessage(nextMemoryHintMessage(currentLevel, next.getMinLevel()))
+                .build();
+    }
+
+    private String nextMemoryHintMessage(int currentLevel, int requiredLevel) {
+        if (requiredLevel <= currentLevel) {
+            return "별친구와 한 번 더 상호작용하면 새로운 기억이 열릴 수 있어요.";
+        }
+        return "다음 기억은 Lv." + requiredLevel + "에서 열려요.";
+    }
+
+    private List<String> storyCharacterTypeCodes(String characterTypeCode) {
+        return List.of(characterTypeCode, CharacterStoryFragment.COMMON_CHARACTER_TYPE_CODE);
+    }
+
+    private List<CharacterStoryFragmentType> unlockableStoryTypes() {
+        return List.of(CharacterStoryFragmentType.LORE, CharacterStoryFragmentType.EASTER_EGG);
+    }
+
+    private String toIsoInstant(Instant value) {
+        return value != null ? value.toString() : "";
+    }
+
+    private CharacterTalkContextResponse.StateDetail buildTalkStateDetail(int value, StatType statType) {
+        var detail = buildStateDetail(value, statType);
+        return CharacterTalkContextResponse.StateDetail.builder()
+                .value(detail.value())
+                .label(detail.label())
+                .grade(detail.grade())
+                .build();
+    }
+
+    private Comparator<CharacterStoryFragment> storyFragmentPriority(String characterTypeCode) {
+        return Comparator
+                .comparingInt((CharacterStoryFragment fragment) ->
+                        characterTypeCode.equals(fragment.getCharacterTypeCode()) ? 0 : 1)
+                .thenComparingInt(CharacterStoryFragment::getMinLevel)
+                .thenComparingInt(CharacterStoryFragment::getSortOrder)
+                .thenComparing(fragment -> fragment.getId() != null ? fragment.getId() : Long.MAX_VALUE);
+    }
+
+    private Set<Long> findUnlockedFragmentIds(
+            Long userId,
+            Long characterId,
+            List<CharacterStoryFragment> candidates
+    ) {
+        List<Long> unlockableFragmentIds = candidates.stream()
+                .filter(CharacterStoryFragment::unlockable)
+                .map(CharacterStoryFragment::getId)
+                .filter(id -> id != null && id > 0)
+                .toList();
+        if (unlockableFragmentIds.isEmpty()) {
+            return Set.of();
+        }
+
+        List<UserCharacterStoryUnlock> unlocks = userCharacterStoryUnlockRepository
+                .findByUserIdAndUserCharacterIdAndStoryFragmentIdIn(userId, characterId, unlockableFragmentIds);
+        Set<Long> unlockedIds = new HashSet<>();
+        unlocks.forEach(unlock -> unlockedIds.add(unlock.getStoryFragmentId()));
+        return unlockedIds;
+    }
+
+    private CharacterStoryFragment chooseRandomNewUnlockableFragment(
+            List<CharacterStoryFragment> candidates,
+            Set<Long> unlockedFragmentIds
+    ) {
+        List<CharacterStoryFragment> newFragments = candidates.stream()
+                .filter(CharacterStoryFragment::unlockable)
+                .filter(fragment -> fragment.getId() != null)
+                .filter(fragment -> !unlockedFragmentIds.contains(fragment.getId()))
+                .toList();
+        return chooseRandom(newFragments);
+    }
+
+    private SelectedStoryFragment chooseRandomSeenFragment(
+            List<CharacterStoryFragment> candidates,
+            Set<Long> unlockedFragmentIds
+    ) {
+        List<SelectedStoryFragment> seenFragments = new ArrayList<>();
+        for (CharacterStoryFragment fragment : candidates) {
+            if (fragment.getFragmentType() == CharacterStoryFragmentType.COMMON) {
+                seenFragments.add(new SelectedStoryFragment(fragment, false));
+                continue;
+            }
+
+            if (fragment.unlockable()
+                    && fragment.getId() != null
+                    && unlockedFragmentIds.contains(fragment.getId())) {
+                seenFragments.add(new SelectedStoryFragment(fragment, true));
+            }
+        }
+        return chooseRandom(seenFragments);
+    }
+
+    private <T> T chooseRandom(List<T> values) {
+        if (values == null || values.isEmpty()) {
+            return null;
+        }
+        return values.get(ThreadLocalRandom.current().nextInt(values.size()));
+    }
+
+    private void saveStoryUnlock(
+            Long userId,
+            Long characterId,
+            int level,
+            CharacterStoryFragment fragment
+    ) {
+        userCharacterStoryUnlockRepository.save(UserCharacterStoryUnlock.builder()
+                .userId(userId)
+                .userCharacterId(characterId)
+                .storyFragmentId(fragment.getId())
+                .memoryKey(fragment.getMemoryKey())
+                .unlockedLevel(level)
+                .build());
+    }
+
+    private CharacterInteractionResponse toInteractionResponse(
+            UserCharacter character,
+            int level,
+            CharacterStoryFragment fragment,
+            boolean memoryUnlocked,
+            boolean alreadyUnlocked
+    ) {
+        CharacterInteractionResponse.Memory memory = null;
+        if (fragment.unlockable()) {
+            memory = CharacterInteractionResponse.Memory.builder()
+                    .memoryKey(fragment.getMemoryKey())
+                    .title(useCharacterName(fragment.getTitle(), character))
+                    .storyText(useCharacterName(fragment.getStoryText(), character))
+                    .build();
+        }
+
+        return CharacterInteractionResponse.builder()
+                .characterId(character.getId())
+                .characterTypeCode(character.getCharacterType().getCode())
+                .level(level)
+                .fragmentType(fragment.getFragmentType().name())
+                .triggerType(fragment.getTriggerType().name())
+                .message(useCharacterName(fragment.getMessage(), character))
+                .interpretation(useCharacterName(fragment.getInterpretation(), character))
+                .memoryUnlocked(memoryUnlocked)
+                .alreadyUnlocked(alreadyUnlocked)
+                .memory(memory)
+                .build();
+    }
+
+    private CharacterInteractionResponse fallbackInteractionResponse(
+            UserCharacter character,
+            int level,
+            CharacterStoryTriggerType triggerType
+    ) {
+        String characterTypeCode = character.getCharacterType().getCode();
+        String message = switch (characterTypeCode) {
+            case "MUMU" -> "무... 무무.";
+            case "NOVA" -> "작은 빛도 천천히 남겨둘게.";
+            case "JJORY" -> "흠흠, 지금도 기록 중임!";
+            default -> "오늘의 작은 기록을 별친구가 지켜보고 있어요.";
+        };
+        String interpretation = switch (characterTypeCode) {
+            case "MUMU" -> characterSubject(character) + " 아직 꺼내지 못한 기억을 조용히 품고 있는 것 같아요.";
+            case "NOVA" -> "노바가 오늘의 작은 빛을 서두르지 않고 바라보는 것 같아요.";
+            case "JJORY" -> "쪼리가 지금의 작은 움직임도 원정 기록에 남기려는 것 같아요.";
+            default -> "별친구가 오늘의 작은 기록을 곁에서 지켜주는 것 같아요.";
+        };
+
+        return CharacterInteractionResponse.builder()
+                .characterId(character.getId())
+                .characterTypeCode(characterTypeCode)
+                .level(level)
+                .fragmentType(CharacterStoryFragmentType.COMMON.name())
+                .triggerType(triggerType.name())
+                .message(message)
+                .interpretation(interpretation)
+                .memoryUnlocked(false)
+                .alreadyUnlocked(false)
+                .memory(null)
+                .build();
+    }
+
+    private String useCharacterName(String value, UserCharacter character) {
+        if (value == null || value.isBlank() || !"MUMU".equals(character.getCharacterType().getCode())) {
+            return value;
+        }
+
+        String name = displayCharacterName(character.getName());
+        return value
+                .replace("무무가", name + subjectParticle(name))
+                .replace("무무는", name + topicParticle(name))
+                .replace("무무도", name + "도")
+                .replace("무무에게", name + "에게")
+                .replace("무무와", name + companionParticle(name))
+                .replace("무무의", name + "의");
+    }
+
+    private String characterSubject(UserCharacter character) {
+        String name = displayCharacterName(character.getName());
+        return name + subjectParticle(name);
+    }
+
+    private String displayCharacterName(String name) {
+        if (name == null || name.isBlank()) {
+            return "무무";
+        }
+        return name.trim();
+    }
+
+    private String subjectParticle(String name) {
+        return hasFinalConsonant(name) ? "이" : "가";
+    }
+
+    private String topicParticle(String name) {
+        return hasFinalConsonant(name) ? "은" : "는";
+    }
+
+    private String companionParticle(String name) {
+        return hasFinalConsonant(name) ? "과" : "와";
+    }
+
+    private boolean hasFinalConsonant(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+
+        int codePoint = value.codePointBefore(value.length());
+        return codePoint >= '가' && codePoint <= '힣' && ((codePoint - '가') % 28) != 0;
+    }
+
+    private record SelectedStoryFragment(CharacterStoryFragment fragment, boolean alreadyUnlocked) {
     }
 
     private ActionType parseActionType(String actionTypeStr) {
@@ -404,6 +966,66 @@ public class CharacterService {
         } catch (IllegalArgumentException e) {
             throw new CharacterException(CharacterErrorCode.INVALID_ACTION_TYPE);
         }
+    }
+
+    private CharacterExpSourceType parseExpSourceType(String sourceTypeValue) {
+        if (sourceTypeValue == null || sourceTypeValue.isBlank()) {
+            throw new CharacterException(CharacterErrorCode.INVALID_EXP_GRANT_REQUEST);
+        }
+        try {
+            return CharacterExpSourceType.valueOf(sourceTypeValue.trim());
+        } catch (IllegalArgumentException e) {
+            throw new CharacterException(CharacterErrorCode.INVALID_EXP_GRANT_REQUEST);
+        }
+    }
+
+    private void validateExpGrantRequest(Long sourceId, int expAmount, String idempotencyKey) {
+        if (sourceId == null || sourceId <= 0 || expAmount <= 0) {
+            throw new CharacterException(CharacterErrorCode.INVALID_EXP_GRANT_REQUEST);
+        }
+        if (idempotencyKey == null || idempotencyKey.trim().isEmpty() || idempotencyKey.length() > 120) {
+            throw new CharacterException(CharacterErrorCode.INVALID_IDEMPOTENCY_KEY);
+        }
+    }
+
+    private GrantCharacterExpResponse replayMatchingExpLog(
+            CharacterExpLog expLog,
+            Long userId,
+            Long characterId,
+            CharacterExpSourceType sourceType,
+            Long sourceId,
+            String idempotencyKey
+    ) {
+        if (!expLog.matches(userId, characterId, sourceType, sourceId, idempotencyKey)) {
+            throw new CharacterException(CharacterErrorCode.INVALID_EXP_GRANT_REQUEST);
+        }
+        return replayExpLog(expLog);
+    }
+
+    private GrantCharacterExpResponse replayMatchingSourceExpLog(
+            CharacterExpLog expLog,
+            Long userId,
+            Long characterId,
+            CharacterExpSourceType sourceType,
+            Long sourceId
+    ) {
+        if (!expLog.matchesSource(userId, characterId, sourceType, sourceId)) {
+            throw new CharacterException(CharacterErrorCode.INVALID_EXP_GRANT_REQUEST);
+        }
+        return replayExpLog(expLog);
+    }
+
+    private GrantCharacterExpResponse replayExpLog(CharacterExpLog expLog) {
+        var beforeGrowth = toGrowthResponse(CharacterGrowthPolicy.calculate(expLog.getBeforeExp()));
+        var afterGrowth = toGrowthResponse(CharacterGrowthPolicy.calculate(expLog.getAfterExp()));
+        return GrantCharacterExpResponse.builder()
+                .characterId(expLog.getCharacterId())
+                .expGained(expLog.getExpAmount())
+                .beforeGrowth(beforeGrowth)
+                .afterGrowth(afterGrowth)
+                .levelUp(expLog.getAfterLevel() > expLog.getBeforeLevel())
+                .alreadyProcessed(true)
+                .build();
     }
 
     private long requirePositiveItemId(Long itemId) {
@@ -483,11 +1105,126 @@ public class CharacterService {
         return e.getClass().getSimpleName();
     }
 
-    private String toStateJson(p5laris.character.domain.application.dto.CareActionResponse.States states) {
-        return String.format(
-                "{\"fullness\":%d,\"energy\":%d,\"affection\":%d}",
-                states.hunger(), states.energy(), states.affection()
-        );
+    private int countTodayEarnedCareExp(Long characterId, ActionType actionType) {
+        LocalDate today = LocalDate.now(SERVICE_ZONE);
+        Instant startAt = today.atStartOfDay(SERVICE_ZONE).toInstant();
+        Instant endAt = today.plusDays(1).atStartOfDay(SERVICE_ZONE).toInstant();
+
+        List<CharacterCareLog> todayLogs = characterCareLogRepository
+                .findByCharacterIdAndActionTypeAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(
+                        characterId,
+                        actionType,
+                        startAt,
+                        endAt
+                );
+        if (todayLogs == null || todayLogs.isEmpty()) {
+            return 0;
+        }
+
+        return (int) todayLogs.stream()
+                .filter(this::hasEarnedCareExp)
+                .count();
+    }
+
+    private boolean hasEarnedCareExp(CharacterCareLog careLog) {
+        try {
+            JsonNode afterNode = objectMapper.readTree(careLog.getAfterStateJson());
+            return afterNode.path("expGained").asInt(0) > 0;
+        } catch (Exception e) {
+            log.debug("돌봄 경험치 스냅샷을 읽지 못했습니다. careLogId={}", careLog.getId());
+            return false;
+        }
+    }
+
+    private String toStateJson(
+            p5laris.character.domain.application.dto.CareActionResponse.States states,
+            p5laris.character.domain.application.dto.CharacterGrowthResponse growth
+    ) {
+        return toStateJson(states, growth, null, null);
+    }
+
+    private String toStateJson(
+            p5laris.character.domain.application.dto.CareActionResponse.States states,
+            p5laris.character.domain.application.dto.CharacterGrowthResponse growth,
+            Integer expGained,
+            Boolean levelUp
+    ) {
+        try {
+            ObjectNode root = objectMapper.createObjectNode();
+            root.put("fullness", states.hunger());
+            root.put("energy", states.energy());
+            root.put("affection", states.affection());
+            root.set("growth", toGrowthNode(growth));
+            if (expGained != null) {
+                root.put("expGained", expGained);
+            }
+            if (levelUp != null) {
+                root.put("levelUp", levelUp);
+            }
+            return objectMapper.writeValueAsString(root);
+        } catch (Exception e) {
+            throw new IllegalStateException("돌봄 상태 스냅샷 직렬화에 실패했습니다.", e);
+        }
+    }
+
+    private ObjectNode toGrowthNode(p5laris.character.domain.application.dto.CharacterGrowthResponse growth) {
+        p5laris.character.domain.application.dto.CharacterGrowthResponse safeGrowth =
+                growth != null ? growth : toGrowthResponse(CharacterGrowthPolicy.calculate(0));
+        ObjectNode growthNode = objectMapper.createObjectNode();
+        growthNode.put("level", safeGrowth.level());
+        growthNode.put("exp", safeGrowth.exp());
+        growthNode.put("currentLevelExp", safeGrowth.currentLevelExp());
+        growthNode.put("nextLevelExp", safeGrowth.nextLevelExp());
+        growthNode.put("expToNextLevel", safeGrowth.expToNextLevel());
+        growthNode.put("progressPercent", safeGrowth.progressPercent());
+        growthNode.put("growthStage", safeGrowth.growthStage());
+        growthNode.put("growthStageLabel", safeGrowth.growthStageLabel());
+        growthNode.put("maxLevel", safeGrowth.maxLevel());
+        return growthNode;
+    }
+
+    private p5laris.character.domain.application.dto.CareActionResponse.States parseStates(JsonNode node) {
+        return p5laris.character.domain.application.dto.CareActionResponse.States.builder()
+                .hunger(node.path("fullness").asInt())
+                .energy(node.path("energy").asInt())
+                .affection(node.path("affection").asInt())
+                .build();
+    }
+
+    private p5laris.character.domain.application.dto.CharacterGrowthResponse parseGrowth(JsonNode growthNode) {
+        if (growthNode == null || growthNode.isMissingNode() || growthNode.isNull()) {
+            return toGrowthResponse(CharacterGrowthPolicy.calculate(0));
+        }
+
+        int exp = growthNode.path("exp").asInt(0);
+        var fallback = CharacterGrowthPolicy.calculate(exp);
+        return p5laris.character.domain.application.dto.CharacterGrowthResponse.builder()
+                .level(growthNode.path("level").asInt(fallback.level()))
+                .exp(exp)
+                .currentLevelExp(growthNode.path("currentLevelExp").asInt(fallback.currentLevelExp()))
+                .nextLevelExp(growthNode.path("nextLevelExp").asInt(fallback.nextLevelExp()))
+                .expToNextLevel(growthNode.path("expToNextLevel").asInt(fallback.expToNextLevel()))
+                .progressPercent(growthNode.path("progressPercent").asInt(fallback.progressPercent()))
+                .growthStage(growthNode.path("growthStage").asText(fallback.growthStage().name()))
+                .growthStageLabel(growthNode.path("growthStageLabel").asText(fallback.growthStageLabel()))
+                .maxLevel(growthNode.path("maxLevel").asBoolean(fallback.maxLevel()))
+                .build();
+    }
+
+    private p5laris.character.domain.application.dto.CharacterGrowthResponse toGrowthResponse(
+            CharacterGrowthPolicy.Growth growth
+    ) {
+        return p5laris.character.domain.application.dto.CharacterGrowthResponse.builder()
+                .level(growth.level())
+                .exp(growth.exp())
+                .currentLevelExp(growth.currentLevelExp())
+                .nextLevelExp(growth.nextLevelExp())
+                .expToNextLevel(growth.expToNextLevel())
+                .progressPercent(growth.progressPercent())
+                .growthStage(growth.growthStage().name())
+                .growthStageLabel(growth.growthStageLabel())
+                .maxLevel(growth.maxLevel())
+                .build();
     }
 
     private String characterMessage(ActionType actionType) {

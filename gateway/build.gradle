@@ -1,7 +1,8 @@
 plugins {
     id 'java'
-    id 'org.springframework.boot' version '3.5.14'
-    id 'io.spring.dependency-management' version '1.1.7'
+    alias(libs.plugins.spring.boot)
+    alias(libs.plugins.dependency.management)
+    alias(libs.plugins.asciidoctor.convert)
 }
 
 group = 'p5laris'
@@ -16,20 +17,24 @@ java {
 
 dependencies {
     implementation project(':proto')
+    implementation project(':common')
 
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
-    implementation 'me.paulschwarz:spring-dotenv:4.0.0'
-    implementation 'net.devh:grpc-client-spring-boot-starter:3.1.0.RELEASE'
+    implementation libs.spring.dotenv
+    implementation libs.grpc.starter.client
 
-    implementation 'io.jsonwebtoken:jjwt-api:0.12.5'
+    implementation libs.jjwt.api
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
-    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.5'
-    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.5'
+    runtimeOnly libs.jjwt.impl
+    runtimeOnly libs.jjwt.jackson
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.restdocs:spring-restdocs-mockmvc'
+    testImplementation 'org.testcontainers:junit-jupiter'
+    testImplementation 'org.testcontainers:testcontainers'
     runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
     testCompileOnly 'org.projectlombok:lombok'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
@@ -38,4 +43,17 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+    outputs.dir(file('build/generated-snippets'))
+}
+
+tasks.named('coverageTest') {
+    outputs.dir(file('build/generated-snippets'))
+}
+
+tasks.named('asciidoctor') {
+    dependsOn(tasks.named('coverageTest'))
+    inputs.dir(file('build/generated-snippets'))
+    attributes 'snippets': file('build/generated-snippets')
+    outputDir = file("$rootDir/docs/api")
+    baseDirFollowsSourceFile()
 }

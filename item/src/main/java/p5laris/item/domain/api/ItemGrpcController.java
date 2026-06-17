@@ -45,6 +45,8 @@ public class ItemGrpcController extends ItemServiceGrpc.ItemServiceImplBase {
             PurchaseItemResponse response = itemService.purchaseItem(request);
             responseObserver.onNext(response);
             responseObserver.onCompleted();
+        } catch (p5laris.item.domain.exception.ItemException e) {
+            responseObserver.onError(toStatus(e).withDescription(safeDescription(e)).asRuntimeException());
         } catch (io.grpc.StatusRuntimeException e) {
             responseObserver.onError(e);
         } catch (Exception e) {
@@ -59,8 +61,7 @@ public class ItemGrpcController extends ItemServiceGrpc.ItemServiceImplBase {
             responseObserver.onNext(response);
             responseObserver.onCompleted();
         } catch (p5laris.item.domain.exception.ItemException e) {
-            responseObserver.onError(
-                    Status.INTERNAL.withDescription(e.getErrorCode().getCode()).asRuntimeException());
+            responseObserver.onError(toStatus(e).withDescription(safeDescription(e)).asRuntimeException());
         } catch (Exception e) {
             responseObserver.onError(internalError("아이템 사용", e));
         }
@@ -73,11 +74,32 @@ public class ItemGrpcController extends ItemServiceGrpc.ItemServiceImplBase {
             responseObserver.onNext(response);
             responseObserver.onCompleted();
         } catch (p5laris.item.domain.exception.ItemException e) {
-            responseObserver.onError(
-                    Status.INTERNAL.withDescription(e.getErrorCode().getCode()).asRuntimeException());
+            responseObserver.onError(toStatus(e).withDescription(safeDescription(e)).asRuntimeException());
         } catch (Exception e) {
             responseObserver.onError(internalError("스킨 에셋 조회", e));
         }
+    }
+
+    private Status toStatus(p5laris.item.domain.exception.ItemException e) {
+        p5laris.item.core.exception.ErrorCode errorCode = e.getErrorCode();
+        if (errorCode instanceof p5laris.item.domain.exception.ItemErrorCode) {
+            return switch ((p5laris.item.domain.exception.ItemErrorCode) errorCode) {
+                case ITEM_NOT_FOUND, USER_ITEM_NOT_FOUND -> Status.NOT_FOUND;
+                case ITEM_ALREADY_OWNED -> Status.ALREADY_EXISTS;
+                case STAR_PIECE_NOT_ENOUGH, ITEM_QUANTITY_NOT_ENOUGH -> Status.FAILED_PRECONDITION;
+                case WALLET_SERVICE_CALL_FAILED -> Status.UNAVAILABLE;
+                case INVALID_ITEM_TYPE, INVALID_CHARACTER_TYPE -> Status.INVALID_ARGUMENT;
+            };
+        }
+        return Status.INTERNAL;
+    }
+
+    private String safeDescription(p5laris.item.domain.exception.ItemException e) {
+        p5laris.item.core.exception.ErrorCode errorCode = e.getErrorCode();
+        if (errorCode instanceof Enum<?>) {
+            return ((Enum<?>) errorCode).name();
+        }
+        return errorCode.getCode();
     }
 
     private RuntimeException internalError(String operation, Exception e) {

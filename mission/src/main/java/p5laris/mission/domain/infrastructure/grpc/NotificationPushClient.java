@@ -18,6 +18,7 @@ public class NotificationPushClient {
     private static final String MISSION_OFFER_TITLE = "새 미션이 도착했어요";
     private static final String DEFAULT_MISSION_OFFER_BODY = "새 미션을 해볼까요?";
     private static final String MISSION_REWARD_RECOVERED_TITLE = "별조각 지급이 완료됐어요";
+    private static final String MISSION_REWARD_RECOVERED_IDEMPOTENCY_PREFIX = "MISSION_REWARD_RECOVERED:";
 
     @GrpcClient("notification")
     private NotificationServiceGrpc.NotificationServiceBlockingStub notificationStub;
@@ -40,6 +41,7 @@ public class NotificationPushClient {
                         .setNotificationType(NotificationType.NOTIFICATION_TYPE_MISSION)
                         .setTargetType(TargetType.TARGET_TYPE_MISSION)
                         .setTargetId(missionId)
+                        .setIdempotencyKey(MISSION_REWARD_RECOVERED_IDEMPOTENCY_PREFIX + missionId)
                         .build()
         );
     }

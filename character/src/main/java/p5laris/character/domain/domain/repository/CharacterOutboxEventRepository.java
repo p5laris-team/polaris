@@ -53,4 +53,6 @@ public interface CharacterOutboxEventRepository extends JpaRepository<CharacterO
             @Param("now") LocalDateTime now,
             Pageable pageable
     );
+
+    long countByStatus(CharacterOutboxEventStatus status);
 }

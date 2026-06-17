@@ -4,7 +4,7 @@ import lombok.Builder;
 import java.time.Instant;
 
 /**
- * DTO for UpdateCharacterName API spec 4.5.
+ * 캐릭터 이름 수정 응답 DTO다.
  */
 @Builder
 public record UpdateCharacterNameResponse(

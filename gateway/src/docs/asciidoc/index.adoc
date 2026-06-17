@@ -1,0 +1,64 @@
+= Polaris Gateway API
+:toc: left
+:toclevels: 2
+:sectlinks:
+:source-highlighter: highlightjs
+
+이 문서는 Spring REST Docs 테스트가 통과한 실제 요청과 응답으로 생성됩니다.
+
+== 공통 응답
+
+모든 JSON API는 `success`, `data`, `error` 필드를 갖는 공통 응답 형식을 사용합니다.
+인증이 필요한 API는 `Authorization: Bearer <access-token>` 헤더를 전달해야 합니다.
+
+== 1. 미션 완료
+
+=== 완료 답변 제출
+
+include::{snippets}/mission-complete/http-request.adoc[]
+include::{snippets}/mission-complete/request-headers.adoc[]
+include::{snippets}/mission-complete/path-parameters.adoc[]
+include::{snippets}/mission-complete/request-fields.adoc[]
+include::{snippets}/mission-complete/http-response.adoc[]
+include::{snippets}/mission-complete/response-fields.adoc[]
+
+== 2. 캐릭터 대화
+
+=== 날짜별 대화 메시지 조회
+
+include::{snippets}/character-talk-messages/http-request.adoc[]
+include::{snippets}/character-talk-messages/request-headers.adoc[]
+include::{snippets}/character-talk-messages/path-parameters.adoc[]
+include::{snippets}/character-talk-messages/query-parameters.adoc[]
+include::{snippets}/character-talk-messages/http-response.adoc[]
+include::{snippets}/character-talk-messages/response-fields.adoc[]
+
+== 3. 캐릭터 공유
+
+=== 공유 이벤트 및 보상 생성
+
+include::{snippets}/share-event-create/http-request.adoc[]
+include::{snippets}/share-event-create/request-headers.adoc[]
+include::{snippets}/share-event-create/request-fields.adoc[]
+include::{snippets}/share-event-create/http-response.adoc[]
+include::{snippets}/share-event-create/response-fields.adoc[]
+
+== 4. 온보딩 프로필
+
+=== 내 프로필 저장
+
+include::{snippets}/onboarding-profile-save/http-request.adoc[]
+include::{snippets}/onboarding-profile-save/request-headers.adoc[]
+include::{snippets}/onboarding-profile-save/request-fields.adoc[]
+include::{snippets}/onboarding-profile-save/http-response.adoc[]
+include::{snippets}/onboarding-profile-save/response-fields.adoc[]
+
+== 5. 아이템과 지갑
+
+=== 아이템 구매
+
+include::{snippets}/item-purchase/http-request.adoc[]
+include::{snippets}/item-purchase/request-headers.adoc[]
+include::{snippets}/item-purchase/request-fields.adoc[]
+include::{snippets}/item-purchase/http-response.adoc[]
+include::{snippets}/item-purchase/response-fields.adoc[]

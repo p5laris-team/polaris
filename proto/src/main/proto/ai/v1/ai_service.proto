@@ -10,6 +10,9 @@ service AiService {
   rpc PingPong(PingPongRequest) returns (PingPongResponse);
   rpc GenerateMissionTexts(GenerateMissionTextsRequest) returns (GenerateMissionTextsResponse);
   rpc GenerateTextEmbedding(GenerateTextEmbeddingRequest) returns (GenerateTextEmbeddingResponse);
+  rpc StreamCharacterTalk(StreamCharacterTalkRequest) returns (stream StreamCharacterTalkResponse);
+  rpc GetCharacterTalkMessages(GetCharacterTalkMessagesRequest) returns (GetCharacterTalkMessagesResponse);
+  rpc GetCharacterTalkDiaries(GetCharacterTalkDiariesRequest) returns (GetCharacterTalkDiariesResponse);
 }
 
 message PingPongRequest {
@@ -43,6 +46,7 @@ message GenerateMissionTextsRequest {
   string onboarding_context_json = 12;
   string recent_mission_context_json = 13;
   string request_id = 14;
+  string character_name = 15;
 }
 
 message GenerateMissionTextsResponse {
@@ -73,6 +77,87 @@ message GenerateTextEmbeddingResponse {
   int32 dimension = 2;
   repeated float values = 3;
   string request_id = 4;
+}
+
+message StreamCharacterTalkRequest {
+  int64 user_id = 1;
+  int64 character_id = 2;
+  string character_type = 3;
+  string character_name = 4;
+  string user_message = 5;
+  string interaction_type = 6;
+  string character_context_json = 7;
+  string request_id = 8;
+  string session_id = 9;
+}
+
+message StreamCharacterTalkResponse {
+  CharacterTalkStreamEventType event_type = 1;
+  string text = 2;
+  bool fallback_used = 3;
+  AiErrorType error_type = 4;
+  string request_id = 5;
+  string session_id = 6;
+  bool new_session = 7;
+  string expires_at = 8;
+  int32 history_window_turns = 9;
+  int32 memory_search_top_k = 10;
+  optional int32 actual_prompt_tokens = 11;
+  optional int32 actual_completion_tokens = 12;
+  optional int32 actual_total_tokens = 13;
+  int32 memory_hit_count = 14;
+}
+
+message GetCharacterTalkMessagesRequest {
+  int64 user_id = 1;
+  int64 character_id = 2;
+  string date = 3;
+}
+
+message CharacterTalkMessageItem {
+  string role = 1;
+  string content = 2;
+  int32 sequence = 3;
+  string request_id = 4;
+  bool fallback_used = 5;
+  string created_at = 6;
+  string session_id = 7;
+}
+
+message GetCharacterTalkMessagesResponse {
+  int64 character_id = 1;
+  string date = 2;
+  string latest_session_id = 3;
+  repeated CharacterTalkMessageItem messages = 4;
+}
+
+message GetCharacterTalkDiariesRequest {
+  int64 user_id = 1;
+  int64 character_id = 2;
+  string from_date = 3;
+  string to_date = 4;
+}
+
+message CharacterTalkDiaryItem {
+  string date = 1;
+  string summary = 2;
+  int64 source_session_id = 3;
+  string created_at = 4;
+}
+
+message GetCharacterTalkDiariesResponse {
+  int64 character_id = 1;
+  string from_date = 2;
+  string to_date = 3;
+  repeated CharacterTalkDiaryItem items = 4;
+}
+
+enum CharacterTalkStreamEventType {
+  CHARACTER_TALK_STREAM_EVENT_TYPE_UNSPECIFIED = 0;
+  CHARACTER_TALK_STREAM_EVENT_TYPE_DELTA = 1;
+  CHARACTER_TALK_STREAM_EVENT_TYPE_DONE = 2;
+  CHARACTER_TALK_STREAM_EVENT_TYPE_ERROR = 3;
+  CHARACTER_TALK_STREAM_EVENT_TYPE_META = 4;
 }
 
 enum AiGenerationStatus {

@@ -41,9 +41,10 @@ logging:
     console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%thread] [traceId=%X{traceId}] %logger{36} - %msg%n"
 
 grpc:
+  default-deadline-ms: 3000
   server:
     port: ${GRPC_SERVER_PORT}
-    reflection-service-enabled: true
+    reflection-service-enabled: ${GRPC_REFLECTION_ENABLED:false}
 
   client:
     user:
@@ -66,7 +67,14 @@ grpc:
       address: ${NOTIFICATION_GRPC_ADDRESS}
       negotiationType: plaintext
 
+internal:
+  grpc-auth:
+    enabled: ${INTERNAL_GRPC_AUTH_ENABLED:true}
+    token: ${INTERNAL_GRPC_AUTH_TOKEN}
+
 mission:
+  ai-text:
+    deadline-ms: ${MISSION_AI_TEXT_DEADLINE_MS:8000}
   weather:
     enabled: ${MISSION_WEATHER_ENABLED}
     provider: ${MISSION_WEATHER_PROVIDER}
@@ -87,6 +95,7 @@ mission:
     enabled: ${MISSION_RAG_ENABLED}
     embedding-model: ${MISSION_RAG_EMBEDDING_MODEL}
     embedding-dimension: ${MISSION_RAG_EMBEDDING_DIMENSION}
+    query-embedding-deadline-ms: ${MISSION_RAG_QUERY_EMBEDDING_DEADLINE_MS:1000}
     top-k: ${MISSION_RAG_TOP_K}
     similarity-threshold: ${MISSION_RAG_SIMILARITY_THRESHOLD}
     fallback-to-recent-memory: ${MISSION_RAG_FALLBACK_TO_RECENT_MEMORY}
@@ -96,6 +105,7 @@ mission:
     initial-delay-ms: ${MISSION_MEMORY_EMBEDDING_INITIAL_DELAY_MS}
     batch-size: ${MISSION_MEMORY_EMBEDDING_BATCH_SIZE}
     max-attempts: ${MISSION_MEMORY_EMBEDDING_MAX_ATTEMPTS}
+    embedding-deadline-ms: ${MISSION_MEMORY_EMBEDDING_DEADLINE_MS:3000}
     processing-timeout-seconds: ${MISSION_MEMORY_EMBEDDING_PROCESSING_TIMEOUT_SECONDS}
     retry-initial-delay-seconds: ${MISSION_MEMORY_EMBEDDING_RETRY_INITIAL_DELAY_SECONDS}
     retry-max-delay-seconds: ${MISSION_MEMORY_EMBEDDING_RETRY_MAX_DELAY_SECONDS}
@@ -110,6 +120,8 @@ mission:
     retry-max-delay-seconds: ${MISSION_REWARD_OUTBOX_RETRY_MAX_DELAY_SECONDS}
   reward-wallet:
     deadline-ms: ${MISSION_REWARD_WALLET_DEADLINE_MS}
+  character-exp:
+    deadline-ms: ${MISSION_CHARACTER_EXP_DEADLINE_MS}
 
 management:
   endpoints:

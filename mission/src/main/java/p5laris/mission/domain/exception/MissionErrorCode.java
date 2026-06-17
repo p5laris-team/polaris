@@ -17,7 +17,8 @@ public enum MissionErrorCode implements ErrorCode {
     MISSION_ANSWER_INVALID("MISSION-007", "완료 답변은 1자 이상 300자 이하로 입력해야 합니다."),
     MISSION_REWARD_FAILED("MISSION-008", "미션 완료 보상 지급에 실패했습니다. 잠시 후 다시 시도해 주세요."),
     MISSION_REJECT_LIMIT_EXCEEDED("MISSION-009", "오늘 미션 거절 가능 횟수를 초과했습니다."),
-    MISSION_FEEDBACK_INVALID("MISSION-010", "미션 피드백 요청이 올바르지 않습니다.");
+    MISSION_FEEDBACK_INVALID("MISSION-010", "미션 피드백 요청이 올바르지 않습니다."),
+    MISSION_CHARACTER_EXP_FAILED("MISSION-011", "미션 완료 캐릭터 경험치 지급에 실패했습니다.");
 
     private final String code;
     private final String message;
