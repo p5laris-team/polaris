@@ -111,6 +111,28 @@ class AiCharacterTalkServiceTest {
         assertFalse(emitter.fallbackUsed);
     }
 
+    @Test
+    @DisplayName("별친구 대화 - 무무 해석 뒤에 이어진 일반 문장은 화면에 흘리지 않는다")
+    void streamCharacterTalk_mumuDoesNotForwardTextAfterInterpretationClose() {
+        CharacterTalkGenerator generator = mock(CharacterTalkGenerator.class);
+        AiCharacterTalkService service = service(300, generator);
+        CapturingEmitter emitter = new CapturingEmitter();
+
+        doAnswer(invocation -> {
+            @SuppressWarnings("unchecked")
+            Consumer<String> consumer = invocation.getArgument(1);
+            consumer.accept("무무! (해석: 안녕!) 이야기 잘 이어지고 있다니 다행이야.");
+            return AiTokenUsage.empty();
+        }).when(generator).stream(any(), any());
+
+        service.streamCharacterTalk(command("MUMU", "안녕"), emitter);
+
+        assertEquals("무무! (해석: 안녕!)", emitter.joinedText());
+        assertTrue(emitter.completed);
+        assertTrue(emitter.fallbackUsed);
+        assertEquals(AiErrorType.INVALID_OUTPUT, emitter.errorType);
+    }
+
     private AiCharacterTalkService service(
             int maxUserMessageLength,
             CharacterTalkGenerator generator

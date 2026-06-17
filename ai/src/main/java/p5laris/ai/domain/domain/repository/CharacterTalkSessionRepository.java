@@ -3,6 +3,7 @@ package p5laris.ai.domain.domain.repository;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.repository.query.Param;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,23 +27,60 @@ public interface CharacterTalkSessionRepository extends JpaRepository<CharacterT
             """)
     Optional<CharacterTalkSession> findByIdForUpdate(@Param("id") Long id);
 
-    Optional<CharacterTalkSession> findFirstByUserIdAndCharacterIdAndStatusAndExpiresAtAfterOrderByLastMessageAtDesc(
-            Long userId,
-            Long characterId,
-            CharacterTalkSessionStatus status,
-            LocalDateTime now
+    @Query("""
+            select session
+            from CharacterTalkSession session
+            where session.userId = :userId
+              and session.characterId = :characterId
+              and session.status = :status
+              and session.expiresAt > :now
+              and session.startedAt >= :todayStart
+            order by session.lastMessageAt desc
+            """)
+    Optional<CharacterTalkSession> findReusableSession(
+            @Param("userId") Long userId,
+            @Param("characterId") Long characterId,
+            @Param("status") CharacterTalkSessionStatus status,
+            @Param("now") LocalDateTime now,
+            @Param("todayStart") LocalDateTime todayStart
     );
 
-    List<CharacterTalkSession> findTop10ByUserIdAndCharacterIdAndStatusAndExpiresAtLessThanEqualOrderByExpiresAtAsc(
-            Long userId,
-            Long characterId,
-            CharacterTalkSessionStatus status,
-            LocalDateTime now
+    @Query("""
+            select session
+            from CharacterTalkSession session
+            where session.userId = :userId
+              and session.characterId = :characterId
+              and session.status = :status
+              and (
+                  session.expiresAt <= :now
+                  or session.startedAt < :todayStart
+              )
+            order by session.startedAt asc, session.expiresAt asc
+            """)
+    List<CharacterTalkSession> findSummarizableSessionsForCharacter(
+            @Param("userId") Long userId,
+            @Param("characterId") Long characterId,
+            @Param("status") CharacterTalkSessionStatus status,
+            @Param("now") LocalDateTime now,
+            @Param("todayStart") LocalDateTime todayStart,
+            Pageable pageable
     );
 
-    List<CharacterTalkSession> findTop10ByStatusAndExpiresAtLessThanEqualOrderByExpiresAtAsc(
-            CharacterTalkSessionStatus status,
-            LocalDateTime now
+    @Query("""
+            select session
+            from CharacterTalkSession session
+            where session.status = :status
+              and (
+                  session.expiresAt <= :now
+                  or session.startedAt < :todayStart
+              )
+            order by session.startedAt asc, session.expiresAt asc
+            """)
+    List<CharacterTalkSession> findSummarizableSessions(
+            @Param("status") CharacterTalkSessionStatus status,
+            @Param("now") LocalDateTime now,
+            @Param("todayStart") LocalDateTime todayStart,
+            Pageable pageable
     );
 
     @Transactional
