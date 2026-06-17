@@ -31,6 +31,7 @@ import p5laris.ai.domain.infrastructure.config.AiCharacterTalkProperties;
 import p5laris.ai.domain.infrastructure.config.AiEmbeddingProperties;
 import p5laris.ai.domain.infrastructure.repository.CharacterTalkMemoryJdbcRepository;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeParseException;
@@ -64,9 +65,10 @@ public class CharacterTalkHistoryService {
     private final AiCharacterTalkProperties properties;
     private final AiEmbeddingProperties embeddingProperties;
     private final ObjectMapper objectMapper;
+    private final Clock clock;
 
     public PreparedCharacterTalkContext prepare(CharacterTalkGenerationCommand command) {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(clock);
         summarizeExpiredSessions(command, now);
 
         SessionResolution resolution = resolveSession(command, now);
@@ -115,7 +117,7 @@ public class CharacterTalkHistoryService {
 
     @Transactional(readOnly = true)
     public CharacterTalkMessagesResult getDailyMessages(Long userId, Long characterId, String dateText) {
-        LocalDate date = parseDateOrDefault(dateText, LocalDate.now());
+        LocalDate date = parseDateOrDefault(dateText, LocalDate.now(clock));
         LocalDateTime startAt = date.atStartOfDay();
         LocalDateTime endAt = date.plusDays(1).atStartOfDay();
         List<CharacterTalkMessage> messages = messageRepository.findDailyMessages(
@@ -140,7 +142,7 @@ public class CharacterTalkHistoryService {
             String fromDateText,
             String toDateText
     ) {
-        LocalDate toDate = parseDateOrDefault(toDateText, LocalDate.now());
+        LocalDate toDate = parseDateOrDefault(toDateText, LocalDate.now(clock));
         LocalDate fromDate = parseDateOrDefault(fromDateText, toDate.minusDays(6));
         if (fromDate.isAfter(toDate)) {
             throw new AiException(AiErrorCode.AI_INVALID_REQUEST);
@@ -162,7 +164,7 @@ public class CharacterTalkHistoryService {
             return;
         }
 
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(clock);
         int summarizedSessions = summarizeExpiredSessions(now);
         LocalDateTime messageCutoff = now.minusHours(properties.normalizedMessageRetentionHours());
         LocalDateTime sessionCutoff = now.minusDays(properties.normalizedSessionRetentionDays());
@@ -180,13 +182,28 @@ public class CharacterTalkHistoryService {
         }
     }
 
+    public void summarizeDailyBoundarySessions() {
+        if (!properties.isCleanupEnabled()) {
+            return;
+        }
+
+        LocalDateTime now = LocalDateTime.now(clock);
+        int summarizedSessions = summarizeExpiredSessions(now);
+        if (summarizedSessions > 0) {
+            log.info("별친구 대화 일일 기억 생성 완료. summarizedSessions={}", summarizedSessions);
+        }
+    }
+
     private void summarizeExpiredSessions(CharacterTalkGenerationCommand command, LocalDateTime now) {
+        LocalDateTime todayStart = startOfDay(now);
         List<CharacterTalkSession> sessions = sessionRepository
-                .findTop10ByUserIdAndCharacterIdAndStatusAndExpiresAtLessThanEqualOrderByExpiresAtAsc(
+                .findSummarizableSessionsForCharacter(
                         command.userId(),
                         command.characterId(),
                         CharacterTalkSessionStatus.ACTIVE,
-                        now
+                        now,
+                        todayStart,
+                        PageRequest.of(0, 10)
                 );
         for (CharacterTalkSession session : sessions) {
             summarizeSession(session);
@@ -194,10 +211,13 @@ public class CharacterTalkHistoryService {
     }
 
     private int summarizeExpiredSessions(LocalDateTime now) {
+        LocalDateTime todayStart = startOfDay(now);
         List<CharacterTalkSession> sessions = sessionRepository
-                .findTop10ByStatusAndExpiresAtLessThanEqualOrderByExpiresAtAsc(
+                .findSummarizableSessions(
                         CharacterTalkSessionStatus.ACTIVE,
-                        now
+                        now,
+                        todayStart,
+                        PageRequest.of(0, 10)
                 );
         int summarized = 0;
         for (CharacterTalkSession session : sessions) {
@@ -253,25 +273,27 @@ public class CharacterTalkHistoryService {
     }
 
     protected void markMemoryReady(CharacterTalkSession session) {
-        session.markMemoryReady(LocalDateTime.now());
+        session.markMemoryReady(LocalDateTime.now(clock));
         sessionRepository.save(session);
     }
 
     protected SessionResolution resolveSession(CharacterTalkGenerationCommand command, LocalDateTime now) {
         LocalDateTime expiresAt = now.plusMinutes(properties.normalizedSessionTtlMinutes());
+        LocalDateTime todayStart = startOfDay(now);
         String requestedSessionId = normalizeText(command.sessionId());
         if (!requestedSessionId.isBlank()) {
             return sessionRepository.findBySessionId(requestedSessionId)
-                    .map(session -> resolveRequestedSession(command, session, now, expiresAt))
+                    .map(session -> resolveRequestedSession(command, session, now, expiresAt, todayStart))
                     .orElseGet(() -> createNewSession(command, now, expiresAt));
         }
 
         return sessionRepository
-                .findFirstByUserIdAndCharacterIdAndStatusAndExpiresAtAfterOrderByLastMessageAtDesc(
+                .findReusableSession(
                         command.userId(),
                         command.characterId(),
                         CharacterTalkSessionStatus.ACTIVE,
-                        now
+                        now,
+                        todayStart
                 )
                 .map(session -> {
                     session.refresh(now, expiresAt);
@@ -284,10 +306,15 @@ public class CharacterTalkHistoryService {
             CharacterTalkGenerationCommand command,
             CharacterTalkSession session,
             LocalDateTime now,
-            LocalDateTime expiresAt
+            LocalDateTime expiresAt,
+            LocalDateTime todayStart
     ) {
         if (!session.isOwnedBy(command.userId(), command.characterId())) {
             throw new AiException(AiErrorCode.AI_INVALID_REQUEST);
+        }
+        if (session.isActiveAt(now) && session.getStartedAt().isBefore(todayStart)) {
+            summarizeSession(session);
+            return createNewSession(command, now, expiresAt);
         }
         if (!session.isActiveAt(now)) {
             return createNewSession(command, now, expiresAt);
@@ -426,6 +453,10 @@ public class CharacterTalkHistoryService {
         } catch (DateTimeParseException e) {
             throw new AiException(AiErrorCode.AI_INVALID_REQUEST);
         }
+    }
+
+    private LocalDateTime startOfDay(LocalDateTime now) {
+        return now.toLocalDate().atStartOfDay();
     }
 
     private record SessionResolution(CharacterTalkSession session, boolean newSession) {

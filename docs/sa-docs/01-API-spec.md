@@ -1,7 +1,7 @@
 # Polaris REST API 명세서
 
-> 기준일: 2026-06-15
-> 기준 문서: Polaris v0.9 PRD, 최신 ERD, `polaris` 백엔드 gateway/proto 코드 대조
+> 기준일: 2026-06-16
+> 기준 문서: Polaris v1.0 PRD, 최신 ERD, `polaris` 백엔드 gateway/proto 코드 대조
 
 --- 
 
@@ -107,11 +107,11 @@ Base Pattern: /api/{domain}/v1/{resource}
 - 공유 시도 보상 기록
 - 출석 보상 지급
 
-### 0.6 v0.9 API 기준
+### 0.6 v1.0 API 기준
 
-아래 표는 Polaris v0.9 백엔드 API 계약을 요약한다. 각 상세 섹션은 이 기준에 맞춰 요청/응답 예시를 작성한다.
+아래 표는 Polaris v1.0 백엔드 API 계약을 요약한다. 각 상세 섹션은 이 기준에 맞춰 요청/응답 예시를 작성한다.
 
-| 구분 | v0.9 API | 응답/처리 규칙 |
+| 구분 | v1.0 API | 응답/처리 규칙 |
 |---|---|---|
 | 홈 통합 조회 | `GET /api/home/v1/home` | 홈 화면은 user, wallet, character, currentMission, notifications 요약을 이 API로 조회한다. |
 | 날씨 권역 | `GET /api/user/v1/weather-regions`, `GET/PUT /api/user/v1/users/me/weather-region` | 사용자가 직접 선택한 권역을 날씨 기반 미션 context에 사용한다. 미선택 상태이면 mission 서비스의 기본 권역을 사용한다. |

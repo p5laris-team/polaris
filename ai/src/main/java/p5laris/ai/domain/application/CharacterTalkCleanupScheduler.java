@@ -25,4 +25,13 @@ public class CharacterTalkCleanupScheduler {
             log.warn("별친구 대화 보관 정책 정리 실패. 예외클래스={}", e.getClass().getSimpleName());
         }
     }
+
+    @Scheduled(cron = "${ai.character-talk.daily-summary-cron:0 5 0 * * *}", zone = "Asia/Seoul")
+    public void summarizeDailyBoundarySessions() {
+        try {
+            characterTalkHistoryService.summarizeDailyBoundarySessions();
+        } catch (Exception e) {
+            log.warn("별친구 대화 일일 기억 생성 실패. 예외클래스={}", e.getClass().getSimpleName());
+        }
+    }
 }

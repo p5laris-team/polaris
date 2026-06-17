@@ -28,4 +28,12 @@ class CharacterTalkValidationPolicyTest {
                 "MUMU"
         )).isInstanceOf(FallbackRequiredException.class);
     }
+
+    @Test
+    void 무무_대화는_해석_닫는_괄호_뒤에_문장이_이어지면_거절한다() {
+        assertThatThrownBy(() -> policy.validateReply(
+                "무무! (해석: 안녕!) 이야기 잘 이어지고 있다니 다행이야.",
+                "MUMU"
+        )).isInstanceOf(FallbackRequiredException.class);
+    }
 }
