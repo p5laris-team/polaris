@@ -202,6 +202,7 @@ public class AiCharacterTalkService {
         private final boolean mumu;
         private int mumuEmittedLength;
         private boolean mumuReleased;
+        private boolean mumuInterpretationClosed;
 
         private StreamingReplyGuard(CharacterTalkGenerationCommand command, CharacterTalkStreamEmitter emitter) {
             this.command = command;
@@ -225,8 +226,18 @@ public class AiCharacterTalkService {
         }
 
         private void acceptMumuChunk(String chunk) {
+            if (mumuInterpretationClosed) {
+                if (!chunk.isBlank()) {
+                    throw new FallbackRequiredException(
+                            AiErrorType.INVALID_OUTPUT,
+                            "무무 대화 응답의 해석 뒤에는 추가 문장을 쓸 수 없습니다."
+                    );
+                }
+                return;
+            }
+
             if (mumuReleased) {
-                emitter.emitDelta(chunk);
+                emitMumuDeltaUntilInterpretationClose(chunk);
                 return;
             }
 
@@ -246,9 +257,33 @@ public class AiCharacterTalkService {
 
             validateMumuUtterancePrefix(buffered.substring(0, interpretationStart).trim());
             mumuReleased = true;
-            emitMumuDelta(buffered.substring(mumuEmittedLength));
+            emitMumuDeltaUntilInterpretationClose(buffered.substring(mumuEmittedLength));
             mumuEmittedLength = buffered.length();
             mumuBuffer.setLength(0);
+        }
+
+        private void emitMumuDeltaUntilInterpretationClose(String text) {
+            if (text == null || text.isBlank()) {
+                return;
+            }
+
+            int closeIndex = text.indexOf(')');
+            if (closeIndex < 0) {
+                emitMumuDelta(text);
+                return;
+            }
+
+            String safeText = text.substring(0, closeIndex + 1);
+            String trailingText = text.substring(closeIndex + 1);
+            emitMumuDelta(safeText);
+            mumuInterpretationClosed = true;
+
+            if (!trailingText.isBlank()) {
+                throw new FallbackRequiredException(
+                        AiErrorType.INVALID_OUTPUT,
+                        "무무 대화 응답의 해석 뒤에는 추가 문장을 쓸 수 없습니다."
+                );
+            }
         }
 
         private void emitSafeMumuUtterancePrefix(String buffered) {

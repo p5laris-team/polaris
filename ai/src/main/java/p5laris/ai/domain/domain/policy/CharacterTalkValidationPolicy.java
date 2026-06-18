@@ -100,7 +100,10 @@ public class CharacterTalkValidationPolicy {
 
         String utterance = value.substring(0, interpretationStart).trim();
         String interpretation = value.substring(interpretationStart + "(해석:".length(), value.length() - 1).trim();
-        if (utterance.isBlank() || interpretation.isBlank() || !utterance.startsWith("무")) {
+        if (utterance.isBlank()
+                || interpretation.isBlank()
+                || !utterance.startsWith("무")
+                || interpretation.contains(")")) {
             throw new FallbackRequiredException(AiErrorType.INVALID_OUTPUT, "무무 대화 응답 형식이 올바르지 않습니다.");
         }
 

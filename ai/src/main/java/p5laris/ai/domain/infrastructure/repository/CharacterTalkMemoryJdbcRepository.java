@@ -10,6 +10,7 @@ import p5laris.ai.domain.domain.enums.CharacterTalkMemoryType;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -24,6 +25,7 @@ import java.util.List;
 public class CharacterTalkMemoryJdbcRepository {
 
     private final JdbcTemplate jdbcTemplate;
+    private final Clock clock;
 
     public void upsertSessionSummary(
             Long userId,
@@ -35,6 +37,7 @@ public class CharacterTalkMemoryJdbcRepository {
             int dimension,
             List<Float> normalizedVector
     ) {
+        LocalDateTime now = LocalDateTime.now(clock);
         jdbcTemplate.update("""
                         INSERT INTO character_talk_memories (
                             user_id,
@@ -49,7 +52,7 @@ public class CharacterTalkMemoryJdbcRepository {
                             created_at,
                             updated_at
                         )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS vector), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS vector), ?, ?)
                         ON CONFLICT (source_session_id, memory_type)
                         DO UPDATE SET
                             summary = EXCLUDED.summary,
@@ -57,7 +60,7 @@ public class CharacterTalkMemoryJdbcRepository {
                             embedding_model = EXCLUDED.embedding_model,
                             embedding_dimension = EXCLUDED.embedding_dimension,
                             embedding = EXCLUDED.embedding,
-                            updated_at = CURRENT_TIMESTAMP
+                            updated_at = EXCLUDED.updated_at
                         """,
                 userId,
                 characterId,
@@ -67,7 +70,9 @@ public class CharacterTalkMemoryJdbcRepository {
                 diaryText,
                 model,
                 dimension,
-                EmbeddingVectorUtils.toPgVectorLiteral(normalizedVector)
+                EmbeddingVectorUtils.toPgVectorLiteral(normalizedVector),
+                now,
+                now
         );
     }
 
@@ -174,13 +179,14 @@ public class CharacterTalkMemoryJdbcRepository {
         if (hits == null || hits.isEmpty()) {
             return;
         }
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(clock);
         for (CharacterTalkMemoryHit hit : hits) {
             jdbcTemplate.update("""
                             UPDATE character_talk_memories
-                            SET last_used_at = ?, updated_at = CURRENT_TIMESTAMP
+                            SET last_used_at = ?, updated_at = ?
                             WHERE id = ?
                             """,
+                    now,
                     now,
                     hit.id()
             );
