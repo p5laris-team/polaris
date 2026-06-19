@@ -20,9 +20,10 @@ import p5laris.mission.domain.domain.enums.UserMemorySourceType;
 import p5laris.mission.domain.domain.enums.UserMemoryType;
 
 /**
- * ?ъ슜?먯쓽 ?꾨즺 ?듬?怨??쇰뱶諛깆뿉??異붿텧??媛쒖씤??湲곗뼲?대떎.
+ * 사용자의 완료 답변과 피드백에서 추출한 개인화 기억이다.
  *
- * ?꾩쭅 vector DB瑜?遺숈씠吏 ?딆븯?쇰?濡??ш린?쒕뒗 RAG ?먯쿇 ?곗씠?곕? ?덉젙?곸쑝濡??볥뒗 ??븷留?留〓뒗??
+ * 아직 vector 검색만으로 모든 판단을 맡기는 구조가 아니므로,
+ * 여기서는 RAG 원천 데이터를 안정적으로 쌓는 역할에 집중한다.
  */
 @Entity
 @Getter

@@ -93,10 +93,10 @@ public class UserMission extends BaseEntity {
     private String idempotencyKey;
 
     /**
-     * seed 誘몄뀡 ?쒗뵆由우쓣 ?ㅼ젣 ?좎? 誘몄뀡?쇰줈 蹂듭궗???앹꽦?쒕떎.
+     * seed 미션 템플릿을 실제 사용자 미션으로 복사해 생성한다.
      *
-     * MissionTemplate? 怨듯넻 ?먮낯?닿퀬, UserMission? ?뱀젙 ?좎?媛 ?뱀젙 ?좎쭨??諛쏆? ?ㅼ젣 誘몄뀡 湲곕줉?대떎.
-     * characterId???꾩옱 誘몄뀡 議고쉶 議곌굔???꾨땲??"??誘몄뀡???대뼡 罹먮┃?곌? ?쒖븞?덈뒗吏" ?④린??媛믪씠??
+     * MissionTemplate은 공통 원본이고, UserMission은 특정 사용자가 특정 날짜에 받은 실제 미션 기록이다.
+     * characterId는 현재 미션 조회 조건이라기보다 "이 미션이 어떤 캐릭터에게 제안됐는지" 남기는 값이다.
      */
     public static UserMission offerFromTemplate(
             Long userId,
@@ -125,11 +125,11 @@ public class UserMission extends BaseEntity {
     }
 
     /**
-     * 寃利앹쓣 ?듦낵??AI ?먯쑉 誘몄뀡 ?꾨낫瑜??ㅼ젣 ?좎? 誘몄뀡??諛섏쁺?쒕떎.
+     * 검증을 통과한 AI 자율 미션 후보를 실제 사용자 미션에 반영한다.
      *
-     * 泥섏쓬?먮뒗 seed template fallback row濡???ν븯吏留?
-     * AI ?꾨낫媛 ?덉쟾 寃利앹쓣 ?듦낵?섎㈃ template ?곌껐???딄퀬 AI媛 留뚮뱺 ?쒕ぉ/?ㅻ챸/臾멸뎄瑜??ъ슜?쒕떎.
-     * 蹂댁긽? AI媛 ?꾨땲??mission ?쒕퉬?ㅼ쓽 ?쒖씠?꾨퀎 蹂댁긽 ?뺤콉?쇰줈 怨꾩궛??媛믩쭔 諛쏅뒗??
+     * 처음에는 seed template fallback row로 저장하지만,
+     * AI 후보가 안전 검증을 통과하면 template 연결을 끊고 AI가 만든 제목/설명/문구를 사용한다.
+     * 보상은 AI가 정하지 않고 mission 서비스의 사이드퀘스트 보상 정책으로 계산된 값만 받는다.
      */
     public void applyGeneratedMission(
             Long aiGenerationId,
@@ -152,45 +152,45 @@ public class UserMission extends BaseEntity {
         this.rewardStarPiece = rewardStarPiece;
     }
 
-    // OFFERED/ANSWERING ?곹깭 誘몄뀡??REJECTED濡?諛붽씀怨?嫄곗젅 ?쒓컖??湲곕줉?쒕떎.
+    // OFFERED/ANSWERING 상태 미션을 REJECTED로 바꾸고 거절 시각을 기록한다.
     public void reject(LocalDateTime rejectedAt) {
         this.status = UserMissionStatus.REJECTED;
         this.rejectedAt = rejectedAt;
     }
 
-    // OFFERED ?곹깭 誘몄뀡???꾨즺 吏덈Ц ?듬? 以묒씤 ANSWERING ?곹깭濡?諛붽씔??
+    // OFFERED 상태 미션을 완료 질문 답변 중인 ANSWERING 상태로 바꾼다.
     public void startAnswering(LocalDateTime completionStartedAt) {
         this.status = UserMissionStatus.ANSWERING;
         this.completionStartedAt = completionStartedAt;
     }
 
-    // ?듬????쒖텧??誘몄뀡??COMPLETED ?곹깭濡?諛붽씀怨??꾨즺 ?쒓컖??湲곕줉?쒕떎.
+    // 답변 제출 후 미션을 COMPLETED 상태로 바꾸고 완료 시각을 기록한다.
     public void complete(LocalDateTime completedAt) {
         this.status = UserMissionStatus.COMPLETED;
         this.completedAt = completedAt;
     }
 
-    // wallet 蹂댁긽 吏湲됯퉴吏 ?깃났???? 媛숈? 誘몄뀡??蹂댁긽???ㅼ떆 吏湲됰릺吏 ?딅룄濡?硫깅벑?ㅻ? ?④릿??
+    // wallet 보상 지급까지 성공했을 때 같은 미션의 보상이 다시 지급되지 않도록 멱등키를 남긴다.
     public void recordRewardPaid(String idempotencyKey) {
         this.idempotencyKey = idempotencyKey;
     }
 
-    // idempotency_key媛 ?덉쑝硫?mission 愿?먯뿉?쒕뒗 蹂댁긽 吏湲됱씠 ?꾨즺??誘몄뀡?쇰줈 蹂몃떎.
+    // idempotency_key가 있으면 mission 관점에서는 보상 지급이 완료된 미션으로 본다.
     public boolean isRewardPaid() {
         return idempotencyKey != null && !idempotencyKey.isBlank();
     }
 
-    // ?꾩옱 誘몄뀡??嫄곗젅 媛?ν븳 ?쒖븞 ?곹깭?몄? ?뺤씤?쒕떎.
+    // 현재 미션이 거절 가능한 제안 상태인지 확인한다.
     public boolean isOffered() {
         return status == UserMissionStatus.OFFERED;
     }
 
-    // ?꾨즺 吏덈Ц ?몄뀡???대? ?쒖옉???곹깭?몄? ?뺤씤?쒕떎.
+    // 완료 질문 세션이 이미 시작된 상태인지 확인한다.
     public boolean isAnswering() {
         return status == UserMissionStatus.ANSWERING;
     }
 
-    // ?대? ?꾨즺 泥섎━??誘몄뀡?몄? ?뺤씤?쒕떎.
+    // 이미 완료 처리된 미션인지 확인한다.
     public boolean isCompleted() {
         return status == UserMissionStatus.COMPLETED;
     }
