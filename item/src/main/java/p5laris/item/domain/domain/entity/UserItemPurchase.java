@@ -5,9 +5,10 @@ import lombok.*;
 import p5laris.common.entity.BaseEntity;
 
 /**
- * ?꾩씠??援щℓ ?대젰 ?뷀떚??
+ * 아이템 구매 이력 엔티티다.
  *
- * idempotencyKey: ?숈씪 ?붿껌???ㅽ듃?뚰겕 ?ъ떆???깆쑝濡?以묐났 ?꾨떖?대룄 ??踰덈쭔 泥섎━?섎룄濡?蹂댁옣?쒕떎.
+ * idempotencyKey는 같은 구매 요청이 네트워크 재시도 등으로 중복 도달해도
+ * 별조각 차감과 아이템 지급이 한 번만 일어나도록 막는 멱등키다.
  */
 @Entity
 @Table(name = "item_purchase_histories")

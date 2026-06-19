@@ -45,9 +45,9 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * 蹂꾩튇援???붿쓽 硫?고꽩 ?몄뀡, 理쒓렐 ???window, ?κ린 湲곗뼲 寃?됱쓣 ?대떦?쒕떎.
+ * 별친구 대화의 메모리 세션, 최근 대화 window, 장기 기억 검색을 담당한다.
  *
- * DB 湲곕줉怨??몃? AI provider ?몄텧??遺꾨━??????앹꽦 ?몃옖??뀡??湲몄뼱吏吏 ?딄쾶 ?쒕떎.
+ * DB 기록과 외부 AI provider 호출을 분리해 대화 생성 트랜잭션이 길어지지 않게 한다.
  */
 @Service
 @RequiredArgsConstructor
@@ -177,7 +177,7 @@ public class CharacterTalkHistoryService {
                 sessionCutoff
         );
         if (summarizedSessions > 0 || deletedMessages > 0 || deletedSessions > 0) {
-            log.info("蹂꾩튇援????蹂닿? ?뺤콉 ?뺣━ ?꾨즺. summarizedSessions={}, deletedMessages={}, deletedSessions={}",
+            log.info("별친구 대화 보관 데이터 정리 완료. summarizedSessions={}, deletedMessages={}, deletedSessions={}",
                     summarizedSessions, deletedMessages, deletedSessions);
         }
     }
@@ -260,7 +260,7 @@ public class CharacterTalkHistoryService {
             markMemoryReady(session);
             return true;
         } catch (Exception e) {
-            log.warn("蹂꾩튇援?????몄뀡 湲곗뼲???ㅽ뙣. sessionId={}, characterId={}, ?덉쇅?대옒??{}",
+            log.warn("별친구 대화 세션 기억화 실패. sessionId={}, characterId={}, exceptionClass={}",
                     session.getSessionId(), session.getCharacterId(), e.getClass().getSimpleName());
             markExpired(session);
             return false;
@@ -374,7 +374,7 @@ public class CharacterTalkHistoryService {
                     properties.normalizedMemorySimilarityThreshold()
             );
         } catch (Exception e) {
-            log.warn("蹂꾩튇援?????κ린 湲곗뼲 寃???ㅽ뙣. requestId={}, characterId={}, ?덉쇅?대옒??{}",
+            log.warn("별친구 대화 장기 기억 검색 실패. requestId={}, characterId={}, exceptionClass={}",
                     command.requestId(), command.characterId(), e.getClass().getSimpleName());
             return List.of();
         }

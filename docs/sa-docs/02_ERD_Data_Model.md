@@ -216,7 +216,8 @@ partial unique(user_id) where active = true
 ```
 사용자당 활성 캐릭터는 1개만 허용한다.
 스킨 장착 정보는 user_characters.equipped_skin_id가 단일 소스다.
-현재 상태별 노출 이미지는 equipped_skin_id와 skin_assets 또는 character_assets를 조합해 결정한다.
+기본 외형의 상태별 이미지는 character_assets를 기준으로 선택한다.
+스킨이 장착된 경우 캐릭터 도메인은 equipped_skin_id만 보관하고, 상태별 스킨 이미지는 item 서비스의 GetSkinAssets gRPC 조회 결과로 결정한다.
 ```
 
 ---
@@ -1600,4 +1601,3 @@ unique(event_id)
 ```
 
 ---
-

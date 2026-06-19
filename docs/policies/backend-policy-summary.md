@@ -18,7 +18,8 @@
 ## 2. 에셋 / URL 저장 정책
 
 - DB에는 이미지 파일 자체를 저장하지 않는다.
-- 캐릭터/스킨 에셋은 `character_assets.asset_url`, `skin_assets.asset_url`에 asset key를 저장한다.
+- 캐릭터 기본 에셋은 `character_assets.asset_url`에 asset key를 저장한다.
+- 스킨 상태별 에셋은 character 도메인 테이블이 아니라 item 서비스의 스킨 아이템/파생 에셋 조회 결과를 사용한다.
 - 공유 카드 이미지는 `share_cards.image_url`에 S3 object key를 저장한다.
 - API 응답 시점에 환경별 public base URL 또는 S3 public domain과 key를 조합해 클라이언트가 사용할 URL을 만든다.
 - `currentAssetUrl`은 서버가 현재 상태 기준으로 선택한 표시용 URL이다.
@@ -41,7 +42,7 @@
 - 상태 수치는 0~100 범위를 벗어나지 않는다.
 - 사용자는 활성 캐릭터 1개를 가진다.
 - 스킨 장착 정보는 `user_characters.equipped_skin_id`를 단일 소스로 사용한다.
-- 스킨이 장착되어 있으면 `skin_assets`, 기본 외형이면 `character_assets`를 기준으로 상태별 이미지를 선택한다.
+- 스킨이 장착되어 있으면 `user_characters.equipped_skin_id`로 item 서비스에 상태별 스킨 에셋을 조회하고, 기본 외형이면 `character_assets`를 기준으로 상태별 이미지를 선택한다.
 
 ---
 
@@ -303,5 +304,4 @@
 - 이벤트 발생 서비스는 `source_service`로 구분한다.
 - 이벤트 상세 속성은 `properties_json`, 발생 환경은 `context_json`에 저장한다.
 - 실제 발생 시각은 `occurred_at`, DB 저장 시각은 `created_at`으로 분리한다.
-
 

@@ -16,9 +16,9 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 蹂꾩튇援?????κ린 湲곗뼲??pgvector ???寃??repository??
+ * 별친구 대화 장기 기억을 pgvector에 저장하고 검색하는 repository다.
  *
- * Hibernate vector 留ㅽ븨???꾩뿭?쇰줈 ?섎━吏 ?딄퀬, vector SQL? ???대옒???덉뿉留?媛?붾떎.
+ * Hibernate vector 매핑을 전역으로 늘리지 않고, vector SQL은 이 클래스 안에만 격리한다.
  */
 @Repository
 @RequiredArgsConstructor
